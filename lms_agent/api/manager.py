@@ -43,13 +43,67 @@ def org_report(course: str | None = None, status: str | None = None) -> dict:
 	)
 
 	строки = []
+	# Данные, общие для всех участников курса, читаются один раз: прежняя
+	# редакция строила список уроков и запрашивала прогресс на каждую пару
+	# «назначение × участник», и организация на пятьсот человек с десятью
+	# курсами давала десятки тысяч запросов в одном вызове.
 	for назначение in назначения:
-		for участник in _адресаты(назначение):
-			строка = _строка_отчёта(участник, назначение)
+		участники = _адресаты(назначение)
+		if not участники:
+			continue
+		уроки = _уроки_курса(назначение.course)
+		пройдено = _пройдено_по_участникам(назначение.course, участники)
+		имена = _имена(участники)
+		последняя_активность = _последняя_активность(назначение.course, участники)
+
+		for участник in участники:
+			строка = _строка_отчёта(
+				участник,
+				назначение,
+				уроки=уроки,
+				пройдено=пройдено.get(участник, 0),
+				имя=имена.get(участник),
+				активность=последняя_активность.get(участник),
+			)
 			if status and строка["status"] != status:
 				continue
 			строки.append(строка)
 	return {"rows": строки}
+
+
+def _пройдено_по_участникам(курс: str, участники: list[str]) -> dict[str, int]:
+	"""Сколько уроков курса пройдено каждым — одним запросом на курс."""
+	записи = frappe.get_all(
+		"LMS Course Progress",
+		filters={"course": курс, "member": ("in", участники), "status": "Complete"},
+		fields=["member"],
+	)
+	пройдено: dict[str, int] = {}
+	for запись in записи:
+		пройдено[запись.member] = пройдено.get(запись.member, 0) + 1
+	return пройдено
+
+
+def _имена(участники: list[str]) -> dict[str, str]:
+	return {
+		запись.name: запись.full_name
+		for запись in frappe.get_all(
+			"User", filters={"name": ("in", участники)}, fields=["name", "full_name"]
+		)
+	}
+
+
+def _последняя_активность(курс: str, участники: list[str]) -> dict[str, object]:
+	"""Последнее занятие каждого участника по курсу — одним запросом."""
+	последние: dict[str, object] = {}
+	for занятие in frappe.get_all(
+		"Agent Learning Session",
+		filters={"course": курс, "student": ("in", участники)},
+		fields=["student", "started_at"],
+		order_by="started_at asc",
+	):
+		последние[занятие.student] = занятие.started_at
+	return последние
 
 
 @frappe.whitelist()
@@ -105,27 +159,26 @@ def student_detail(user: str) -> dict:
 
 
 def _адресаты(назначение) -> list[str]:
-	if назначение.audience == "Selected Members":
-		return frappe.get_all(
-			"Course Allocation Member", filters={"parent": назначение.name}, pluck="user"
-		)
-	return frappe.get_all(
-		"Organization Membership",
-		filters={"organization": назначение.organization},
-		pluck="user",
-	)
+	"""Кому предназначено назначение — по правилу самого назначения.
+
+	Копия этого правила здесь уже разъехалась с оригиналом: доктайп фильтрует
+	участников по ролям членства, отчёт — нет. Сегодня это ничего не меняет,
+	но при четвёртой роли отчёт и выданные зачисления разошлись бы.
+	"""
+	return frappe.get_doc("Course Allocation", назначение.name).адресаты()
 
 
-def _строка_отчёта(участник: str, назначение) -> dict:
+def _строка_отчёта(
+	участник: str,
+	назначение,
+	*,
+	уроки: list[str],
+	пройдено: int,
+	имя: str | None,
+	активность,
+) -> dict:
 	from frappe.utils import getdate, nowdate
 
-	уроки = _уроки_курса(назначение.course)
-	пройдены = frappe.get_all(
-		"LMS Course Progress",
-		filters={"member": участник, "course": назначение.course, "status": "Complete"},
-		pluck="lesson",
-	)
-	пройдено = len([у for у in уроки if у in set(пройдены)])
 	доля = (пройдено / len(уроки)) if уроки else 0.0
 
 	if пройдено == 0:
@@ -135,30 +188,21 @@ def _строка_отчёта(участник: str, назначение) -> d
 	else:
 		статус = "in_progress"
 
-	последняя = frappe.get_all(
-		"Agent Learning Session",
-		filters={"student": участник, "course": назначение.course},
-		fields=["started_at"],
-		order_by="started_at desc",
-		limit=1,
-	)
 	return {
 		"user": участник,
-		"full_name": frappe.db.get_value("User", участник, "full_name"),
+		"full_name": имя,
 		"course": назначение.course,
 		"organization": назначение.organization,
 		"status": статус,
 		"progress": round(доля, 2),
 		"deadline": назначение.deadline,
 		"mandatory": bool(назначение.mandatory),
+		# Просрочка считается тем же правилом, что и для ученика: раньше
+		# менеджер и ученик видели разное про один и тот же курс.
 		"overdue": bool(
-			назначение.deadline
-			and статус != "completed"
-			and getdate(назначение.deadline) < getdate(nowdate())
+			назначение.deadline and getdate(назначение.deadline) < getdate(nowdate())
 		),
-		"last_activity": последняя[0].started_at.isoformat()
-		if последняя and последняя[0].started_at
-		else None,
+		"last_activity": активность.isoformat() if активность else None,
 	}
 
 

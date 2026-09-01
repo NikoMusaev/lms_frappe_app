@@ -175,12 +175,25 @@ def _вопросы_квиза(квиз: str) -> list[dict]:
 		fields=["question", "marks"],
 		order_by="idx asc",
 	)
-	вопросы = []
-	for строка in строки:
-		тип = frappe.db.get_value("LMS Question", строка.question, "type")
-		if тип in ПРОВЕРЯЕМЫЕ_ТИПЫ:
-			вопросы.append({"question": строка.question, "marks": строка.marks or 1, "type": тип})
-	return вопросы
+	if not строки:
+		return []
+
+	# Один запрос на все типы вместо запроса на каждый вопрос: функция
+	# переисполняется на каждый ответ, и квиз из тридцати вопросов давал
+	# около шестидесяти лишних обращений на одну отправку.
+	типы = {
+		запись.name: запись.type
+		for запись in frappe.get_all(
+			"LMS Question",
+			filters={"name": ("in", [строка.question for строка in строки])},
+			fields=["name", "type"],
+		)
+	}
+	return [
+		{"question": строка.question, "marks": строка.marks or 1, "type": типы[строка.question]}
+		for строка in строки
+		if типы.get(строка.question) in ПРОВЕРЯЕМЫЕ_ТИПЫ
+	]
 
 
 def следующий_вопрос(attempt: str) -> dict | None:
@@ -394,6 +407,15 @@ def _записать_итог_frappe(
 	# нашей записи «зачтено», а в браузерной — ниже проходного балла, и два
 	# канала, которые обязаны сходиться, показывают разное.
 	порог = round(порог_доли * 100)
+	# Тексты вопросов одним запросом, а не по одному на ответ.
+	тексты = {
+		запись.name: запись.question
+		for запись in frappe.get_all(
+			"LMS Question",
+			filters={"name": ("in", [о.question for о in ответы])},
+			fields=["name", "question"],
+		)
+	} if ответы else {}
 	итог = frappe.get_doc(
 		{
 			"doctype": "LMS Quiz Submission",
@@ -407,7 +429,7 @@ def _записать_итог_frappe(
 			"result": [
 				{
 					"question_name": о.question,
-					"question": frappe.db.get_value("LMS Question", о.question, "question"),
+					"question": тексты.get(о.question),
 					"answer": о.answer,
 					"marks": о.marks,
 					"marks_out_of": о.marks_out_of,
