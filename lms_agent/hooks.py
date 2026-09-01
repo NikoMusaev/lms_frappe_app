@@ -92,17 +92,32 @@ required_apps = ["frappe/lms"]
 # отклоняется одинаково в обоих каналах, без дублирования логики.
 
 _сессия = "lms_agent.agent_learning.doctype.agent_learning_session.agent_learning_session"
-_событие = "lms_agent.agent_learning.doctype.agent_session_event.agent_session_event"
+_права = "lms_agent.agent_learning.permissions"
 
 permission_query_conditions = {
-	"Agent Learning Session": f"{_сессия}.get_permission_query_conditions",
-	"Agent Session Event": f"{_событие}.get_permission_query_conditions",
+	"Agent Learning Session": f"{_права}.условие_занятия",
+	"Agent Session Event": f"{_права}.условие_события",
+	"Organization Membership": f"{_права}.условие_членства",
+	"Course Allocation": f"{_права}.условие_назначения",
 }
 
 has_permission = {
-	"Agent Learning Session": f"{_сессия}.has_permission",
-	"Agent Session Event": f"{_событие}.has_permission",
+	"Agent Learning Session": f"{_права}.доступно_занятие",
+	"Agent Session Event": f"{_права}.доступно_событие",
+	"Organization Membership": f"{_права}.доступно_членство",
+	"Course Allocation": f"{_права}.доступно_назначение",
 }
+
+# Роли ставятся вместе с приложением: без них права на DocType ссылались бы
+# на несуществующие роли, и Frappe молча отдал бы доступ никому.
+fixtures = [
+	{
+		"dt": "Role",
+		"filters": [
+			["name", "in", ["Organization Manager", "Organization Admin", "Agent Service"]]
+		],
+	}
+]
 
 # Фоновые задачи
 # ------------------

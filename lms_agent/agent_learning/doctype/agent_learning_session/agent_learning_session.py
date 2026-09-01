@@ -94,29 +94,6 @@ def _курс_урока(lesson: str | None) -> str | None:
 	return frappe.db.get_value("Course Chapter", chapter, "course") if chapter else None
 
 
-def _видит_все_занятия(user: str) -> bool:
-	роли = set(frappe.get_roles(user))
-	return bool(роли & {"System Manager", "Moderator", "Administrator", "Agent Service"})
-
-
-def get_permission_query_conditions(user: str | None = None) -> str:
-	"""Фильтр списка: ученик видит только свои занятия."""
-	user = user or frappe.session.user
-	if _видит_все_занятия(user):
-		return ""
-	return f"`tabAgent Learning Session`.`student` = {frappe.db.escape(user)}"
-
-
-def has_permission(doc, ptype: str = "read", user: str | None = None) -> bool:
-	"""Права на конкретное занятие.
-
-	Нужен рядом с фильтром списка: без него чужое занятие остаётся доступным
-	по прямому обращению по имени записи — а именно так его и попробуют взять.
-	"""
-	user = user or frappe.session.user
-	return _видит_все_занятия(user) or doc.student == user
-
-
 def закрыть_брошенные_занятия() -> int:
 	"""Закрывает занятия, в которых давно ничего не происходило.
 
