@@ -57,14 +57,18 @@ class CourseAllocation(Document):
 			pluck="user",
 		)
 
-	def выдать_зачисления(self) -> int:
+	def выдать_зачисления(self, участники: list[str] | None = None) -> int:
 		"""Создаёт недостающие зачисления, возвращает число созданных.
 
 		Существующие не трогает: у зачисления есть свой прогресс, и
 		пересоздание обнулило бы пройденное.
+
+		`участники` сужает выдачу до конкретных людей — так доприём одного
+		сотрудника не заставляет перебирать всю организацию.
 		"""
 		создано = 0
-		for участник in self.адресаты():
+		цели = участники if участники is not None else self.адресаты()
+		for участник in цели:
 			уже_записан = frappe.db.exists(
 				"LMS Enrollment", {"member": участник, "course": self.course}
 			)
@@ -80,6 +84,43 @@ class CourseAllocation(Document):
 			).insert(ignore_permissions=True)
 			создано += 1
 		return создано
+
+
+def досрочные_назначения_организации(organization: str) -> list[str]:
+	"""Назначения на всю организацию — те, что достаются и новичкам.
+
+	Поимённые сюда не входят: у них адресат задан явно, и человек, которого
+	в списке нет, курс получить не должен.
+	"""
+	return frappe.get_all(
+		"Course Allocation",
+		filters={"organization": organization, "audience": "Whole Organization"},
+		pluck="name",
+	)
+
+
+def сверить_зачисления() -> int:
+	"""Ежесуточная сверка: выдаёт зачисления, которые не выдал хук.
+
+	`Why:` членство может появиться в обход хука — импортом, миграцией или
+	правкой в базе. Тогда сотрудник тихо остаётся без обязательного курса, и
+	обнаруживается это в день дедлайна.
+
+	Приостановленные организации пропускаются: их доступ отозван осознанно.
+	"""
+	действующие = frappe.get_all(
+		"Learning Organization", filters={"status": "Active"}, pluck="name"
+	)
+	if not действующие:
+		return 0
+
+	создано = 0
+	назначения = frappe.get_all(
+		"Course Allocation", filters={"organization": ("in", действующие)}, pluck="name"
+	)
+	for имя in назначения:
+		создано += frappe.get_doc("Course Allocation", имя).выдать_зачисления()
+	return создано
 
 
 def назначения_пользователя(user: str, course: str | None = None) -> list[dict]:
