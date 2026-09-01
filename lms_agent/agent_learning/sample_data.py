@@ -80,3 +80,26 @@ def создать_курс(название: str) -> str:
 			"instructors": [{"instructor": "Administrator"}],
 		}
 	).insert(ignore_permissions=True).name
+
+
+def создать_менеджера(почта: str, organization: str) -> str:
+	"""Пользователь с ролью менеджера и членством в организации.
+
+	Роль Frappe даёт возможность смотреть отчёты, членство — определяет, по
+	каким именно организациям. Без второго роль не открывает ничего.
+	"""
+	создать_ученика(почта)
+	пользователь = frappe.get_doc("User", почта)
+	пользователь.add_roles("Organization Manager")
+	if not frappe.db.exists(
+		"Organization Membership", {"user": почта, "organization": organization}
+	):
+		frappe.get_doc(
+			{
+				"doctype": "Organization Membership",
+				"user": почта,
+				"organization": organization,
+				"role": "Manager",
+			}
+		).insert(ignore_permissions=True)
+	return почта

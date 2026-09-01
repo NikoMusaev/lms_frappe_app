@@ -30,30 +30,3 @@ class AgentSessionEvent(Document):
 
 	def on_trash(self):
 		frappe.throw(frappe._("Записи журнала занятия не удаляются"), frappe.ValidationError)
-
-
-def get_permission_query_conditions(user: str | None = None) -> str:
-	"""Ученик видит журнал только своих занятий."""
-	from lms_agent.agent_learning.doctype.agent_learning_session.agent_learning_session import (
-		_видит_все_занятия,
-	)
-
-	user = user or frappe.session.user
-	if _видит_все_занятия(user):
-		return ""
-	return (
-		"`tabAgent Session Event`.`session` in "
-		"(select name from `tabAgent Learning Session` "
-		f"where student = {frappe.db.escape(user)})"
-	)
-
-
-def has_permission(doc, ptype: str = "read", user: str | None = None) -> bool:
-	from lms_agent.agent_learning.doctype.agent_learning_session.agent_learning_session import (
-		_видит_все_занятия,
-	)
-
-	user = user or frappe.session.user
-	if _видит_все_занятия(user):
-		return True
-	return frappe.db.get_value("Agent Learning Session", doc.session, "student") == user
