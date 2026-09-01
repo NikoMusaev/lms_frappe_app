@@ -1,0 +1,273 @@
+# Copyright (c) 2026, NikoMusaev and contributors
+# For license information, please see license.txt
+
+"""Методы учебного потока.
+
+Спроектированы вокруг занятия, а не вокруг таблиц: универсального доступа к
+записям здесь нет и не будет — иначе агент начнёт изобретать собственные
+сценарии в обход педагогики и прав.
+"""
+
+import frappe
+from frappe.utils import now_datetime
+
+from lms_agent.agent_learning import quiz
+from lms_agent.agent_learning.access import (
+	НЕ_ЗАЧИСЛЕН,
+	доступен_курс,
+	курсы_ученика,
+	политика_квиза_для_курса,
+)
+from lms_agent.agent_learning.errors import Отказ
+from lms_agent.agent_learning.normalizer import нормализовать_урок
+from lms_agent.api import контракт, текущий_пользователь
+
+НЕЧЕГО_УЧИТЬ = "nothing_to_study"
+УРОК_НЕ_НАЙДЕН = "lesson_not_found"
+
+
+@frappe.whitelist()
+@контракт
+def list_my_courses() -> dict:
+	"""Назначенные курсы с прогрессом, дедлайнами и просрочками."""
+	ученик = текущий_пользователь()
+	курсы = []
+	for запись in курсы_ученика(ученик):
+		пройдено, всего = _прогресс(ученик, запись["course"])
+		следующий = _следующий_урок(ученик, запись["course"])
+		курсы.append(
+			{
+				"id": запись["course"],
+				"title": frappe.db.get_value("LMS Course", запись["course"], "title"),
+				"organization": запись["organization"],
+				"mandatory": запись["mandatory"],
+				"deadline": запись["deadline"],
+				"overdue": запись["overdue"],
+				"progress": {"lessons_total": всего, "lessons_completed": пройдено},
+				"next_lesson": следующий,
+			}
+		)
+	return {"courses": курсы}
+
+
+@frappe.whitelist()
+@контракт
+def start_lesson(lesson: str | None = None) -> dict:
+	"""Начинает занятие: создаёт сессию и отдаёт всё нужное для урока."""
+	ученик = текущий_пользователь()
+	lesson = lesson or _выбрать_урок(ученик)
+
+	курс = _курс_урока(lesson)
+	можно, причина = доступен_курс(ученик, курс)
+	if not можно:
+		raise Отказ(причина, "Этот курс сейчас недоступен", course=курс)
+
+	занятие = frappe.get_doc(
+		{
+			"doctype": "Agent Learning Session",
+			"student": ученик,
+			"lesson": lesson,
+			"course": курс,
+			"via_trusted_service": 1,
+		}
+	).insert(ignore_permissions=True)
+
+	материал = нормализовать_урок(lesson)
+	директива = _директива(lesson)
+	занятие.записать_событие("Directive Issued", f"урок {lesson}")
+
+	политика = политика_квиза_для_курса(ученик, курс)
+	сведения = next((к for к in курсы_ученика(ученик) if к["course"] == курс), {})
+
+	return {
+		"session": занятие.name,
+		"lesson": {
+			"id": lesson,
+			"title": материал.title,
+			"course": курс,
+			"overdue": bool(сведения.get("overdue")),
+		},
+		"content": {
+			"markdown": материал.сегмент(1),
+			"segment_index": 1,
+			"total_segments": материал.total_segments,
+		},
+		"media": [
+			{"kind": м.kind, "title": м.title, "url": м.url} for м in материал.media
+		],
+		"objectives": директива.get("objectives", []),
+		"directive": директива.get("directive"),
+		"quiz": {
+			"required": политика["quiz_required"],
+			"pass_threshold": политика["pass_threshold"],
+			"attempts_left": _осталось_попыток(ученик, lesson, политика),
+		},
+	}
+
+
+@frappe.whitelist()
+@контракт
+def report_checkpoint(session: str, note: str) -> dict:
+	"""Отметка о пройденном по ходу занятия. Телеметрия, не зачёт."""
+	занятие = frappe.get_doc("Agent Learning Session", session)
+	занятие.check_permission("read")
+	занятие.записать_событие("Checkpoint Reported", note)
+	return {"recorded_at": now_datetime().isoformat()}
+
+
+@frappe.whitelist()
+@контракт
+def request_quiz(session: str) -> dict:
+	"""Создаёт попытку и отдаёт первый вопрос."""
+	занятие = frappe.get_doc("Agent Learning Session", session)
+	занятие.check_permission("read")
+	return quiz.начать_попытку(session)
+
+
+@frappe.whitelist()
+@контракт
+def submit_answer(attempt: str, question: str, answer: str) -> dict:
+	"""Принимает ответ, возвращает вердикт и следующий вопрос."""
+	попытка = frappe.get_doc("Agent Quiz Attempt", attempt)
+	попытка.check_permission("read")
+	return quiz.принять_ответ(attempt, question, answer)
+
+
+@frappe.whitelist()
+@контракт
+def get_my_progress() -> dict:
+	"""Сводка по себе."""
+	ученик = текущий_пользователь()
+	курсы = курсы_ученика(ученик)
+	занятия = frappe.get_all(
+		"Agent Learning Session",
+		filters={"student": ученик},
+		fields=["lesson", "status", "started_at"],
+		order_by="started_at desc",
+		limit=10,
+	)
+	return {
+		"courses_total": len(курсы),
+		"courses_overdue": sum(1 for к in курсы if к["overdue"]),
+		"recent_sessions": [
+			{
+				"lesson": з.lesson,
+				"status": з.status,
+				"started_at": з.started_at.isoformat() if з.started_at else None,
+			}
+			for з in занятия
+		],
+	}
+
+
+# --- вспомогательное ---
+
+
+def _курс_урока(lesson: str) -> str:
+	глава = frappe.db.get_value("Course Lesson", lesson, "chapter")
+	курс = frappe.db.get_value("Course Chapter", глава, "course") if глава else None
+	if not курс:
+		raise Отказ(УРОК_НЕ_НАЙДЕН, "Такого урока нет", lesson=lesson)
+	return курс
+
+
+def _выбрать_урок(ученик: str) -> str:
+	"""Следующий незакрытый урок с ближайшим дедлайном.
+
+	Порядок важен: сначала просроченные и срочные курсы, потом остальные —
+	ученик, попросивший «давай заниматься», должен получить то, что горит.
+	"""
+	курсы = sorted(
+		курсы_ученика(ученик),
+		key=lambda к: (к["deadline"] is None, к["deadline"] or "", not к["mandatory"]),
+	)
+	for курс in курсы:
+		следующий = _следующий_урок(ученик, курс["course"])
+		if следующий:
+			return следующий["id"]
+	raise Отказ(НЕЧЕГО_УЧИТЬ, "Незакрытых уроков не осталось")
+
+
+def _уроки_курса(курс: str) -> list[str]:
+	главы = frappe.get_all(
+		"Course Chapter", filters={"course": курс}, pluck="name", order_by="idx asc"
+	)
+	уроки = []
+	for глава in главы:
+		уроки += frappe.get_all(
+			"Course Lesson", filters={"chapter": глава}, pluck="name", order_by="idx asc"
+		)
+	return уроки
+
+
+def _пройденные(ученик: str, курс: str) -> set[str]:
+	return set(
+		frappe.get_all(
+			"LMS Course Progress",
+			filters={"member": ученик, "course": курс, "status": "Complete"},
+			pluck="lesson",
+		)
+	)
+
+
+def _прогресс(ученик: str, курс: str) -> tuple[int, int]:
+	уроки = _уроки_курса(курс)
+	пройдены = _пройденные(ученик, курс)
+	return len([у for у in уроки if у in пройдены]), len(уроки)
+
+
+def _следующий_урок(ученик: str, курс: str) -> dict | None:
+	пройдены = _пройденные(ученик, курс)
+	for урок in _уроки_курса(курс):
+		if урок not in пройдены:
+			return {"id": урок, "title": frappe.db.get_value("Course Lesson", урок, "title")}
+	return None
+
+
+def _директива(lesson: str) -> dict:
+	"""Действующая директива урока — отдельным полем и с пометкой адресата.
+
+	Материал и директива приходят разными полями, а сама директива помечена
+	`audience: teacher_only`. Это одна из трёх митигаций против пересказа
+	директивы ученику; гарантий она не даёт — гарантию даёт серверный квиз.
+	"""
+	запись = frappe.get_all(
+		"Agent Lesson Directive",
+		filters={"lesson": lesson, "is_active": 1},
+		fields=[
+			"objectives",
+			"teaching_directive",
+			"probing_questions",
+			"common_misconceptions",
+			"success_criteria",
+		],
+		limit=1,
+		ignore_permissions=True,
+	)
+	if not запись:
+		return {}
+	д = запись[0]
+	return {
+		"objectives": _строки(д.objectives),
+		"directive": {
+			"audience": "teacher_only",
+			"teaching_directive": д.teaching_directive,
+			"probing_questions": _строки(д.probing_questions),
+			"common_misconceptions": _строки(д.common_misconceptions),
+			"success_criteria": _строки(д.success_criteria),
+		},
+	}
+
+
+def _строки(значение: str | None) -> list[str]:
+	return [строка.strip() for строка in (значение or "").splitlines() if строка.strip()]
+
+
+def _осталось_попыток(ученик: str, lesson: str, политика: dict) -> int | None:
+	квиз = quiz._квиз_урока(lesson)
+	if not квиз:
+		return None
+	лимит = политика["max_attempts"]
+	if not лимит:
+		return None
+	return max(0, лимит - quiz._прошлых_попыток(ученик, квиз))
