@@ -101,3 +101,71 @@ class IntegrationTestManagerAPI(IntegrationTestCase):
 		self.assertEqual(данные["user"], self.ученик_а)
 		self.assertTrue(данные["sessions"])
 		self.assertNotIn("вложенные циклы", json.dumps(данные, ensure_ascii=False, default=str))
+
+
+class IntegrationTestManagerRole(IntegrationTestCase):
+	"""Роль руководителя должна работать сама по себе.
+
+	`Why:` до этого отчёт работал лишь потому, что тестовый руководитель
+	попутно получал роль ученика. Пользователь с одной ролью
+	`Organization Manager` данных бы не увидел, и обнаружилось бы это на
+	первом реальном руководителе.
+	"""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.компания = создать_организацию(f"Компания {суффикс}")
+		self.урок = создать_урок(f"Урок {суффикс}")
+		self.курс = frappe.db.get_value(
+			"Course Chapter", frappe.db.get_value("Course Lesson", self.урок, "chapter"), "course"
+		)
+		self.ученик = создать_ученика(f"emp-{суффикс}@example.com")
+		добавить_в_организацию(self.ученик, self.компания)
+		frappe.get_doc(
+			{
+				"doctype": "Course Allocation",
+				"organization": self.компания,
+				"course": self.курс,
+				"deadline": "2026-12-31",
+			}
+		).insert(ignore_permissions=True)
+
+		# Руководитель без роли ученика: только Organization Manager и членство.
+		self.руководитель = f"mgr-only-{суффикс}@example.com"
+		пользователь = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": self.руководитель,
+				"first_name": "Руководитель",
+				"send_welcome_email": 0,
+			}
+		).insert(ignore_permissions=True)
+		пользователь.add_roles("Organization Manager")
+		# Frappe Learning выдаёт роль ученика каждому новому пользователю
+		# автоматически — снимаем её явно, иначе проверка ничего не проверит:
+		# отчёт мог бы работать на правах ученика, как и было раньше.
+		пользователь.remove_roles("LMS Student")
+		frappe.get_doc(
+			{
+				"doctype": "Organization Membership",
+				"user": self.руководитель,
+				"organization": self.компания,
+				"role": "Manager",
+			}
+		).insert(ignore_permissions=True)
+
+	def test_руководитель_без_роли_ученика_видит_отчёт(self):
+		frappe.set_user(self.руководитель)
+		self.assertNotIn("LMS Student", frappe.get_roles(self.руководитель))
+
+		строки = manager.org_report()["data"]["rows"]
+
+		self.assertIn(self.ученик, {строка["user"] for строка in строки})
+
+	def test_руководитель_без_роли_ученика_видит_подробности(self):
+		frappe.set_user(self.руководитель)
+		ответ = manager.student_detail(self.ученик)
+
+		self.assertTrue(ответ["ok"], ответ)
+		self.assertEqual(ответ["data"]["user"], self.ученик)
