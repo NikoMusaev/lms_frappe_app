@@ -10,6 +10,8 @@
 обращением к записям, как это делает настоящий агент.
 """
 
+import json
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -162,3 +164,53 @@ class IntegrationTestApiIsolation(IntegrationTestCase):
 		frappe.set_user(self.ученик)
 		self.assertTrue(frappe.has_permission("Agent Learning Session", "read"))
 		self.assertTrue(student.list_my_courses()["ok"])
+
+
+class IntegrationTestQuizAnswerLeak(IntegrationTestCase):
+	"""Ответы квиза — только свои, даже руководителю.
+
+	`Why:` в записи ответа лежит текст ответа рядом с признаком верности —
+	готовый эталон. Руководитель нередко проходит тот же курс, что и его
+	сотрудники: чтение чужих ответов дало бы ему ответы на собственный квиз.
+	"""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.компания = создать_организацию(f"Компания {суффикс}")
+		self.урок = создать_урок(f"Урок {суффикс}")
+		self.вопрос = создать_вопрос("Столица?", варианты=[("Москва", True), ("Тула", False)])
+		создать_квиз(self.урок, [self.вопрос])
+
+		self.сотрудник = создать_ученика(f"emp-{суффикс}@example.com")
+		добавить_в_организацию(self.сотрудник, self.компания)
+		зачислить(self.сотрудник, self.урок)
+		self.руководитель = создать_менеджера(f"boss-{суффикс}@example.com", self.компания)
+
+		frappe.set_user(self.сотрудник)
+		попытка = student.request_quiz(создать_занятие(self.сотрудник, self.урок))["data"]
+		student.submit_answer(попытка["attempt"], self.вопрос, "1")
+		frappe.set_user("Administrator")
+
+	def test_записи_ответов_не_читает_никто_кроме_служебных_ролей(self):
+		"""Ни руководитель, ни сам ученик: вердикт приходит из метода.
+
+		Записи ответов вообще не выставлены наружу — так утечка невозможна не
+		по фильтру, а по отсутствию права. Руководителю агрегаты доступны
+		методом отчётности, где текстов ответов нет.
+		"""
+		for кто in (self.руководитель, self.сотрудник):
+			frappe.set_user(кто)
+			self.assertFalse(
+				frappe.has_permission("Agent Quiz Answer", "read"),
+				f"{кто} получил доступ к записям ответов",
+			)
+
+	def test_руководитель_видит_результат_но_не_ответы(self):
+		frappe.set_user(self.руководитель)
+		данные = manager.student_detail(self.сотрудник)["data"]
+
+		self.assertTrue(данные["quiz_attempts"], "итоги попыток руководителю нужны")
+		выдано = json.dumps(данные, ensure_ascii=False, default=str)
+		self.assertNotIn("Москва", выдано)
+		self.assertNotIn("is_correct", выдано)

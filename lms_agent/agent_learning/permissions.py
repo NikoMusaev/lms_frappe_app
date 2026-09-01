@@ -22,6 +22,12 @@ from __future__ import annotations
 import frappe
 
 ВСЕВИДЯЩИЕ_РОЛИ = frozenset({"System Manager", "Administrator", "Agent Service"})
+
+#: Кому разрешено заводить и править записи из интерфейса. `Why:` хук
+#: `has_permission` умеет только отнимать: без этого списка модератор,
+#: у которого в схеме стоят create/write, получал бы «Not permitted» —
+#: организации и назначения заводить стало бы некому, кроме администратора.
+АДМИНИСТРАТИВНЫЕ_РОЛИ = ВСЕВИДЯЩИЕ_РОЛИ | {"Moderator", "Course Creator"}
 РОЛИ_МЕНЕДЖЕРА = ("Manager", "Org Admin")
 
 #: Права, которые вообще может получить обычный пользователь. Всё остальное —
@@ -38,7 +44,9 @@ def _только_чтение(ptype: str, user: str) -> bool:
 	`/api/resource/...` и выставляет себе зачёт, минуя сверку. Проверено
 	эксплуатацией: PUT со `score` проходил и записывался.
 	"""
-	return ptype in ЧИТАЮЩИЕ_ПРАВА or видит_всё(user)
+	return ptype in ЧИТАЮЩИЕ_ПРАВА or bool(
+		set(frappe.get_roles(user)) & АДМИНИСТРАТИВНЫЕ_РОЛИ
+	)
 
 
 def видит_всё(user: str) -> bool:
@@ -219,24 +227,32 @@ def доступна_попытка(doc, ptype: str = "read", user: str | None =
 
 
 def условие_ответа(user: str | None = None) -> str:
-	"""`Agent Quiz Answer`: ответы тех попыток, которые пользователю видны."""
+	"""`Agent Quiz Answer`: только свои ответы.
+
+	`Why:` в записи ответа лежит текст ответа рядом с признаком верности —
+	это готовый эталон. Руководитель нередко проходит тот же курс, что и его
+	сотрудники, и чтение чужих ответов дало бы ему ответы на собственный
+	квиз. Агрегаты по сотрудникам он получает методом отчётности, где
+	текстов нет.
+	"""
 	user = user or frappe.session.user
 	if видит_всё(user):
 		return ""
-	видимые = f"select name from `tabAgent Quiz Attempt` where {условие_попытки(user)}"
-	return f"`tabAgent Quiz Answer`.`attempt` in ({видимые})"
+	свои = (
+		"select name from `tabAgent Quiz Attempt` where student = "
+		f"{frappe.db.escape(user)}"
+	)
+	return f"`tabAgent Quiz Answer`.`attempt` in ({свои})"
 
 
 def доступен_ответ(doc, ptype: str = "read", user: str | None = None) -> bool:
+	"""Свой ответ — да, чужой — нет даже руководителю: см. `условие_ответа`."""
 	user = user or frappe.session.user
 	if not _только_чтение(ptype, user):
 		return False
 	if видит_всё(user):
 		return True
-	попытка = frappe.db.get_value(
-		"Agent Quiz Attempt", doc.attempt, ["name", "student"], as_dict=True
-	)
-	return bool(попытка) and доступна_попытка(попытка, ptype, user)
+	return frappe.db.get_value("Agent Quiz Attempt", doc.attempt, "student") == user
 
 
 def свои_организации_пересекаются(менеджер: str, ученик: str) -> bool:
