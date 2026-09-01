@@ -17,6 +17,7 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from lms_agent.agent_learning.access import политика_квиза_для_курса
+from lms_agent.agent_learning.errors import Отказ
 from lms_agent.agent_learning.normalizer import _очистить
 
 #: Frappe Learning хранит варианты плоскими полями option_1..option_10.
@@ -33,15 +34,6 @@ from lms_agent.agent_learning.normalizer import _очистить
 ЧУЖОЙ_ВОПРОС = "question_mismatch"
 
 
-class ОтказКвиза(frappe.ValidationError):
-	"""Отказ с машинным кодом — агенту нужен код, а не текст."""
-
-	def __init__(self, код: str, сообщение: str, **подробности):
-		super().__init__(сообщение)
-		self.код = код
-		self.подробности = подробности
-
-
 # --- начало попытки ---
 
 
@@ -50,14 +42,14 @@ def начать_попытку(session: str) -> dict:
 	занятие = frappe.get_doc("Agent Learning Session", session)
 	квиз = _квиз_урока(занятие.lesson)
 	if not квиз:
-		raise ОтказКвиза(КВИЗА_НЕТ, "У этого урока нет квиза")
+		raise Отказ(КВИЗА_НЕТ, "У этого урока нет квиза")
 
 	if not _вопросы_квиза(квиз):
 		# Frappe Learning не даёт смешивать Open Ended с другими типами:
 		# «make sure each question in the quiz is of open ended type». Значит
 		# квиз либо весь открытый — и проверить его сервер не может, — либо
 		# проверяемый целиком. Промежуточного случая не существует.
-		raise ОтказКвиза(
+		raise Отказ(
 			НЕЧЕГО_ПРОВЕРЯТЬ,
 			"Квиз состоит из открытых вопросов — их разбирают на занятии, а не засчитывают",
 		)
@@ -92,7 +84,7 @@ def _проверить_право_на_попытку(занятие, квиз:
 	прошлых = _прошлых_попыток(занятие.student, квиз)
 	лимит = политика["max_attempts"]
 	if лимит and прошлых >= лимит:
-		raise ОтказКвиза(
+		raise Отказ(
 			ПОПЫТКИ_ИСЧЕРПАНЫ, f"Использованы все попытки ({лимит})", attempts_used=прошлых
 		)
 
@@ -108,7 +100,7 @@ def _проверить_право_на_попытку(занятие, квиз:
 
 	можно_с = add_to_date(последняя[0].finished_at, hours=политика["retry_delay_hours"])
 	if now_datetime() < можно_с:
-		raise ОтказКвиза(
+		raise Отказ(
 			СЛИШКОМ_РАНО,
 			"Повторить попытку можно позже",
 			retry_after=можно_с.isoformat(),
@@ -210,13 +202,13 @@ def принять_ответ(attempt: str, question: str, answer: str) -> dict:
 	"""Сверяет ответ, возвращает вердикт и следующий вопрос."""
 	попытка = frappe.get_doc("Agent Quiz Attempt", attempt)
 	if попытка.status != "In Progress":
-		raise ОтказКвиза(ПОПЫТКА_ЗАВЕРШЕНА, "Эта попытка уже завершена")
+		raise Отказ(ПОПЫТКА_ЗАВЕРШЕНА, "Эта попытка уже завершена")
 
 	вопросы = {в["question"]: в for в in _вопросы_квиза(попытка.quiz)}
 	if question not in вопросы:
-		raise ОтказКвиза(ЧУЖОЙ_ВОПРОС, "Вопрос не из этой попытки")
+		raise Отказ(ЧУЖОЙ_ВОПРОС, "Вопрос не из этой попытки")
 	if frappe.db.exists("Agent Quiz Answer", {"attempt": attempt, "question": question}):
-		raise ОтказКвиза(ЧУЖОЙ_ВОПРОС, "На этот вопрос уже отвечено")
+		raise Отказ(ЧУЖОЙ_ВОПРОС, "На этот вопрос уже отвечено")
 
 	запись = frappe.get_doc("LMS Question", question)
 	верно, пояснение = _сверить(запись, answer)

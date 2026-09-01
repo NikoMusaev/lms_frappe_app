@@ -14,10 +14,10 @@ from lms_agent.agent_learning.quiz import (
 	СЛИШКОМ_РАНО,
 	НЕЧЕГО_ПРОВЕРЯТЬ,
 	ЧУЖОЙ_ВОПРОС,
-	ОтказКвиза,
 	начать_попытку,
 	принять_ответ,
 )
+from lms_agent.agent_learning.errors import Отказ
 from lms_agent.agent_learning.sample_data import (
 	добавить_в_организацию,
 	создать_вопрос,
@@ -180,7 +180,7 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		попытка = self.начать()["attempt"]
 		принять_ответ(попытка, self.вопрос_выбор, "2")
 
-		with self.assertRaises(ОтказКвиза) as отказ:
+		with self.assertRaises(Отказ) as отказ:
 			принять_ответ(попытка, self.вопрос_выбор, "1")
 		self.assertEqual(отказ.exception.код, ЧУЖОЙ_ВОПРОС)
 
@@ -189,14 +189,14 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		чужой = создать_вопрос("Не из этого квиза", варианты=[("да", True), ("нет", False)])
 		попытка = self.начать()["attempt"]
 
-		with self.assertRaises(ОтказКвиза) as отказ:
+		with self.assertRaises(Отказ) as отказ:
 			принять_ответ(попытка, чужой, "1")
 		self.assertEqual(отказ.exception.код, ЧУЖОЙ_ВОПРОС)
 
 	def test_ответ_в_завершённую_попытку_отклоняется(self):
 		попытка, _ = self.пройти_целиком()
 
-		with self.assertRaises(ОтказКвиза) as отказ:
+		with self.assertRaises(Отказ) as отказ:
 			принять_ответ(попытка, self.вопрос_выбор, "2")
 		self.assertEqual(отказ.exception.код, ПОПЫТКА_ЗАВЕРШЕНА)
 
@@ -204,7 +204,7 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		урок = создать_урок(f"Без квиза {frappe.generate_hash(length=6)}")
 		занятие = создать_занятие(self.ученик, урок)
 
-		with self.assertRaises(ОтказКвиза) as отказ:
+		with self.assertRaises(Отказ) as отказ:
 			начать_попытку(занятие)
 		self.assertEqual(отказ.exception.код, КВИЗА_НЕТ)
 
@@ -225,7 +225,7 @@ class IntegrationTestQuiz(IntegrationTestCase):
 
 		self.пройти_целиком(верно_выбор=False, верно_ввод=False)
 
-		with self.assertRaises(ОтказКвиза) as отказ:
+		with self.assertRaises(Отказ) as отказ:
 			начать_попытку(создать_занятие(self.ученик, self.урок))
 		self.assertEqual(отказ.exception.код, ПОПЫТКИ_ИСЧЕРПАНЫ)
 		self.assertEqual(отказ.exception.подробности["attempts_used"], 1)
@@ -245,7 +245,7 @@ class IntegrationTestQuiz(IntegrationTestCase):
 
 		self.пройти_целиком(верно_выбор=False, верно_ввод=False)
 
-		with self.assertRaises(ОтказКвиза) as отказ:
+		with self.assertRaises(Отказ) as отказ:
 			начать_попытку(создать_занятие(self.ученик, self.урок))
 		self.assertEqual(отказ.exception.код, СЛИШКОМ_РАНО)
 		self.assertIn("retry_after", отказ.exception.подробности)
@@ -265,6 +265,6 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		урок = создать_урок(f"Открытый {frappe.generate_hash(length=6)}")
 		создать_квиз(урок, [открытый.name])
 
-		with self.assertRaises(ОтказКвиза) as отказ:
+		with self.assertRaises(Отказ) as отказ:
 			начать_попытку(создать_занятие(self.ученик, урок))
 		self.assertEqual(отказ.exception.код, НЕЧЕГО_ПРОВЕРЯТЬ)

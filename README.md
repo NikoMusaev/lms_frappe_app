@@ -31,7 +31,7 @@ REST-контрактом.
 | Организации, членство, назначение курсов | готово, [#9](https://github.com/NikoMusaev/lms-mcp/issues/9) |
 | Изоляция организаций | готово, [#10](https://github.com/NikoMusaev/lms-mcp/issues/10) |
 | Пошаговый серверный квиз | готово, [#11](https://github.com/NikoMusaev/lms-mcp/issues/11) |
-| Whitelisted-методы контракта | [#12](https://github.com/NikoMusaev/lms-mcp/issues/12) |
+| Whitelisted-методы контракта | готово, [#12](https://github.com/NikoMusaev/lms-mcp/issues/12) |
 
 Занятия закрываются по бездействию фоновой задачей раз в час; порог задаётся в
 `Agent Learning Settings`, по умолчанию 6 часов.
