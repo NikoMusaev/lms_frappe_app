@@ -28,7 +28,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Событие",
-   "options": "Directive Issued\nCheckpoint Reported\nProbing Question Asked\nQuiz Started\nVerdict Returned\nSession Abandoned",
+   "options": "Directive Issued\nCheckpoint Reported\nQuiz Started\nVerdict Returned\nSession Abandoned",
    "read_only": 1,
    "reqd": 1
   },
@@ -81,6 +81,11 @@
   },
   {
    "role": "LMS Student",
+   "read": 1,
+   "report": 1
+  },
+  {
+   "role": "Organization Manager",
    "read": 1,
    "report": 1
   }

@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_agent.agent_learning.sample_data import (
+	зачислить,
 	добавить_в_организацию,
 	создать_вопрос,
 	создать_квиз,
@@ -214,3 +215,48 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertEqual(сводка["courses_total"], 1)
 		self.assertEqual(сводка["courses_overdue"], 0)
 		self.assertEqual(сводка["recent_sessions"][0]["lesson"], self.урок)
+
+
+class IntegrationTestLongLesson(IntegrationTestCase):
+	"""Длинный урок: агент должен уметь дочитать его до конца."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"seg-{суффикс}@example.com")
+		self.урок = создать_урок(f"Длинный {суффикс}")
+		frappe.db.set_value(
+			"Course Lesson",
+			self.урок,
+			"body",
+			"\n\n".join(f"## Часть {i}\n\n" + "текст. " * 400 for i in range(4)),
+		)
+		зачислить(self.ученик, self.урок)
+		frappe.set_user(self.ученик)
+
+	def test_урок_режется_на_сегменты(self):
+		данные = student.start_lesson(lesson=self.урок)["data"]
+		self.assertGreater(данные["content"]["total_segments"], 1)
+		self.assertEqual(данные["content"]["segment_index"], 1)
+
+	def test_второй_сегмент_достижим(self):
+		# Без параметра сегмента агент видел только начало урока: способа
+		# попросить продолжение не было вовсе.
+		первый = student.start_lesson(lesson=self.урок)["data"]["content"]["markdown"]
+		второй = student.start_lesson(lesson=self.урок, segment=2)["data"]
+
+		self.assertEqual(второй["content"]["segment_index"], 2)
+		self.assertNotEqual(второй["content"]["markdown"], первый)
+
+	def test_продолжение_не_плодит_занятия(self):
+		# Иначе на один урок копятся незакрытые сессии, которые потом
+		# закрывает фоновая задача, засоряя журнал и отчётность.
+		первое = student.start_lesson(lesson=self.урок)["data"]["session"]
+		второе = student.start_lesson(lesson=self.урок, segment=2)["data"]["session"]
+		self.assertEqual(первое, второе)
+
+	def test_номер_за_границами_не_роняет_выдачу(self):
+		данные = student.start_lesson(lesson=self.урок, segment=99)["data"]
+		self.assertEqual(
+			данные["content"]["segment_index"], данные["content"]["total_segments"]
+		)

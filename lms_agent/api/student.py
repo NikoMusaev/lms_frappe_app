@@ -58,8 +58,13 @@ def list_my_courses() -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @контракт
-def start_lesson(lesson: str | None = None) -> dict:
-	"""Начинает занятие: создаёт сессию и отдаёт всё нужное для урока."""
+def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
+	"""Начинает занятие: создаёт сессию и отдаёт всё нужное для урока.
+
+	`segment` — часть длинного урока, считая с единицы. Без него агент видел
+	бы только начало: материал режется по заголовкам, а способа попросить
+	продолжение не было вовсе.
+	"""
 	ученик = текущий_пользователь()
 	lesson = lesson or _выбрать_урок(ученик)
 
@@ -75,7 +80,9 @@ def start_lesson(lesson: str | None = None) -> dict:
 		)
 		raise Отказ(причина, "Этот курс сейчас недоступен", course=курс)
 
-	занятие = frappe.get_doc(
+	# Продолжение урока не заводит второе занятие: иначе на один урок копились
+	# бы незакрытые сессии, которые потом закрывает фоновая задача.
+	занятие = _текущее_занятие(ученик, lesson) or frappe.get_doc(
 		{
 			"doctype": "Agent Learning Session",
 			"student": ученик,
@@ -86,6 +93,7 @@ def start_lesson(lesson: str | None = None) -> dict:
 	).insert(ignore_permissions=True)
 
 	материал = нормализовать_урок(lesson)
+	segment = max(1, int(segment or 1))
 	директива = _директива(lesson)
 	занятие.записать_событие("Directive Issued", f"урок {lesson}")
 
@@ -101,8 +109,8 @@ def start_lesson(lesson: str | None = None) -> dict:
 			"overdue": bool(сведения.get("overdue")),
 		},
 		"content": {
-			"markdown": материал.сегмент(1),
-			"segment_index": 1,
+			"markdown": материал.сегмент(segment),
+			"segment_index": min(segment, материал.total_segments or 1),
 			"total_segments": материал.total_segments,
 		},
 		"media": [
@@ -164,6 +172,16 @@ def get_my_progress() -> dict:
 	return {
 		"courses_total": len(курсы),
 		"courses_overdue": sum(1 for к in курсы if к["overdue"]),
+		"courses": [
+			{
+				"id": курс["course"],
+				"title": frappe.db.get_value("LMS Course", курс["course"], "title"),
+				"deadline": курс["deadline"],
+				"overdue": курс["overdue"],
+				"completion": _доля_пройденного(ученик, курс["course"]),
+			}
+			for курс in курсы
+		],
 		"recent_sessions": [
 			{
 				"lesson": з.lesson,
@@ -176,6 +194,22 @@ def get_my_progress() -> dict:
 
 
 # --- вспомогательное ---
+
+
+def _текущее_занятие(ученик: str, lesson: str):
+	"""Незакрытое занятие ученика по этому уроку, если оно есть."""
+	открытые = frappe.get_all(
+		"Agent Learning Session",
+		filters={
+			"student": ученик,
+			"lesson": lesson,
+			"status": ("in", ("In Progress", "Awaiting Quiz")),
+		},
+		pluck="name",
+		order_by="creation desc",
+		limit=1,
+	)
+	return frappe.get_doc("Agent Learning Session", открытые[0]) if открытые else None
 
 
 def _своё_занятие(session: str):
@@ -231,6 +265,15 @@ def _пройденные(ученик: str, курс: str) -> set[str]:
 			pluck="lesson",
 		)
 	)
+
+
+def _доля_пройденного(ученик: str, курс: str) -> float:
+	"""Доля пройденных уроков курса — её обещает контракт в сводке."""
+	уроки = _уроки_курса(курс)
+	if not уроки:
+		return 0.0
+	пройдены = _пройденные(ученик, курс)
+	return round(len([урок for урок in уроки if урок in пройдены]) / len(уроки), 2)
 
 
 def _первый_непройденный(уроки: list[str], пройдены: set[str]) -> dict | None:

@@ -17,7 +17,6 @@
   "last_activity_at",
   "finished_at",
   "sb_client",
-  "client_kind",
   "via_trusted_service"
  ],
  "fields": [
@@ -85,17 +84,11 @@
    "label": "Происхождение"
   },
   {
-   "fieldname": "client_kind",
-   "fieldtype": "Data",
-   "label": "Клиент агента",
-   "read_only": 1
-  },
-  {
    "default": "0",
-   "description": "Занятие пришло от MCP-сервиса, а не создано напрямую",
+   "description": "Занятие создано whitelisted-методом. Признаком работы через MCP-сервис не является: ученик может вызвать метод и напрямую",
    "fieldname": "via_trusted_service",
    "fieldtype": "Check",
-   "label": "Через доверенный сервис",
+   "label": "Через контракт",
    "read_only": 1
   }
  ],
@@ -134,6 +127,11 @@
   },
   {
    "role": "LMS Student",
+   "read": 1,
+   "report": 1
+  },
+  {
+   "role": "Organization Manager",
    "read": 1,
    "report": 1
   }
