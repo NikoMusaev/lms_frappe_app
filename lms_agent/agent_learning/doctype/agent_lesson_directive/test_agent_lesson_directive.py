@@ -4,43 +4,10 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from lms_agent.agent_learning.sample_data import создать_ученика, создать_урок
+
 DOCTYPE = "Agent Lesson Directive"
 УЧЕНИК = "uchenik-proba@example.com"
-
-
-def создать_урок() -> str:
-	"""Минимальная цепочка курс → глава → урок."""
-	course = frappe.get_doc(
-		{
-			"doctype": "LMS Course",
-			"title": "Проба директив",
-			"short_introduction": "Курс для тестов",
-			"description": "<p>Курс для тестов</p>",
-			"published": 0,
-			"instructors": [{"instructor": "Administrator"}],
-		}
-	).insert(ignore_permissions=True)
-	chapter = frappe.get_doc(
-		{"doctype": "Course Chapter", "title": "Глава", "course": course.name}
-	).insert(ignore_permissions=True)
-	lesson = frappe.get_doc(
-		{"doctype": "Course Lesson", "title": "Урок", "chapter": chapter.name}
-	).insert(ignore_permissions=True)
-	return lesson.name
-
-
-def создать_ученика() -> str:
-	if not frappe.db.exists("User", УЧЕНИК):
-		user = frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": УЧЕНИК,
-				"first_name": "Ученик",
-				"send_welcome_email": 0,
-			}
-		).insert(ignore_permissions=True)
-		user.add_roles("LMS Student")
-	return УЧЕНИК
 
 
 class IntegrationTestAgentLessonDirective(IntegrationTestCase):
@@ -66,7 +33,7 @@ class IntegrationTestAgentLessonDirective(IntegrationTestCase):
 		с явной пометкой. Прямого чтения у роли ученика быть не должно ни на
 		запись, ни на список.
 		"""
-		создать_ученика()
+		создать_ученика(УЧЕНИК)
 		self.директива()
 		frappe.set_user(УЧЕНИК)
 		try:
@@ -92,7 +59,7 @@ class IntegrationTestAgentLessonDirective(IntegrationTestCase):
 		self.assertFalse(первая.is_active)
 
 	def test_директива_другого_урока_не_деактивируется(self):
-		чужой_урок = создать_урок()
+		чужой_урок = создать_урок("Другой урок")
 		чужая = frappe.get_doc(
 			{"doctype": DOCTYPE, "lesson": чужой_урок, "teaching_directive": "…"}
 		).insert(ignore_permissions=True)

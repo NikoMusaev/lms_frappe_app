@@ -85,6 +85,34 @@ required_apps = ["frappe/lms"]
 # 	"filters": "lms_agent.utils.jinja_filters"
 # }
 
+# Права
+# ------------------
+# Изоляция занятий держится на правах Frappe, а не на проверках в вызывающем
+# коде: и браузер, и MCP-сервис ходят от имени ученика, поэтому чужое занятие
+# отклоняется одинаково в обоих каналах, без дублирования логики.
+
+_сессия = "lms_agent.agent_learning.doctype.agent_learning_session.agent_learning_session"
+_событие = "lms_agent.agent_learning.doctype.agent_session_event.agent_session_event"
+
+permission_query_conditions = {
+	"Agent Learning Session": f"{_сессия}.get_permission_query_conditions",
+	"Agent Session Event": f"{_событие}.get_permission_query_conditions",
+}
+
+has_permission = {
+	"Agent Learning Session": f"{_сессия}.has_permission",
+	"Agent Session Event": f"{_событие}.has_permission",
+}
+
+# Фоновые задачи
+# ------------------
+# Раз в час: занятия, брошенные посреди урока, закрываются сами. Иначе ученик,
+# закрывший ноутбук, навсегда остаётся «в процессе» и портит отчётность.
+
+scheduler_events = {
+	"hourly": [f"{_сессия}.закрыть_брошенные_занятия"],
+}
+
 # Installation
 # ------------
 

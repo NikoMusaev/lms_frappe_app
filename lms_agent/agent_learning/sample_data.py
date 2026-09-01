@@ -1,0 +1,48 @@
+# Copyright (c) 2026, NikoMusaev and contributors
+# For license information, please see license.txt
+
+"""Данные для тестов: минимальная цепочка курса и учебные пользователи.
+
+Живёт отдельным модулем, потому что нужна и тестам директивы, и тестам
+занятий, и всему, что придёт следом.
+"""
+
+import frappe
+
+
+def создать_урок(название: str = "Урок") -> str:
+	"""Минимальная цепочка курс → глава → урок, возвращает имя урока."""
+	course = frappe.get_doc(
+		{
+			"doctype": "LMS Course",
+			"title": f"Курс для тестов ({название})",
+			"short_introduction": "Курс для тестов",
+			"description": "<p>Курс для тестов</p>",
+			"published": 0,
+			# instructors обязателен у LMS Course — без него вставка падает
+			# с MandatoryError, а сообщение указывает на таблицу, а не на поле.
+			"instructors": [{"instructor": "Administrator"}],
+		}
+	).insert(ignore_permissions=True)
+	chapter = frappe.get_doc(
+		{"doctype": "Course Chapter", "title": "Глава", "course": course.name}
+	).insert(ignore_permissions=True)
+	lesson = frappe.get_doc(
+		{"doctype": "Course Lesson", "title": название, "chapter": chapter.name}
+	).insert(ignore_permissions=True)
+	return lesson.name
+
+
+def создать_ученика(почта: str) -> str:
+	"""Пользователь с ролью ученика."""
+	if not frappe.db.exists("User", почта):
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": почта,
+				"first_name": почта.split("@")[0],
+				"send_welcome_email": 0,
+			}
+		).insert(ignore_permissions=True)
+		user.add_roles("LMS Student")
+	return почта
