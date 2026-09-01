@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-09-02 00:39:41.303681",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "attempt",
+  "question",
+  "answer",
+  "is_correct",
+  "marks",
+  "marks_out_of",
+  "answered_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "attempt",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "\u041f\u043e\u043f\u044b\u0442\u043a\u0430",
+   "options": "Agent Quiz Attempt",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "question",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "\u0412\u043e\u043f\u0440\u043e\u0441",
+   "options": "LMS Question",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "answer",
+   "fieldtype": "Small Text",
+   "label": "\u041e\u0442\u0432\u0435\u0442 \u0443\u0447\u0435\u043d\u0438\u043a\u0430",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_correct",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "\u0412\u0435\u0440\u043d\u043e",
+   "read_only": 1
+  },
+  {
+   "fieldname": "marks",
+   "fieldtype": "Int",
+   "label": "\u0411\u0430\u043b\u043b\u044b",
+   "read_only": 1
+  },
+  {
+   "fieldname": "marks_out_of",
+   "fieldtype": "Int",
+   "label": "\u0418\u0437",
+   "read_only": 1
+  },
+  {
+   "fieldname": "answered_at",
+   "fieldtype": "Datetime",
+   "label": "\u041a\u043e\u0433\u0434\u0430",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-02 00:39:41.303681",
+ "modified_by": "Administrator",
+ "module": "Agent Learning",
+ "name": "Agent Quiz Answer",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Moderator",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "question"
+}

@@ -29,8 +29,8 @@ REST-контрактом.
 | `Agent Learning Session`, `Agent Session Event` — занятия и журнал | готово, [#7](https://github.com/NikoMusaev/lms-mcp/issues/7) |
 | Нормализатор контента уроков | готово, [#8](https://github.com/NikoMusaev/lms-mcp/issues/8) |
 | Организации, членство, назначение курсов | готово, [#9](https://github.com/NikoMusaev/lms-mcp/issues/9) |
-| Изоляция организаций | [#10](https://github.com/NikoMusaev/lms-mcp/issues/10) |
-| Пошаговый серверный квиз | [#11](https://github.com/NikoMusaev/lms-mcp/issues/11) |
+| Изоляция организаций | готово, [#10](https://github.com/NikoMusaev/lms-mcp/issues/10) |
+| Пошаговый серверный квиз | готово, [#11](https://github.com/NikoMusaev/lms-mcp/issues/11) |
 | Whitelisted-методы контракта | [#12](https://github.com/NikoMusaev/lms-mcp/issues/12) |
 
 Занятия закрываются по бездействию фоновой задачей раз в час; порог задаётся в

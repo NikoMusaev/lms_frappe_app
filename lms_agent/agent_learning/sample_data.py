@@ -103,3 +103,55 @@ def создать_менеджера(почта: str, organization: str) -> str
 			}
 		).insert(ignore_permissions=True)
 	return почта
+
+
+def создать_вопрос(
+	текст: str,
+	варианты: list[tuple[str, bool]] | None = None,
+	возможные_ответы: list[str] | None = None,
+	пояснение: str | None = None,
+) -> str:
+	"""Вопрос с вариантами (Choices) или со свободным вводом (User Input)."""
+	поля = {"doctype": "LMS Question", "question": текст}
+	if возможные_ответы is not None:
+		поля["type"] = "User Input"
+		for номер, ответ in enumerate(возможные_ответы, start=1):
+			поля[f"possibility_{номер}"] = ответ
+	else:
+		поля["type"] = "Choices"
+		верных = sum(1 for _, верный in варианты or [] if верный)
+		поля["multiple"] = int(верных > 1)
+		for номер, (вариант, верный) in enumerate(варианты or [], start=1):
+			поля[f"option_{номер}"] = вариант
+			поля[f"is_correct_{номер}"] = int(верный)
+			if верный and пояснение:
+				поля[f"explanation_{номер}"] = пояснение
+	return frappe.get_doc(поля).insert(ignore_permissions=True).name
+
+
+def создать_квиз(lesson: str, вопросы: list[str], баллов_за_вопрос: int = 1) -> str:
+	"""Квиз урока. Привязывается и через quiz_id урока — так его ищет Frappe."""
+	курс = frappe.db.get_value(
+		"Course Chapter", frappe.db.get_value("Course Lesson", lesson, "chapter"), "course"
+	)
+	квиз = frappe.get_doc(
+		{
+			"doctype": "LMS Quiz",
+			"title": f"Квиз {frappe.generate_hash(length=6)}",
+			"lesson": lesson,
+			"course": курс,
+			"total_marks": len(вопросы) * баллов_за_вопрос,
+			"passing_percentage": 80,
+			"questions": [
+				{"question": вопрос, "marks": баллов_за_вопрос} for вопрос in вопросы
+			],
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.set_value("Course Lesson", lesson, "quiz_id", квиз.name)
+	return квиз.name
+
+
+def создать_занятие(student: str, lesson: str) -> str:
+	return frappe.get_doc(
+		{"doctype": "Agent Learning Session", "student": student, "lesson": lesson}
+	).insert(ignore_permissions=True).name
