@@ -94,10 +94,13 @@ def политика_квиза_для_курса(user: str, course: str) -> dic
 		return политика_квиза(None)
 
 	политики = [политика_квиза(организация) for организация in организации]
+	лимиты = [п["max_attempts"] for п in политики if п["max_attempts"]]
 	return {
 		"quiz_required": any(п["quiz_required"] for п in политики),
 		"pass_threshold": max(п["pass_threshold"] for п in политики),
-		"max_attempts": min(п["max_attempts"] for п in политики),
+		# Ноль означает «без лимита» и потому не участвует в выборе
+		# строжайшего: min по нулю выбрал бы самое мягкое правило.
+		"max_attempts": min(лимиты) if лимиты else 0,
 		"retry_delay_hours": max(п["retry_delay_hours"] for п in политики),
 	}
 

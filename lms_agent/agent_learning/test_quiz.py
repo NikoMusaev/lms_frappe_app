@@ -7,7 +7,9 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from lms_agent.agent_learning.access import НЕ_ЗАЧИСЛЕН, ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА
 from lms_agent.agent_learning.quiz import (
+	ВОПРОС_БЕЗ_ЭТАЛОНА,
 	КВИЗА_НЕТ,
 	ПОПЫТКА_ЗАВЕРШЕНА,
 	ПОПЫТКИ_ИСЧЕРПАНЫ,
@@ -20,12 +22,14 @@ from lms_agent.agent_learning.quiz import (
 from lms_agent.agent_learning.errors import Отказ
 from lms_agent.agent_learning.sample_data import (
 	добавить_в_организацию,
+	создать_занятие,
 	создать_вопрос,
 	создать_занятие,
 	создать_квиз,
 	создать_организацию,
 	создать_ученика,
 	создать_урок,
+	зачислить,
 )
 
 ЭТАЛОННЫЕ_ПОЛЯ = ("is_correct", "possibility", "explanation_")
@@ -47,6 +51,9 @@ class IntegrationTestQuiz(IntegrationTestCase):
 			"Как называется оператор повторения?", возможные_ответы=["цикл", "loop"]
 		)
 		self.квиз = создать_квиз(self.урок, [self.вопрос_выбор, self.вопрос_ввод])
+		# Зачисление обязательно: начать_попытку проверяет доступ к курсу —
+		# раньше квиз сдавался и без него.
+		зачислить(self.ученик, self.урок)
 		self.занятие = создать_занятие(self.ученик, self.урок)
 
 	def начать(self):
@@ -113,8 +120,8 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		)
 		урок = создать_урок(f"Урок {frappe.generate_hash(length=6)}")
 		создать_квиз(урок, [вопрос])
-		занятие = создать_занятие(self.ученик, урок)
-		попытка = начать_попытку(занятие)["attempt"]
+		зачислить(self.ученик, урок)
+		попытка = начать_попытку(создать_занятие(self.ученик, урок))["attempt"]
 
 		частично = принять_ответ(попытка, вопрос, "1")
 		self.assertFalse(частично["verdict"]["correct"])
@@ -130,6 +137,7 @@ class IntegrationTestQuiz(IntegrationTestCase):
 			)
 			урок = создать_урок(f"Урок {frappe.generate_hash(length=6)}")
 			создать_квиз(урок, [вопрос])
+			зачислить(self.ученик, урок)
 			попытка = начать_попытку(создать_занятие(self.ученик, урок))["attempt"]
 
 			self.assertTrue(принять_ответ(попытка, вопрос, ответ)["verdict"]["correct"])
@@ -202,6 +210,7 @@ class IntegrationTestQuiz(IntegrationTestCase):
 
 	def test_урок_без_квиза_даёт_внятный_код(self):
 		урок = создать_урок(f"Без квиза {frappe.generate_hash(length=6)}")
+		зачислить(self.ученик, урок)
 		занятие = создать_занятие(self.ученик, урок)
 
 		with self.assertRaises(Отказ) as отказ:
@@ -264,7 +273,158 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 		урок = создать_урок(f"Открытый {frappe.generate_hash(length=6)}")
 		создать_квиз(урок, [открытый.name])
+		зачислить(self.ученик, урок)
 
 		with self.assertRaises(Отказ) as отказ:
 			начать_попытку(создать_занятие(self.ученик, урок))
 		self.assertEqual(отказ.exception.код, НЕЧЕГО_ПРОВЕРЯТЬ)
+
+
+class IntegrationTestQuizIntegrity(IntegrationTestCase):
+	"""Целостность зачёта: лимиты, доступ, порог, кривой контент."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"qi-{суффикс}@example.com")
+		self.урок = создать_урок(f"Урок {суффикс}")
+		self.курс = frappe.db.get_value(
+			"Course Chapter", frappe.db.get_value("Course Lesson", self.урок, "chapter"), "course"
+		)
+		self.вопрос = создать_вопрос(
+			"Столица?", варианты=[("Москва", True), ("Тула", False), ("Клин", False)]
+		)
+		self.квиз = создать_квиз(self.урок, [self.вопрос])
+		зачислить(self.ученик, self.урок)
+
+	def занятие(self):
+		return создать_занятие(self.ученик, self.урок)
+
+	def организация_с_политикой(self, **поля):
+		организация = создать_организацию(f"Компания {frappe.generate_hash(length=6)}", **поля)
+		добавить_в_организацию(self.ученик, организация)
+		frappe.get_doc(
+			{"doctype": "Course Allocation", "organization": организация, "course": self.курс}
+		).insert(ignore_permissions=True)
+		return организация
+
+	# --- лимит попыток ---
+
+	def test_брошенная_попытка_расходует_лимит(self):
+		"""Иначе ответы перебираются: ответил, увидел вердикт, бросил, начал заново."""
+		self.организация_с_политикой(max_attempts=1, retry_delay_hours=1)
+
+		первая = начать_попытку(self.занятие())["attempt"]
+		принять_ответ(первая, self.вопрос, "2")  # неверно, попытка остаётся открытой
+
+		with self.assertRaises(Отказ) as отказ:
+			начать_попытку(self.занятие())
+		self.assertEqual(отказ.exception.код, ПОПЫТКИ_ИСЧЕРПАНЫ)
+
+	def test_повторный_запрос_возвращает_ту_же_попытку(self):
+		# Не новую: иначе счётчик попыток растёт от каждого переподключения.
+		занятие = self.занятие()
+		первая = начать_попытку(занятие)["attempt"]
+		вторая = начать_попытку(занятие)["attempt"]
+		self.assertEqual(первая, вторая)
+
+	def test_возвращённая_попытка_помнит_отвеченное(self):
+		# Квиз из двух вопросов: после одного ответа попытка ещё открыта, и
+		# повторное подключение агента обязано продолжить её, а не начать
+		# заново с первого вопроса.
+		второй = создать_вопрос("Крупнейший город?", варианты=[("Москва", True), ("Клин", False)])
+		урок = создать_урок(f"Два вопроса {frappe.generate_hash(length=6)}")
+		создать_квиз(урок, [self.вопрос, второй])
+		зачислить(self.ученик, урок)
+		занятие = создать_занятие(self.ученик, урок)
+
+		попытка = начать_попытку(занятие)["attempt"]
+		принять_ответ(попытка, self.вопрос, "1")
+
+		повтор = начать_попытку(занятие)
+
+		self.assertEqual(повтор["attempt"], попытка)
+		self.assertEqual(повтор["question"]["id"], второй)
+
+	# --- доступ ---
+
+	def test_квиз_по_курсу_приостановленной_организации_не_начать(self):
+		организация = self.организация_с_политикой()
+		занятие = self.занятие()
+		frappe.db.set_value("Learning Organization", организация, "status", "Suspended")
+
+		with self.assertRaises(Отказ) as отказ:
+			начать_попытку(занятие)
+		self.assertEqual(отказ.exception.код, ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА)
+
+	def test_квиз_без_зачисления_не_начать(self):
+		посторонний = создать_ученика(f"qx-{frappe.generate_hash(length=6)}@example.com")
+		занятие = создать_занятие(посторонний, self.урок)
+
+		with self.assertRaises(Отказ) as отказ:
+			начать_попытку(занятие)
+		self.assertEqual(отказ.exception.код, НЕ_ЗАЧИСЛЕН)
+
+	# --- брошенное занятие ---
+
+	def test_квиз_завершается_даже_если_занятие_закрыли_по_бездействию(self):
+		"""Ученик вернулся к последнему вопросу через сутки — результат не теряется."""
+		self.организация_с_политикой()
+		занятие = self.занятие()
+		попытка = начать_попытку(занятие)["attempt"]
+		frappe.db.set_value("Agent Learning Session", занятие, "status", "Abandoned")
+
+		итог = принять_ответ(попытка, self.вопрос, "1")
+
+		self.assertTrue(итог["result"]["passed"])
+		self.assertTrue(frappe.db.get_value("Agent Quiz Attempt", попытка, "submission"))
+
+	# --- порог ---
+
+	def test_порог_в_стандартной_записи_совпадает_с_политикой(self):
+		# Иначе в нашей записи «зачтено», а в браузерной — ниже проходного.
+		self.организация_с_политикой(pass_threshold=0.5)
+		попытка = начать_попытку(self.занятие())["attempt"]
+		принять_ответ(попытка, self.вопрос, "1")
+
+		submission = frappe.db.get_value("Agent Quiz Attempt", попытка, "submission")
+		self.assertEqual(
+			frappe.db.get_value("LMS Quiz Submission", submission, "passing_percentage"), 50
+		)
+
+	# --- кривой контент ---
+
+	def test_вопрос_без_верного_варианта_даёт_ошибку_а_не_балл(self):
+		"""Защита от данных, пришедших в обход валидации.
+
+		Сам Frappe Learning вопрос без верного варианта сохранить не даёт, но
+		запись может приехать импортом или миграцией. Без проверки пустой
+		ответ совпал бы с пустым множеством эталонов и принёс балл.
+		"""
+		вопрос = создать_вопрос("Кривой", варианты=[("раз", True), ("два", False)])
+		урок = создать_урок(f"Кривой {frappe.generate_hash(length=6)}")
+		создать_квиз(урок, [вопрос])
+		зачислить(self.ученик, урок)
+		попытка = начать_попытку(создать_занятие(self.ученик, урок))["attempt"]
+		# Портим данные мимо валидации — так же, как это сделал бы импорт.
+		frappe.db.set_value("LMS Question", вопрос, "is_correct_1", 0)
+		frappe.clear_document_cache("LMS Question", вопрос)
+
+		with self.assertRaises(Отказ) as отказ:
+			принять_ответ(попытка, вопрос, "")
+		self.assertEqual(отказ.exception.код, ВОПРОС_БЕЗ_ЭТАЛОНА)
+
+	# --- множественный выбор ---
+
+	def test_выбор_всех_вариантов_не_засчитывается(self):
+		"""Защита от очевидного чита: сверка требует точного совпадения."""
+		вопрос = создать_вопрос(
+			"Чётные", варианты=[("2", True), ("3", False), ("4", True)]
+		)
+		урок = создать_урок(f"Множественный {frappe.generate_hash(length=6)}")
+		создать_квиз(урок, [вопрос])
+		зачислить(self.ученик, урок)
+		попытка = начать_попытку(создать_занятие(self.ученик, урок))["attempt"]
+
+		ответ = принять_ответ(попытка, вопрос, "1,2,3")
+
+		self.assertFalse(ответ["verdict"]["correct"])

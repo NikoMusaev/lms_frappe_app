@@ -155,3 +155,19 @@ def создать_занятие(student: str, lesson: str) -> str:
 	return frappe.get_doc(
 		{"doctype": "Agent Learning Session", "student": student, "lesson": lesson}
 	).insert(ignore_permissions=True).name
+
+
+def зачислить(ученик: str, lesson: str) -> str:
+	"""Зачисление на курс урока — основание доступа ко всему учебному потоку."""
+	глава = frappe.db.get_value("Course Lesson", lesson, "chapter")
+	курс = frappe.db.get_value("Course Chapter", глава, "course")
+	if not frappe.db.exists("LMS Enrollment", {"member": ученик, "course": курс}):
+		frappe.get_doc(
+			{
+				"doctype": "LMS Enrollment",
+				"member": ученик,
+				"course": курс,
+				"member_type": "Student",
+			}
+		).insert(ignore_permissions=True)
+	return курс
