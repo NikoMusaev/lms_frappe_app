@@ -17,6 +17,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from lms_agent.agent_learning.leak_guards import проверить_ответ
 from lms_agent.agent_learning.sample_data import (
 	добавить_в_организацию,
 	создать_вопрос,
@@ -27,13 +28,6 @@ from lms_agent.agent_learning.sample_data import (
 	создать_урок,
 )
 from lms_agent.api import manager, student
-
-#: Имена полей Frappe Learning, хранящих эталон.
-ПОЛЯ_ЭТАЛОНА = ("is_correct", "possibility", "explanation_1", "explanation_2")
-
-#: Внутренности Frappe: контракт обязан оставаться интерфейсом общего
-#: назначения, который мог бы реализовать другой backend.
-ВНУТРЕННОСТИ = ("doctype", "docstatus", "modified_by", "idx")
 
 ПРАВИЛЬНЫЙ_ВАРИАНТ = "Москва"
 НЕВЕРНЫЙ_ВАРИАНТ = "Тула"
@@ -81,14 +75,12 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		self.менеджер = создать_менеджера(f"leakmg-{суффикс}@example.com", self.организация)
 
 	def проверить(self, что: str, ответ) -> str:
-		"""Ответ не содержит ни эталонов, ни внутренностей Frappe."""
-		выдано = json.dumps(ответ, ensure_ascii=False, default=str)
+		"""Ответ без эталонов, внутренностей Frappe и текста пояснения.
 
-		for поле in ПОЛЯ_ЭТАЛОНА:
-			self.assertNotIn(поле, выдано, f"{что}: в ответе поле эталона «{поле}»")
-		for поле in ВНУТРЕННОСТИ:
-			self.assertNotIn(поле, выдано, f"{что}: наружу протекла структура Frappe «{поле}»")
-		return выдано
+		Текст проверяется отдельно от имён полей: утечка вида
+		`{"hint": <текст пояснения>}` мимо проверки имён проходит.
+		"""
+		return проверить_ответ(self, ответ, что, запрещённые_тексты=(ТЕКСТ_ПОЯСНЕНИЯ,))
 
 	def test_ни_один_метод_ученика_не_отдаёт_эталон(self):
 		frappe.set_user(self.ученик)
@@ -109,14 +101,13 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		# Варианты видны, а какой из них верный — нет.
 		self.assertIn(ПРАВИЛЬНЫЙ_ВАРИАНТ, выдано)
 		self.assertIn(НЕВЕРНЫЙ_ВАРИАНТ, выдано)
-		self.assertNotIn(ТЕКСТ_ПОЯСНЕНИЯ, выдано)
 
 		попытка = квиз["data"]["attempt"]
 		ответ = student.submit_answer(попытка, self.вопрос, "2")
-		выдано = self.проверить("submit_answer", ответ)
-		# Неверный ответ не должен подсказывать верный.
+		self.проверить("submit_answer", ответ)
+		# Неверный ответ не должен подсказывать верный: проверку текста
+		# пояснения делает `проверить`.
 		self.assertFalse(ответ["data"]["verdict"]["correct"])
-		self.assertNotIn(ТЕКСТ_ПОЯСНЕНИЯ, выдано)
 
 	def test_пояснение_приходит_только_к_верному_ответу(self):
 		frappe.set_user(self.ученик)
@@ -148,9 +139,12 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		student.submit_answer(попытка, self.вопрос, "2")
 
 		frappe.set_user(self.менеджер)
-		выдано = json.dumps(
-			manager.student_detail(self.ученик), ensure_ascii=False, default=str
+		# Реплика ученика из журнала — то, что отчёт не имеет права раскрывать.
+		# Прежняя проверка искала здесь текст варианта ответа, которого в
+		# записи не бывает: ответ хранится номером.
+		проверить_ответ(
+			self,
+			manager.student_detail(self.ученик),
+			"student_detail",
+			запрещённые_тексты=("перепутал столицу",),
 		)
-
-		self.assertNotIn("перепутал столицу", выдано)
-		self.assertNotIn(ПРАВИЛЬНЫЙ_ВАРИАНТ, выдано)

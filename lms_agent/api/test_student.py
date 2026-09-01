@@ -120,9 +120,29 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertEqual(занятие.student, self.ученик)
 		self.assertTrue(занятие.via_trusted_service)
 
-	def test_без_аргумента_берётся_следующий_незакрытый_урок(self):
+	def test_без_аргумента_берётся_урок_с_ближайшим_дедлайном(self):
+		# Ученик, сказавший «давай заниматься», должен получить то, что горит.
+		frappe.set_user("Administrator")
+		срочный_урок = создать_урок(f"Срочный {frappe.generate_hash(length=6)}")
+		срочный_курс = frappe.db.get_value(
+			"Course Chapter",
+			frappe.db.get_value("Course Lesson", срочный_урок, "chapter"),
+			"course",
+		)
+		frappe.get_doc(
+			{
+				"doctype": "Course Allocation",
+				"organization": self.организация,
+				"course": срочный_курс,
+				"deadline": "2026-06-30",
+				"mandatory": 1,
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+
 		данные = student.start_lesson()["data"]
-		self.assertEqual(данные["lesson"]["id"], self.урок)
+
+		self.assertEqual(данные["lesson"]["id"], срочный_урок)
 
 	# --- квиз через методы ---
 
@@ -190,6 +210,7 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		student.start_lesson()
 		сводка = student.get_my_progress()["data"]
 
-		self.assertGreaterEqual(сводка["courses_total"], 1)
+		# Ровно один: «не меньше» замаскировало бы утечку чужих зачислений.
+		self.assertEqual(сводка["courses_total"], 1)
 		self.assertEqual(сводка["courses_overdue"], 0)
 		self.assertEqual(сводка["recent_sessions"][0]["lesson"], self.урок)

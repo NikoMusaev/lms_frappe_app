@@ -12,6 +12,7 @@ from lms_agent.agent_learning.access import (
 	политика_квиза_для_курса,
 )
 from lms_agent.agent_learning.sample_data import (
+	политика_по_умолчанию,
 	добавить_в_организацию,
 	создать_курс,
 	создать_организацию,
@@ -23,6 +24,7 @@ class IntegrationTestAccess(IntegrationTestCase):
 	"""Доступ там, где счастливый путь кончается."""
 
 	def setUp(self):
+		политика_по_умолчанию()
 		self.курс = создать_курс(f"Курс {frappe.generate_hash(length=6)}")
 		self.ученик = создать_ученика(f"uch-{frappe.generate_hash(length=6)}@example.com")
 
@@ -128,16 +130,21 @@ class IntegrationTestAccess(IntegrationTestCase):
 		self.assertFalse(можно)
 		self.assertEqual(причина, ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА)
 
-	def test_зачисление_переживает_приостановку(self):
-		# Удалять зачисление нельзя: при возобновлении потеряется прогресс.
+	def test_доступ_возвращается_вместе_со_статусом_организации(self):
+		"""Зачисление переживает приостановку — иначе потеряется прогресс.
+
+		Прежняя редакция проверяла только наличие записи, которую ни одна
+		ветка кода и не трогает: такой assert не мог покраснеть.
+		"""
 		организация = self.организация()
 		добавить_в_организацию(self.ученик, организация)
 		self.назначить(организация)
-		frappe.db.set_value("Learning Organization", организация, "status", "Suspended")
 
-		self.assertTrue(
-			frappe.db.exists("LMS Enrollment", {"member": self.ученик, "course": self.курс})
-		)
+		frappe.db.set_value("Learning Organization", организация, "status", "Suspended")
+		self.assertIsNone(self.мой_курс(), "курс приостановленной организации виден")
+
+		frappe.db.set_value("Learning Organization", организация, "status", "Active")
+		self.assertIsNotNone(self.мой_курс(), "доступ не вернулся после возобновления")
 
 	def test_действующее_назначение_перекрывает_приостановленное(self):
 		приостановленная = self.организация()

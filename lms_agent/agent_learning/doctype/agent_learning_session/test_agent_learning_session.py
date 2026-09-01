@@ -57,7 +57,10 @@ class IntegrationTestAgentLearningSession(IntegrationTestCase):
 	# --- переходы ---
 
 	def test_курс_проставляется_по_уроку(self):
-		self.assertTrue(self.занятие().course)
+		ожидаемый = frappe.db.get_value(
+			"Course Chapter", frappe.db.get_value("Course Lesson", self.lesson, "chapter"), "course"
+		)
+		self.assertEqual(self.занятие().course, ожидаемый)
 
 	def test_недопустимый_переход_отклоняется(self):
 		занятие = self.занятие()
@@ -103,10 +106,11 @@ class IntegrationTestAgentLearningSession(IntegrationTestCase):
 			DOCTYPE, занятие.name, "last_activity_at", add_to_date(now_datetime(), hours=-24)
 		)
 
-		закрыто = закрыть_брошенные_занятия()
+		закрыть_брошенные_занятия()
 		занятие.reload()
 
-		self.assertGreaterEqual(закрыто, 1)
+		# Проверяется конкретное занятие, а не счётчик: задача сканирует всю
+		# базу, и счётчик зависел бы от данных соседних тестов.
 		self.assertEqual(занятие.status, "Abandoned")
 		self.assertTrue(
 			frappe.db.exists(

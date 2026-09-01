@@ -87,11 +87,14 @@ class IntegrationTestQuiz(IntegrationTestCase):
 
 	def test_пояснение_приходит_только_вместе_с_вердиктом(self):
 		# До ответа пояснение было бы подсказкой.
-		вопрос = self.начать()["question"]
-		self.assertNotIn("explanation", json.dumps(вопрос, ensure_ascii=False))
+		начало = self.начать()
+		self.assertNotIn("explanation", json.dumps(начало["question"], ensure_ascii=False))
 
-		попытка, _ = self.пройти_целиком()
-		# пояснение уже отдано в вердикте первого ответа — проверено ниже
+		ответ = принять_ответ(начало["attempt"], self.вопрос_выбор, "2")
+
+		# После верного ответа — приходит, и это разные состояния одного
+		# вопроса, а не ссылка на соседний тест.
+		self.assertIn("счётчик", ответ["verdict"]["explanation"])
 
 	# --- сверка ---
 
