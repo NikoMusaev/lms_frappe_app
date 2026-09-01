@@ -1,17 +1,24 @@
 # Copyright (c) 2026, NikoMusaev and contributors
 # For license information, please see license.txt
 
-"""Методы менеджера организации.
+"""Методы руководителя организации.
 
-Отдельной проверки прав здесь **нет**: данные ограничивает
-`permission_query_conditions`. Если отчёт приходится защищать вручную, значит
-изоляция сделана не там — и её обойдут через любой другой метод.
+Изоляция проверяется **явно**, и это не дублирование хуков: `frappe.get_all`
+— это `get_list(ignore_permissions=True)`, и `permission_query_conditions` к
+нему не применяются никогда. Отчёт, положившийся на хуки, отдавал занятия
+любого человека на платформе кому угодно — проверено эксплуатацией.
 """
 
 import frappe
 
-from lms_agent.agent_learning.permissions import организации_менеджера
+from lms_agent.agent_learning.errors import Отказ
+from lms_agent.agent_learning.permissions import (
+	организации_менеджера,
+	свои_организации_пересекаются,
+)
 from lms_agent.api import контракт, текущий_пользователь
+
+ЧУЖОЙ_УЧЕНИК = "not_your_student"
 
 СТАТУСЫ = {
 	"not_started": "не начат",
@@ -53,6 +60,9 @@ def student_detail(user: str) -> dict:
 	Тексты ответов на вопросы не отдаются: отчёт про результат, а не про
 	содержание диалога с агентом.
 	"""
+	if not свои_организации_пересекаются(текущий_пользователь(), user):
+		raise Отказ(ЧУЖОЙ_УЧЕНИК, "Этот ученик не из вашей организации", user=user)
+
 	занятия = frappe.get_all(
 		"Agent Learning Session",
 		filters={"student": user},

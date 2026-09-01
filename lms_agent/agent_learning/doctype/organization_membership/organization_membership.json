@@ -17,7 +17,7 @@
    "fieldname": "user",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c",
+   "label": "Пользователь",
    "options": "User",
    "reqd": 1
   },
@@ -25,7 +25,7 @@
    "fieldname": "organization",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u044f",
+   "label": "Организация",
    "options": "Learning Organization",
    "reqd": 1
   },
@@ -34,7 +34,7 @@
    "fieldname": "role",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "\u0420\u043e\u043b\u044c",
+   "label": "Роль",
    "options": "Member\nManager\nOrg Admin",
    "reqd": 1
   }
@@ -73,16 +73,9 @@
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
    "role": "LMS Student",
-   "share": 1,
-   "write": 1
+   "read": 1,
+   "report": 1
   }
  ],
  "row_format": "Dynamic",
