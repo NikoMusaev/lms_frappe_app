@@ -5,10 +5,20 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_to_date, now_datetime
 
-#: Через сколько часов бездействия занятие считается брошенным.
-#: Появятся настройки организации (#9) — порог переедет туда, потому что
-#: строгость у корпоративных клиентов разная.
+#: Запасной порог бездействия, если настройки почему-то недоступны.
 СРОК_БЕЗДЕЙСТВИЯ_ЧАСОВ = 6
+
+
+def _срок_бездействия() -> int:
+	"""Через сколько часов занятие считается брошенным.
+
+	Величина общая для всех организаций: она техническая, а не педагогическая.
+	Строгость зачёта у клиентов разная — но это про квиз, и живёт в политике
+	организации.
+	"""
+	return frappe.get_cached_value(
+		"Agent Learning Settings", "Agent Learning Settings", "session_timeout_hours"
+	) or СРОК_БЕЗДЕЙСТВИЯ_ЧАСОВ
 
 ЗАВЕРШЁННЫЕ = ("Completed", "Abandoned")
 
@@ -115,7 +125,7 @@ def закрыть_брошенные_занятия() -> int:
 	Возвращает число закрытых — по нему видно, что задача действительно
 	отработала.
 	"""
-	порог = add_to_date(now_datetime(), hours=-СРОК_БЕЗДЕЙСТВИЯ_ЧАСОВ)
+	порог = add_to_date(now_datetime(), hours=-_срок_бездействия())
 	просроченные = frappe.get_all(
 		"Agent Learning Session",
 		filters={"status": ("in", ("In Progress", "Awaiting Quiz")), "last_activity_at": ("<", порог)},
