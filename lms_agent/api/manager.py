@@ -11,6 +11,7 @@
 
 import frappe
 
+from lms_agent.agent_learning.access import курсы_ученика
 from lms_agent.agent_learning.errors import Отказ
 from lms_agent.agent_learning.permissions import (
 	организации_менеджера,
@@ -134,6 +135,16 @@ def student_detail(user: str) -> dict:
 	return {
 		"user": user,
 		"full_name": frappe.db.get_value("User", user, "full_name"),
+		"courses": [
+			{
+				"id": запись["course"],
+				"title": frappe.db.get_value("LMS Course", запись["course"], "title"),
+				"deadline": запись["deadline"],
+				"overdue": запись["overdue"],
+				"mandatory": запись["mandatory"],
+			}
+			for запись in курсы_ученика(user)
+		],
 		"sessions": [
 			{
 				"lesson": з.lesson,

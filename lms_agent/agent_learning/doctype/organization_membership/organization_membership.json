@@ -76,6 +76,11 @@
    "role": "LMS Student",
    "read": 1,
    "report": 1
+  },
+  {
+   "role": "Organization Manager",
+   "read": 1,
+   "report": 1
   }
  ],
  "row_format": "Dynamic",
