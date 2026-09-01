@@ -97,6 +97,8 @@ _права = "lms_agent.agent_learning.permissions"
 permission_query_conditions = {
 	"Agent Learning Session": f"{_права}.условие_занятия",
 	"Agent Session Event": f"{_права}.условие_события",
+	"Agent Quiz Attempt": f"{_права}.условие_попытки",
+	"Agent Quiz Answer": f"{_права}.условие_ответа",
 	"Organization Membership": f"{_права}.условие_членства",
 	"Course Allocation": f"{_права}.условие_назначения",
 }
@@ -104,6 +106,8 @@ permission_query_conditions = {
 has_permission = {
 	"Agent Learning Session": f"{_права}.доступно_занятие",
 	"Agent Session Event": f"{_права}.доступно_событие",
+	"Agent Quiz Attempt": f"{_права}.доступна_попытка",
+	"Agent Quiz Answer": f"{_права}.доступен_ответ",
 	"Organization Membership": f"{_права}.доступно_членство",
 	"Course Allocation": f"{_права}.доступно_назначение",
 }

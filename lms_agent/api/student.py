@@ -13,7 +13,6 @@ from frappe.utils import now_datetime
 
 from lms_agent.agent_learning import quiz
 from lms_agent.agent_learning.access import (
-	НЕ_ЗАЧИСЛЕН,
 	доступен_курс,
 	курсы_ученика,
 	политика_квиза_для_курса,
@@ -24,6 +23,7 @@ from lms_agent.api import контракт, текущий_пользовате�
 
 НЕЧЕГО_УЧИТЬ = "nothing_to_study"
 УРОК_НЕ_НАЙДЕН = "lesson_not_found"
+ЧУЖОЕ_ЗАНЯТИЕ = "not_your_session"
 
 
 @frappe.whitelist()
@@ -50,7 +50,7 @@ def list_my_courses() -> dict:
 	return {"courses": курсы}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @контракт
 def start_lesson(lesson: str | None = None) -> dict:
 	"""Начинает занятие: создаёт сессию и отдаёт всё нужное для урока."""
@@ -105,31 +105,33 @@ def start_lesson(lesson: str | None = None) -> dict:
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @контракт
 def report_checkpoint(session: str, note: str) -> dict:
 	"""Отметка о пройденном по ходу занятия. Телеметрия, не зачёт."""
-	занятие = frappe.get_doc("Agent Learning Session", session)
-	занятие.check_permission("read")
+	занятие = _своё_занятие(session)
 	занятие.записать_событие("Checkpoint Reported", note)
 	return {"recorded_at": now_datetime().isoformat()}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @контракт
 def request_quiz(session: str) -> dict:
 	"""Создаёт попытку и отдаёт первый вопрос."""
-	занятие = frappe.get_doc("Agent Learning Session", session)
-	занятие.check_permission("read")
+	_своё_занятие(session)
 	return quiz.начать_попытку(session)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @контракт
 def submit_answer(attempt: str, question: str, answer: str) -> dict:
 	"""Принимает ответ, возвращает вердикт и следующий вопрос."""
 	попытка = frappe.get_doc("Agent Quiz Attempt", attempt)
-	попытка.check_permission("read")
+	if попытка.student != текущий_пользователь():
+		# Права на чтение мало: занятия и попытки своих людей читает ещё и
+		# руководитель, а отвечать за ученика он не должен — иначе сожжёт
+		# ему попытку или провалит квиз за него.
+		raise Отказ(ЧУЖОЕ_ЗАНЯТИЕ, "Это чужая попытка", attempt=attempt)
 	return quiz.принять_ответ(attempt, question, answer)
 
 
@@ -161,6 +163,14 @@ def get_my_progress() -> dict:
 
 
 # --- вспомогательное ---
+
+
+def _своё_занятие(session: str):
+	"""Занятие текущего ученика. Чужое отклоняется до всякого действия."""
+	занятие = frappe.get_doc("Agent Learning Session", session)
+	if занятие.student != текущий_пользователь():
+		raise Отказ(ЧУЖОЕ_ЗАНЯТИЕ, "Это чужое занятие", session=session)
+	return занятие
 
 
 def _курс_урока(lesson: str) -> str:

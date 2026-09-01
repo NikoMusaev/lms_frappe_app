@@ -8,10 +8,13 @@
 для прямого обращения по имени записи, — поэтому работает одинаково в браузере
 и в MCP: оба канала ходят от имени пользователя.
 
-**Источник правды о принадлежности — `Organization Membership`**, а не
-`User Permission`. Спека предлагала второе, но членство у нас уже есть, и
-`User Permission` стал бы второй копией того же факта: две записи, которые
-рано или поздно разъедутся, и тогда непонятно, какая правдива.
+**Источник правды о принадлежности — `Organization Membership`**: одна запись
+об одном факте. `User Permission` стал бы её второй копией, а две копии
+разъезжаются молча.
+
+**Запись в эти DocType идёт только через whitelisted-методы.** Колбэки
+отказывают в любом праве, кроме чтения: у роли ученика в схеме остаётся один
+`read`, и прямое обращение к `/api/resource/...` записать ничего не может.
 """
 
 from __future__ import annotations
@@ -20,6 +23,22 @@ import frappe
 
 ВСЕВИДЯЩИЕ_РОЛИ = frozenset({"System Manager", "Administrator", "Agent Service"})
 РОЛИ_МЕНЕДЖЕРА = ("Manager", "Org Admin")
+
+#: Права, которые вообще может получить обычный пользователь. Всё остальное —
+#: запись, создание, удаление, отправка, шаринг — только у привилегированных
+#: ролей: любое изменение проходит через whitelisted-методы, а не напрямую.
+ЧИТАЮЩИЕ_ПРАВА = frozenset({"read", "select", "report", "export", "print"})
+
+
+def _только_чтение(ptype: str, user: str) -> bool:
+	"""Прямая запись запрещена всем, кроме привилегированных ролей.
+
+	`Why:` роль ученика имеет доступ к DocType, а Frappe раздаёт права по
+	схеме — без этой проверки ученик правит собственную попытку квиза через
+	`/api/resource/...` и выставляет себе зачёт, минуя сверку. Проверено
+	эксплуатацией: PUT со `score` проходил и записывался.
+	"""
+	return ptype in ЧИТАЮЩИЕ_ПРАВА or видит_всё(user)
 
 
 def видит_всё(user: str) -> bool:
@@ -104,6 +123,8 @@ def доступно_занятие(doc, ptype: str = "read", user: str | None =
 	по прямому обращению по имени записи — а именно так его и попробуют взять.
 	"""
 	user = user or frappe.session.user
+	if not _только_чтение(ptype, user):
+		return False
 	if видит_всё(user) or doc.student == user:
 		return True
 	организации = организации_менеджера(user)
@@ -119,6 +140,10 @@ def доступно_занятие(doc, ptype: str = "read", user: str | None =
 
 def доступно_членство(doc, ptype: str = "read", user: str | None = None) -> bool:
 	user = user or frappe.session.user
+	if not _только_чтение(ptype, user):
+		# Иначе ученик вписывает себя в любую организацию: `doc.user == user`
+		# выполняется, а хук выдачи зачислений сразу открывает ему её курсы.
+		return False
 	if видит_всё(user) or doc.user == user:
 		return True
 	return doc.organization in организации_менеджера(user)
@@ -130,6 +155,9 @@ def доступно_назначение(doc, ptype: str = "read", user: str | 
 	)
 
 	user = user or frappe.session.user
+	if not _только_чтение(ptype, user):
+		# Иначе рядовой участник правит дедлайны и состав адресатов.
+		return False
 	return видит_всё(user) or doc.organization in организации_пользователя(user)
 
 
@@ -152,3 +180,80 @@ def доступно_событие(doc, ptype: str = "read", user: str | None =
 		"Agent Learning Session", doc.session, ["name", "student"], as_dict=True
 	)
 	return bool(занятие) and доступно_занятие(занятие, ptype, user)
+
+
+def условие_попытки(user: str | None = None) -> str:
+	"""`Agent Quiz Attempt`: свои попытки, менеджеру — попытки его людей."""
+	user = user or frappe.session.user
+	if видит_всё(user):
+		return ""
+	свои = f"`tabAgent Quiz Attempt`.`student` = {frappe.db.escape(user)}"
+	организации = организации_менеджера(user)
+	if not организации:
+		return свои
+	подзапрос = (
+		"select user from `tabOrganization Membership` "
+		f"where organization in ({_список(организации)})"
+	)
+	return f"({свои} or `tabAgent Quiz Attempt`.`student` in ({подзапрос}))"
+
+
+def доступна_попытка(doc, ptype: str = "read", user: str | None = None) -> bool:
+	"""Права на конкретную попытку.
+
+	`Why:` без этого `check_permission("read")` проходил у любого ученика на
+	любую попытку — можно было отвечать в чужую и закрывать её за человека.
+	"""
+	user = user or frappe.session.user
+	if not _только_чтение(ptype, user):
+		return False
+	if видит_всё(user) or doc.student == user:
+		return True
+	организации = организации_менеджера(user)
+	return bool(организации) and bool(
+		frappe.db.exists(
+			"Organization Membership",
+			{"user": doc.student, "organization": ("in", организации)},
+		)
+	)
+
+
+def условие_ответа(user: str | None = None) -> str:
+	"""`Agent Quiz Answer`: ответы тех попыток, которые пользователю видны."""
+	user = user or frappe.session.user
+	if видит_всё(user):
+		return ""
+	видимые = f"select name from `tabAgent Quiz Attempt` where {условие_попытки(user)}"
+	return f"`tabAgent Quiz Answer`.`attempt` in ({видимые})"
+
+
+def доступен_ответ(doc, ptype: str = "read", user: str | None = None) -> bool:
+	user = user or frappe.session.user
+	if not _только_чтение(ptype, user):
+		return False
+	if видит_всё(user):
+		return True
+	попытка = frappe.db.get_value(
+		"Agent Quiz Attempt", doc.attempt, ["name", "student"], as_dict=True
+	)
+	return bool(попытка) and доступна_попытка(попытка, ptype, user)
+
+
+def свои_организации_пересекаются(менеджер: str, ученик: str) -> bool:
+	"""Состоит ли ученик в организации, которой управляет вызывающий.
+
+	Нужна явной проверкой в методах отчётности: `frappe.get_all` — это
+	`get_list(ignore_permissions=True)`, и `permission_query_conditions` к нему
+	не применяются **никогда**. Изоляция, построенная только на хуках, в этих
+	методах не работала — проверено эксплуатацией.
+	"""
+	if видит_всё(менеджер):
+		return True
+	организации = организации_менеджера(менеджер)
+	if not организации:
+		return False
+	return bool(
+		frappe.db.exists(
+			"Organization Membership", {"user": ученик, "organization": ("in", организации)}
+		)
+	)

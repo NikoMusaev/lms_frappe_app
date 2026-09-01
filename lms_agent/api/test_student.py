@@ -167,7 +167,11 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 
 	# --- чужое ---
 
-	def test_чужое_занятие_отклоняется_правами_frappe(self):
+	def test_чужое_занятие_отклоняется_машинным_кодом(self):
+		# Отказ, а не исключение прав: агенту нужен код, по которому он
+		# объяснит ученику происходящее. Проверка идёт по принадлежности
+		# занятия, а не по праву чтения — читать чужое занятие вправе ещё и
+		# руководитель, но действовать в нём он не должен.
 		frappe.set_user("Administrator")
 		чужой = создать_ученика(f"other-{frappe.generate_hash(length=6)}@example.com")
 		чужое = frappe.get_doc(
@@ -175,8 +179,10 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 		frappe.set_user(self.ученик)
 
-		with self.assertRaises(frappe.PermissionError):
-			student.report_checkpoint(чужое.name, "чужой урок")
+		ответ = student.report_checkpoint(чужое.name, "чужой урок")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
 
 	# --- сводка ---
 

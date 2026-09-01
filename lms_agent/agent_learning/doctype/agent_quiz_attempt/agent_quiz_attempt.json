@@ -28,7 +28,7 @@
    "fieldname": "session",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "\u0417\u0430\u043d\u044f\u0442\u0438\u0435",
+   "label": "Занятие",
    "options": "Agent Learning Session",
    "read_only": 1,
    "reqd": 1
@@ -37,7 +37,7 @@
    "fieldname": "student",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "\u0423\u0447\u0435\u043d\u0438\u043a",
+   "label": "Ученик",
    "options": "User",
    "read_only": 1,
    "reqd": 1
@@ -45,7 +45,7 @@
   {
    "fieldname": "quiz",
    "fieldtype": "Link",
-   "label": "\u041a\u0432\u0438\u0437",
+   "label": "Квиз",
    "options": "LMS Quiz",
    "read_only": 1,
    "reqd": 1
@@ -53,41 +53,41 @@
   {
    "fieldname": "lesson",
    "fieldtype": "Link",
-   "label": "\u0423\u0440\u043e\u043a",
+   "label": "Урок",
    "options": "Course Lesson",
    "read_only": 1
   },
   {
    "fieldname": "course",
    "fieldtype": "Link",
-   "label": "\u041a\u0443\u0440\u0441",
+   "label": "Курс",
    "options": "LMS Course",
    "read_only": 1
   },
   {
    "fieldname": "attempt_number",
    "fieldtype": "Int",
-   "label": "\u041d\u043e\u043c\u0435\u0440 \u043f\u043e\u043f\u044b\u0442\u043a\u0438",
+   "label": "Номер попытки",
    "read_only": 1
   },
   {
    "fieldname": "sb_result",
    "fieldtype": "Section Break",
-   "label": "\u0418\u0442\u043e\u0433"
+   "label": "Итог"
   },
   {
    "default": "In Progress",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "\u0421\u0442\u0430\u0442\u0443\u0441",
+   "label": "Статус",
    "options": "In Progress\nPassed\nFailed\nAbandoned",
    "reqd": 1
   },
   {
    "fieldname": "score",
    "fieldtype": "Float",
-   "label": "\u0414\u043e\u043b\u044f \u0432\u0435\u0440\u043d\u044b\u0445",
+   "label": "Доля верных",
    "precision": "3",
    "read_only": 1
   },
@@ -95,32 +95,32 @@
    "default": "0",
    "fieldname": "passed",
    "fieldtype": "Check",
-   "label": "\u0417\u0430\u0447\u0442\u0435\u043d\u043e",
+   "label": "Зачтено",
    "read_only": 1
   },
   {
-   "description": "\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u0430\u044f \u0437\u0430\u043f\u0438\u0441\u044c Frappe Learning \u2014 \u043f\u043e \u043d\u0435\u0439 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 \u0432\u0438\u0434\u0435\u043d \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435",
+   "description": "Стандартная запись Frappe Learning — по ней результат виден в браузере",
    "fieldname": "submission",
    "fieldtype": "Link",
-   "label": "\u0417\u0430\u043f\u0438\u0441\u044c \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0430",
+   "label": "Запись результата",
    "options": "LMS Quiz Submission",
    "read_only": 1
   },
   {
    "fieldname": "sb_time",
    "fieldtype": "Section Break",
-   "label": "\u0412\u0440\u0435\u043c\u044f"
+   "label": "Время"
   },
   {
    "fieldname": "started_at",
    "fieldtype": "Datetime",
-   "label": "\u041d\u0430\u0447\u0430\u0442\u0430",
+   "label": "Начата",
    "read_only": 1
   },
   {
    "fieldname": "finished_at",
    "fieldtype": "Datetime",
-   "label": "\u0417\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0430",
+   "label": "Завершена",
    "read_only": 1
   }
  ],
@@ -158,16 +158,9 @@
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
    "role": "LMS Student",
-   "share": 1,
-   "write": 1
+   "read": 1,
+   "report": 1
   }
  ],
  "row_format": "Dynamic",
