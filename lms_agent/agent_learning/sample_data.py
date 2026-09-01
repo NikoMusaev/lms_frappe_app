@@ -34,8 +34,13 @@ def создать_урок(название: str = "Урок") -> str:
 
 
 def создать_ученика(почта: str) -> str:
-	"""Пользователь с ролью ученика."""
-	if not frappe.db.exists("User", почта):
+	"""Пользователь с ролью ученика.
+
+	`cache=False` обязателен: тесты откатывают транзакцию, а кеш документов
+	переживает откат — проверка отвечала «есть», пользователь не создавался, и
+	следующий тест падал на несуществующей ссылке.
+	"""
+	if not frappe.db.exists("User", почта, cache=False):
 		user = frappe.get_doc(
 			{
 				"doctype": "User",
@@ -50,7 +55,7 @@ def создать_ученика(почта: str) -> str:
 
 def создать_организацию(название: str, **поля) -> str:
 	"""Организация с политикой по умолчанию."""
-	if frappe.db.exists("Learning Organization", название):
+	if frappe.db.exists("Learning Organization", название, cache=False):
 		return название
 	return frappe.get_doc(
 		{"doctype": "Learning Organization", "organization_name": название, **поля}
@@ -171,3 +176,24 @@ def зачислить(ученик: str, lesson: str) -> str:
 			}
 		).insert(ignore_permissions=True)
 	return курс
+
+
+def политика_по_умолчанию() -> None:
+	"""Возвращает общие настройки к значениям, на которые опираются тесты.
+
+	`Why:` настройки — глобальный синглтон, читаемый через кеш документов на
+	весь процесс. Первый же тест, изменивший их, ронял бы проверки в других
+	файлах, и связь была бы неочевидной.
+	"""
+	настройки = frappe.get_doc("Agent Learning Settings")
+	настройки.update(
+		{
+			"quiz_required": 1,
+			"pass_threshold": 0.8,
+			"max_attempts": 3,
+			"retry_delay_hours": 1,
+			"session_timeout_hours": 6,
+		}
+	)
+	настройки.save(ignore_permissions=True)
+	frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")

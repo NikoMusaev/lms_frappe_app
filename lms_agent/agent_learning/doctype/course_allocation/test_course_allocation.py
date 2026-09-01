@@ -11,6 +11,7 @@ from lms_agent.agent_learning.doctype.learning_organization.learning_organizatio
 	политика_квиза,
 )
 from lms_agent.agent_learning.sample_data import (
+	политика_по_умолчанию,
 	добавить_в_организацию,
 	создать_курс,
 	создать_организацию,
@@ -25,6 +26,7 @@ class IntegrationTestCourseAllocation(IntegrationTestCase):
 	"""Организации, членство, назначение курсов и политика квиза."""
 
 	def setUp(self):
+		политика_по_умолчанию()
 		self.организация = создать_организацию(f"Компания {frappe.generate_hash(length=6)}")
 		self.курс = создать_курс(f"Курс {frappe.generate_hash(length=6)}")
 		создать_ученика(ПЕРВЫЙ)
