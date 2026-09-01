@@ -46,3 +46,37 @@ def создать_ученика(почта: str) -> str:
 		).insert(ignore_permissions=True)
 		user.add_roles("LMS Student")
 	return почта
+
+
+def создать_организацию(название: str, **поля) -> str:
+	"""Организация с политикой по умолчанию."""
+	if frappe.db.exists("Learning Organization", название):
+		return название
+	return frappe.get_doc(
+		{"doctype": "Learning Organization", "organization_name": название, **поля}
+	).insert(ignore_permissions=True).name
+
+
+def добавить_в_организацию(user: str, organization: str, role: str = "Member") -> str:
+	return frappe.get_doc(
+		{
+			"doctype": "Organization Membership",
+			"user": user,
+			"organization": organization,
+			"role": role,
+		}
+	).insert(ignore_permissions=True).name
+
+
+def создать_курс(название: str) -> str:
+	"""Курс без глав — когда урок не нужен, а курс нужен."""
+	return frappe.get_doc(
+		{
+			"doctype": "LMS Course",
+			"title": название,
+			"short_introduction": "Курс для тестов",
+			"description": "<p>Курс для тестов</p>",
+			"published": 0,
+			"instructors": [{"instructor": "Administrator"}],
+		}
+	).insert(ignore_permissions=True).name

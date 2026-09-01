@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-09-01 22:33:25.176936",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "organization",
+  "course",
+  "audience",
+  "members",
+  "sb_terms",
+  "deadline",
+  "mandatory"
+ ],
+ "fields": [
+  {
+   "fieldname": "organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u044f",
+   "options": "Learning Organization",
+   "reqd": 1
+  },
+  {
+   "fieldname": "course",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "\u041a\u0443\u0440\u0441",
+   "options": "LMS Course",
+   "reqd": 1
+  },
+  {
+   "default": "Whole Organization",
+   "fieldname": "audience",
+   "fieldtype": "Select",
+   "label": "\u041a\u043e\u043c\u0443",
+   "options": "Whole Organization\nSelected Members",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.audience=='Selected Members'",
+   "fieldname": "members",
+   "fieldtype": "Table MultiSelect",
+   "label": "\u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438",
+   "options": "Course Allocation Member"
+  },
+  {
+   "fieldname": "sb_terms",
+   "fieldtype": "Section Break",
+   "label": "\u0423\u0441\u043b\u043e\u0432\u0438\u044f"
+  },
+  {
+   "fieldname": "deadline",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "\u0414\u0435\u0434\u043b\u0430\u0439\u043d"
+  },
+  {
+   "default": "1",
+   "fieldname": "mandatory",
+   "fieldtype": "Check",
+   "label": "\u041e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-01 22:33:25.176936",
+ "modified_by": "Administrator",
+ "module": "Agent Learning",
+ "name": "Course Allocation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Moderator",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "LMS Student",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "course",
+ "track_changes": 1
+}
