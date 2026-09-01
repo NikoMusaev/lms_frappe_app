@@ -17,6 +17,7 @@ class LearningOrganization(Document):
 	def validate(self):
 		if self.pass_threshold and not 0 < self.pass_threshold <= 1:
 			frappe.throw(frappe._("Порог прохождения задаётся долей от 0 до 1"))
+		# Ноль здесь читается как «наследовать», см. `политика_квиза`.
 		if self.max_attempts is not None and self.max_attempts < 0:
 			frappe.throw(frappe._("Число попыток не может быть отрицательным"))
 		self.email_domains = _нормализовать_домены(self.email_domains)
@@ -59,8 +60,10 @@ def политика_квиза(organization: str | None = None) -> dict:
 	политика = {
 		"quiz_required": bool(настройки.quiz_required),
 		"pass_threshold": настройки.pass_threshold or 0.8,
-		"max_attempts": настройки.max_attempts or 3,
-		"retry_delay_hours": настройки.retry_delay_hours or 1,
+		"max_attempts": настройки.max_attempts if настройки.max_attempts is not None else 3,
+		"retry_delay_hours": настройки.retry_delay_hours
+		if настройки.retry_delay_hours is not None
+		else 1,
 	}
 	if not organization:
 		return политика
@@ -69,6 +72,11 @@ def политика_квиза(organization: str | None = None) -> dict:
 	if организация.quiz_required:
 		политика["quiz_required"] = организация.quiz_required == "Yes"
 	for поле in ПОЛЯ_ПОЛИТИКИ:
+		# Ноль у организации означает «как в общих настройках», а не «без
+		# лимита». Frappe отдаёт незаполненный Int нулём, и отличить «не
+		# трогали» от «выставили ноль» здесь невозможно; выбрано то значение,
+		# которое безопаснее при недосмотре — унаследовать ограничение, а не
+		# снять его. «Без лимита» задаётся в общих настройках.
 		if значение := организация.get(поле):
 			политика[поле] = значение
 	return политика

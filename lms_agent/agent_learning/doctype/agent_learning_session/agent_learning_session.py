@@ -113,4 +113,26 @@ def закрыть_брошенные_занятия() -> int:
 		занятие.status = "Abandoned"
 		занятие.save(ignore_permissions=True)
 		занятие.записать_событие("Session Abandoned", "закрыто по бездействию")
+		_закрыть_попытки(name)
 	return len(просроченные)
+
+
+def _закрыть_попытки(session: str) -> None:
+	"""Помечает незавершённые попытки брошенного занятия.
+
+	`Why:` попытка, оставшаяся открытой навсегда, занимает место в лимите и
+	не даёт начать новую — а ученик уже ушёл. Закрываем вместе с занятием,
+	чтобы состояние не расходилось.
+	"""
+	открытые = frappe.get_all(
+		"Agent Quiz Attempt",
+		filters={"session": session, "status": "In Progress"},
+		pluck="name",
+	)
+	for имя in открытые:
+		frappe.db.set_value(
+			"Agent Quiz Attempt",
+			имя,
+			{"status": "Abandoned", "finished_at": now_datetime()},
+			update_modified=False,
+		)
