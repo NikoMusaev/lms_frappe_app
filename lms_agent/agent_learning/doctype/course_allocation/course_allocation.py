@@ -51,11 +51,7 @@ class CourseAllocation(Document):
 		"""Кому предназначено назначение."""
 		if self.audience == "Selected Members":
 			return [строка.user for строка in self.members]
-		return frappe.get_all(
-			"Organization Membership",
-			filters={"organization": self.organization, "role": ("in", ВСЕ_РОЛИ_УЧАСТНИКОВ)},
-			pluck="user",
-		)
+		return адресаты_назначения(self.name, self.organization, self.audience)
 
 	def выдать_зачисления(self, участники: list[str] | None = None) -> int:
 		"""Создаёт недостающие зачисления, возвращает число созданных.
@@ -84,6 +80,23 @@ class CourseAllocation(Document):
 			).insert(ignore_permissions=True)
 			создано += 1
 		return создано
+
+
+def адресаты_назначения(name: str, organization: str, audience: str) -> list[str]:
+	"""Кому предназначено назначение — по его полям, без загрузки документа.
+
+	`Why:` правило должно быть одно, но отчёту незачем поднимать документ с
+	дочерними таблицами на каждое назначение: он и так ходит по списку.
+	"""
+	if audience == "Selected Members":
+		return frappe.get_all(
+			"Course Allocation Member", filters={"parent": name}, pluck="user"
+		)
+	return frappe.get_all(
+		"Organization Membership",
+		filters={"organization": organization, "role": ("in", ВСЕ_РОЛИ_УЧАСТНИКОВ)},
+		pluck="user",
+	)
 
 
 def досрочные_назначения_организации(organization: str) -> list[str]:
