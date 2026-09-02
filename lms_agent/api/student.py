@@ -14,6 +14,7 @@ from frappe.utils import now_datetime
 from lms_agent.agent_learning import quiz
 from lms_agent.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
+	доступен_курс,
 	ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА,
 	каталог_для,
 	курсы_ученика,
@@ -89,6 +90,74 @@ def enroll(course: str) -> dict:
 		"title": frappe.db.get_value("LMS Course", course, "title"),
 		"first_lesson": _следующий_урок(ученик, course),
 	}
+
+
+@frappe.whitelist()
+@контракт
+def course_outline(course: str) -> dict:
+	"""Структура курса: главы, уроки и что из них пройдено.
+
+	`Why:` без этого агент видит только следующий незакрытый урок и не может
+	вернуться к пройденному — идентификатор взять неоткуда. «Повторим
+	прошлую тему перед экзаменом» было невыполнимо при живом доступе к
+	материалу.
+	"""
+	ученик = текущий_пользователь()
+	можно, причина = доступен_курс(ученик, course)
+	if not можно:
+		raise Отказ(причина, "Этот курс сейчас недоступен", course=course)
+
+	пройдены = _пройденные(ученик, course)
+	следующий = _следующий_урок(ученик, course)
+	# Порядок берётся тот же, что у остального кода: через ссылки глав и
+	# уроков, иначе структура разойдётся с тем, что считает «следующим уроком».
+	порядок = _уроки_курса(course)
+	названия = {
+		урок.name: урок.title
+		for урок in frappe.get_all(
+			"Course Lesson", filters={"name": ("in", порядок)}, fields=["name", "title"]
+		)
+	} if порядок else {}
+
+	главы = []
+	for глава in _главы_курса(course):
+		уроки_главы = [
+			урок
+			for урок in порядок
+			if frappe.db.get_value("Course Lesson", урок, "chapter") == глава["name"]
+		]
+		главы.append(
+			{
+				"title": глава["title"],
+				"lessons": [
+					{
+						"id": урок,
+						"title": названия.get(урок),
+						"completed": урок in пройдены,
+						"current": bool(следующий and следующий["id"] == урок),
+					}
+					for урок in уроки_главы
+				],
+			}
+		)
+	return {"course": course, "chapters": главы}
+
+
+def _главы_курса(курс: str) -> list[dict]:
+	"""Главы курса по порядку — тем же правилом, что и уроки."""
+	из_ссылок = frappe.get_all(
+		"Chapter Reference", filters={"parent": курс}, pluck="chapter", order_by="idx asc"
+	)
+	имена = из_ссылок or frappe.get_all(
+		"Course Chapter", filters={"course": курс}, pluck="name"
+	)
+	названия = {
+		глава.name: глава.title
+		for глава in frappe.get_all(
+			"Course Chapter", filters={"name": ("in", имена)}, fields=["name", "title"]
+		)
+	} if имена else {}
+	return [{"name": имя, "title": названия.get(имя)} for имя in имена]
 
 
 @frappe.whitelist(methods=["POST"])
@@ -311,13 +380,27 @@ def _выбрать_урок(ученик: str) -> str:
 
 
 def _уроки_курса(курс: str) -> list[str]:
+	"""Уроки курса в том порядке, в каком их показывает браузер.
+
+	`Why:` порядок глав и уроков Frappe Learning хранит в дочерних таблицах
+	`Chapter Reference` и `Lesson Reference`, а не в полях `course`/`chapter`:
+	у самих записей `idx` всегда ноль. Сортировка по нему давала случайный
+	порядок — а от него зависит, какой урок ученик получит следующим.
+
+	Прямые ссылки остаются запасным путём: курс, собранный импортом или
+	миграцией, может не иметь строк-ссылок, и терять его уроки нельзя.
+	"""
 	главы = frappe.get_all(
-		"Course Chapter", filters={"course": курс}, pluck="name", order_by="idx asc"
-	)
+		"Chapter Reference", filters={"parent": курс}, pluck="chapter", order_by="idx asc"
+	) or frappe.get_all("Course Chapter", filters={"course": курс}, pluck="name")
+
 	уроки = []
 	for глава in главы:
-		уроки += frappe.get_all(
-			"Course Lesson", filters={"chapter": глава}, pluck="name", order_by="idx asc"
+		из_ссылок = frappe.get_all(
+			"Lesson Reference", filters={"parent": глава}, pluck="lesson", order_by="idx asc"
+		)
+		уроки += из_ссылок or frappe.get_all(
+			"Course Lesson", filters={"chapter": глава}, pluck="name"
 		)
 	return уроки
 

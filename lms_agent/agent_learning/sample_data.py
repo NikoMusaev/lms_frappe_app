@@ -30,7 +30,27 @@ def создать_урок(название: str = "Урок") -> str:
 	lesson = frappe.get_doc(
 		{"doctype": "Course Lesson", "title": название, "chapter": chapter.name}
 	).insert(ignore_permissions=True)
+	# Ссылки главы и урока — то, чем Frappe Learning задаёт порядок. Без них
+	# тестовые курсы отличались бы от настоящих там, где это важнее всего.
+	привязать_главу(course.name, chapter.name)
+	привязать_урок(chapter.name, lesson.name)
 	return lesson.name
+
+
+def привязать_главу(course: str, chapter: str) -> None:
+	"""Добавляет главу в курс, задавая её место в порядке."""
+	курс = frappe.get_doc("LMS Course", course)
+	if not any(строка.chapter == chapter for строка in курс.chapters):
+		курс.append("chapters", {"chapter": chapter})
+		курс.save(ignore_permissions=True)
+
+
+def привязать_урок(chapter: str, lesson: str) -> None:
+	"""Добавляет урок в главу, задавая его место в порядке."""
+	глава = frappe.get_doc("Course Chapter", chapter)
+	if not any(строка.lesson == lesson for строка in глава.lessons):
+		глава.append("lessons", {"lesson": lesson})
+		глава.save(ignore_permissions=True)
 
 
 def создать_ученика(почта: str) -> str:
