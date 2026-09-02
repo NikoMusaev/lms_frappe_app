@@ -29,6 +29,8 @@ from lms_agent.api import контракт, текущий_пользовате�
 КВИЗ_УЖЕ_ЕСТЬ = "quiz_exists"
 КВИЗА_НЕТ = "quiz_missing"
 ВОПРОС_НЕ_НАЙДЕН = "question_not_found"
+УРОК_В_РАБОТЕ = "lesson_in_use"
+ГЛАВА_НЕ_ПУСТА = "chapter_not_empty"
 НЕВЕРНЫЙ_ВОПРОС = "invalid_question"
 
 
@@ -188,6 +190,103 @@ def update_lesson(lesson: str, title: str | None = None, body: str | None = None
 		документ.body = body
 	документ.save()
 	return {"id": документ.name, "title": документ.title}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def move_lesson(lesson: str, chapter: str | None = None, position: int | None = None) -> dict:
+	"""Переносит урок в другую главу или на другое место в своей.
+
+	`position` считается с единицы; без него урок встаёт в конец. Без
+	`chapter` меняется только место внутри текущей главы.
+
+	`Why:` без этого метода перестановка одного урока требовала передать
+	порядок всей главы целиком, а перенос между главами был невозможен вовсе
+	— ошибка в структуре чинилась пересборкой курса.
+	"""
+	_автор()
+	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
+	откуда = frappe.db.get_value("Course Lesson", lesson, "chapter")
+	куда = chapter or откуда
+	_должен_существовать("Course Chapter", куда, ГЛАВА_НЕ_НАЙДЕНА)
+
+	if куда != откуда:
+		structure.отвязать(откуда, "Course Chapter", lesson)
+		frappe.db.set_value("Course Lesson", lesson, "chapter", куда)
+		frappe.db.set_value(
+			"Course Lesson", lesson, "course", frappe.db.get_value("Course Chapter", куда, "course")
+		)
+		structure.привязать(куда, "Course Chapter", lesson)
+
+	порядок = [урок for урок in structure.уроки_главы(куда) if урок != lesson]
+	место = len(порядок) if position is None else max(0, min(int(position) - 1, len(порядок)))
+	порядок.insert(место, lesson)
+	structure.переставить(куда, "Course Chapter", порядок)
+
+	return {"id": lesson, "chapter": куда, "lessons": порядок}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def remove_lesson(lesson: str) -> dict:
+	"""Удаляет урок — пока по нему никто не занимался.
+
+	`Why:` собирая курс впервые, агент создаёт лишние уроки, и без удаления
+	они остаются в программе навсегда. Но урок, по которому есть прогресс или
+	попытки, не удаляется ни при каких условиях: стирание испортило бы
+	историю ученика, а курс от лишнего урока не рушится.
+
+	Отвязать вместо удаления нельзя: чтение структуры намеренно подбирает
+	уроки без строк-ссылок и показывает их в конце — иначе терялись бы курсы,
+	собранные импортом. Отвязанный урок вернулся бы в программу.
+
+	Требует роли `Moderator`: Frappe Learning не даёт `Course Creator` право
+	удалять уроки, хотя главу, квиз и директиву — даёт. Асимметрия чужая, но
+	обходить её через `ignore_permissions` нельзя: агент получил бы то, чего
+	не может тот же человек в браузере.
+	"""
+	_автор()
+	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
+	if следы := _следы_учеников(lesson):
+		raise Отказ(
+			УРОК_В_РАБОТЕ,
+			"По этому уроку уже занимались: его можно только переписать",
+			lesson=lesson,
+			**следы,
+		)
+
+	глава = frappe.db.get_value("Course Lesson", lesson, "chapter")
+	structure.отвязать(глава, "Course Chapter", lesson)
+	if квиз := quiz._квиз_урока(lesson):
+		frappe.delete_doc("LMS Quiz", квиз, ignore_permissions=True)
+	for директива in frappe.get_all("Agent Lesson Directive", filters={"lesson": lesson}, pluck="name"):
+		frappe.delete_doc("Agent Lesson Directive", директива, ignore_permissions=True)
+	frappe.delete_doc("Course Lesson", lesson)
+	return {"removed": lesson, "chapter": глава, "lessons": structure.уроки_главы(глава)}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def remove_chapter(chapter: str) -> dict:
+	"""Удаляет пустую главу.
+
+	Непустая отклоняется: уроки удаляются поштучно и с проверкой прогресса,
+	и обходить её каскадом нельзя.
+	"""
+	_автор()
+	_должен_существовать("Course Chapter", chapter, ГЛАВА_НЕ_НАЙДЕНА)
+	if уроки := structure.уроки_главы(chapter):
+		raise Отказ(
+			ГЛАВА_НЕ_ПУСТА,
+			"В главе есть уроки: удалите их по одному",
+			chapter=chapter,
+			lessons=уроки,
+		)
+
+	курс = frappe.db.get_value("Course Chapter", chapter, "course")
+	structure.отвязать(курс, "LMS Course", chapter)
+	frappe.delete_doc("Course Chapter", chapter)
+	return {"removed": chapter, "course": курс}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -501,6 +600,16 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 			}
 		)
 	return {"id": квиз, "questions": вопросы}
+
+
+def _следы_учеников(lesson: str) -> dict:
+	"""Чем занимались по уроку. Пусто — значит урок никто не открывал."""
+	следы = {
+		"progress": frappe.db.count("LMS Course Progress", {"lesson": lesson}),
+		"sessions": frappe.db.count("Agent Learning Session", {"lesson": lesson}),
+		"attempts": frappe.db.count("Agent Quiz Attempt", {"lesson": lesson}),
+	}
+	return {ключ: значение for ключ, значение in следы.items() if значение}
 
 
 def _как_словарь(вопрос) -> dict:

@@ -14,6 +14,7 @@ from frappe.tests import IntegrationTestCase
 
 from lms_agent.agent_learning.sample_data import создать_куратора, создать_ученика
 from lms_agent.agent_learning import quiz
+from lms_agent.agent_learning import structure
 from lms_agent.agent_learning.structure import уроки_главы
 from lms_agent.api import authoring
 
@@ -189,3 +190,84 @@ class IntegrationTestAuthoringEdits(IntegrationTestCase):
 
 		self.assertEqual(ответ["error"]["code"], "invalid_question")
 		self.assertEqual(frappe.db.get_value("LMS Question", вопрос, "question"), "Первый?")
+
+
+class IntegrationTestAuthoringStructure(IntegrationTestCase):
+	"""Перенос и удаление: чинят ошибку структуры, но не историю ученика."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		# Удаление уроков Frappe Learning разрешает только `Moderator`.
+		self.куратор = создать_куратора(f"mover-{суффикс}@example.com", роль="Moderator")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Структура {суффикс}", summary="к")["data"]["id"]
+		self.первая = authoring.add_chapter(course=self.курс, title="Первая")["data"]["id"]
+		self.вторая = authoring.add_chapter(course=self.курс, title="Вторая")["data"]["id"]
+		self.уроки = [
+			authoring.add_lesson(chapter=self.первая, title=б, body=f"# {б}")["data"]["id"]
+			for б in "ABC"
+		]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_урок_переставляется_внутри_главы(self):
+		authoring.move_lesson(lesson=self.уроки[2], position=1)
+
+		self.assertEqual(уроки_главы(self.первая), [self.уроки[2], self.уроки[0], self.уроки[1]])
+
+	def test_урок_переносится_в_другую_главу(self):
+		authoring.move_lesson(lesson=self.уроки[0], chapter=self.вторая)
+
+		self.assertEqual(уроки_главы(self.вторая), [self.уроки[0]])
+		self.assertNotIn(self.уроки[0], уроки_главы(self.первая))
+		# Поле курса переезжает вместе с уроком: иначе он останется числиться
+		# в прежнем курсе, а показываться в новом.
+		self.assertEqual(frappe.db.get_value("Course Lesson", self.уроки[0], "chapter"), self.вторая)
+
+	def test_лишний_урок_удаляется_целиком(self):
+		authoring.add_quiz(
+			lesson=self.уроки[1],
+			questions=[{"text": "Вопрос?", "options": [{"text": "a", "correct": True}, {"text": "b"}]}],
+		)
+		квиз = quiz._квиз_урока(self.уроки[1])
+
+		authoring.remove_lesson(lesson=self.уроки[1])
+
+		self.assertNotIn(self.уроки[1], уроки_главы(self.первая))
+		self.assertFalse(frappe.db.exists("Course Lesson", self.уроки[1]))
+		self.assertFalse(frappe.db.exists("LMS Quiz", квиз), "квиз остался без урока")
+
+	def test_урок_с_прогрессом_не_удаляется(self):
+		"""`Why:` стирание урока, по которому занимались, испортило бы историю
+		зачётов; курс от лишнего урока не рушится, а история — да."""
+		ученик = создать_ученика(f"pupil-{frappe.generate_hash(length=6)}@example.com")
+		frappe.get_doc(
+			{
+				"doctype": "LMS Course Progress",
+				"lesson": self.уроки[0],
+				"member": ученик,
+				"course": self.курс,
+				"status": "Complete",
+			}
+		).insert(ignore_permissions=True)
+
+		ответ = authoring.remove_lesson(lesson=self.уроки[0])
+
+		self.assertEqual(ответ["error"]["code"], "lesson_in_use")
+		self.assertEqual(ответ["error"]["progress"], 1)
+		self.assertTrue(frappe.db.exists("Course Lesson", self.уроки[0]))
+
+	def test_непустая_глава_не_удаляется(self):
+		ответ = authoring.remove_chapter(chapter=self.первая)
+
+		self.assertEqual(ответ["error"]["code"], "chapter_not_empty")
+		self.assertTrue(frappe.db.exists("Course Chapter", self.первая))
+
+	def test_пустая_глава_удаляется(self):
+		authoring.remove_chapter(chapter=self.вторая)
+
+		self.assertFalse(frappe.db.exists("Course Chapter", self.вторая))
+		self.assertNotIn(
+			self.вторая, [глава["name"] for глава in structure.главы_курса(self.курс)]
+		)

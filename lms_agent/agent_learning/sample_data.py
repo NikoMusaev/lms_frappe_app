@@ -73,8 +73,12 @@ def создать_ученика(почта: str) -> str:
 	return почта
 
 
-def создать_куратора(почта: str) -> str:
-	"""Пользователь с правом собирать курсы."""
+def создать_куратора(почта: str, роль: str = "Course Creator") -> str:
+	"""Пользователь с правом собирать курсы.
+
+	Роль задаётся: удаление уроков Frappe Learning разрешает только
+	`Moderator`, и тесты на него заводят куратора с этой ролью.
+	"""
 	if not frappe.db.exists("User", почта, cache=False):
 		user = frappe.get_doc(
 			{
@@ -84,7 +88,7 @@ def создать_куратора(почта: str) -> str:
 				"send_welcome_email": 0,
 			}
 		).insert(ignore_permissions=True)
-		user.add_roles("Course Creator")
+		user.add_roles(роль)
 	return почта
 
 
