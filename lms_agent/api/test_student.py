@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_agent.agent_learning.sample_data import (
+	создать_занятие,
 	зачислить,
 	добавить_в_организацию,
 	создать_вопрос,
@@ -260,3 +261,87 @@ class IntegrationTestLongLesson(IntegrationTestCase):
 		self.assertEqual(
 			данные["content"]["segment_index"], данные["content"]["total_segments"]
 		)
+
+
+class IntegrationTestCompleteLesson(IntegrationTestCase):
+	"""Урок без квиза должен закрываться, урок с квизом — только квизом."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"cl-{суффикс}@example.com")
+		self.теория = создать_урок(f"Теория {суффикс}")
+		self.курс = зачислить(self.ученик, self.теория)
+		# Второй урок того же курса, с квизом.
+		глава = frappe.db.get_value("Course Lesson", self.теория, "chapter")
+		self.практика = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": "Практика", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		вопрос = создать_вопрос("Два плюс два?", варианты=[("4", True), ("5", False)])
+		создать_квиз(self.практика, [вопрос])
+		frappe.set_user(self.ученик)
+
+	def test_урок_без_квиза_закрывается_и_двигает_прогресс(self):
+		"""Иначе ученик застревает на первом же теоретическом уроке."""
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+
+		ответ = student.complete_lesson(занятие)["data"]
+
+		self.assertEqual(ответ["session_status"], "Completed")
+		self.assertTrue(
+			frappe.db.exists(
+				"LMS Course Progress",
+				{"member": self.ученик, "lesson": self.теория, "status": "Complete"},
+			)
+		)
+
+	def test_после_закрытия_приходит_следующий_урок(self):
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+		student.complete_lesson(занятие)
+
+		следующий = student.start_lesson()["data"]
+
+		self.assertEqual(следующий["lesson"]["id"], self.практика)
+
+	def test_урок_с_обязательным_квизом_так_не_закрыть(self):
+		"""Несущее ограничение: иначе метод стал бы обходом проверки."""
+		занятие = student.start_lesson(lesson=self.практика)["data"]["session"]
+
+		ответ = student.complete_lesson(занятие)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.НУЖЕН_КВИЗ)
+		self.assertFalse(
+			frappe.db.exists(
+				"LMS Course Progress",
+				{"member": self.ученик, "lesson": self.практика, "status": "Complete"},
+			)
+		)
+
+	def test_курс_проходится_целиком(self):
+		# Критерий готовности: оба урока закрыты, курс пройден.
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+		student.complete_lesson(занятие)
+
+		практика = student.start_lesson()["data"]
+		квиз = student.request_quiz(практика["session"])["data"]
+		student.submit_answer(квиз["attempt"], квиз["question"]["id"], "1")
+
+		курс = next(
+			к for к in student.list_my_courses()["data"]["courses"] if к["id"] == self.курс
+		)
+		self.assertEqual(курс["progress"]["lessons_completed"], 2)
+		self.assertEqual(курс["progress"]["lessons_total"], 2)
+		self.assertIsNone(курс["next_lesson"])
+
+	def test_чужое_занятие_закрыть_нельзя(self):
+		frappe.set_user("Administrator")
+		чужой = создать_ученика(f"cl-other-{frappe.generate_hash(length=6)}@example.com")
+		зачислить(чужой, self.теория)
+		чужое = создать_занятие(чужой, self.теория)
+		frappe.set_user(self.ученик)
+
+		ответ = student.complete_lesson(чужое)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)

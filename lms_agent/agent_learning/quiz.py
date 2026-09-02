@@ -148,6 +148,19 @@ def _открытая_попытка(session: str) -> str | None:
 	return открытые[0] if открытые else None
 
 
+def требуется_квиз(lesson: str, student: str, course: str) -> bool:
+	"""Нужно ли сдавать квиз, чтобы урок считался пройденным.
+
+	`Why:` без этого правила закрытие урока стало бы способом обойти
+	проверку — агент вызвал бы его вместо квиза, и серверный зачёт, на
+	котором держится вся схема, потерял бы смысл.
+	"""
+	квиз = _квиз_урока(lesson)
+	if not квиз or not _вопросы_квиза(квиз):
+		return False
+	return bool(политика_квиза_для_курса(student, course)["quiz_required"])
+
+
 def _квиз_урока(lesson: str) -> str | None:
 	"""Квиз, привязанный к уроку.
 
@@ -395,7 +408,7 @@ def _завершить(попытка) -> dict:
 
 	занятие = frappe.get_doc("Agent Learning Session", попытка.session)
 	if зачтено:
-		_отметить_урок_пройденным(попытка)
+		отметить_урок_пройденным(попытка)
 		if занятие.status in ("In Progress", "Awaiting Quiz"):
 			занятие.status = "Completed"
 			занятие.save(ignore_permissions=True)
@@ -462,10 +475,14 @@ def _записать_итог_frappe(
 	return итог.name
 
 
-def _отметить_урок_пройденным(попытка) -> None:
-	"""Пишет `LMS Course Progress` — тот же прогресс, что видит браузер."""
+def отметить_урок_пройденным(запись) -> None:
+	"""Пишет `LMS Course Progress` — тот же прогресс, что видит браузер.
+
+	Принимает и попытку квиза, и занятие: у обеих есть ученик, урок и курс, а
+	прогресс от способа закрытия урока не зависит.
+	"""
 	уже = frappe.db.exists(
-		"LMS Course Progress", {"member": попытка.student, "lesson": попытка.lesson}
+		"LMS Course Progress", {"member": запись.student, "lesson": запись.lesson}
 	)
 	if уже:
 		frappe.db.set_value("LMS Course Progress", уже, "status", "Complete")
@@ -473,10 +490,10 @@ def _отметить_урок_пройденным(попытка) -> None:
 	frappe.get_doc(
 		{
 			"doctype": "LMS Course Progress",
-			"member": попытка.student,
-			"lesson": попытка.lesson,
-			"chapter": frappe.db.get_value("Course Lesson", попытка.lesson, "chapter"),
-			"course": попытка.course,
+			"member": запись.student,
+			"lesson": запись.lesson,
+			"chapter": frappe.db.get_value("Course Lesson", запись.lesson, "chapter"),
+			"course": запись.course,
 			"status": "Complete",
 		}
 	).insert(ignore_permissions=True)

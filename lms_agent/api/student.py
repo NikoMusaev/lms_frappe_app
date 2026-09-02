@@ -23,6 +23,7 @@ from lms_agent.agent_learning.normalizer import нормализовать_ур�
 from lms_agent.api import контракт, текущий_пользователь
 
 НЕЧЕГО_УЧИТЬ = "nothing_to_study"
+НУЖЕН_КВИЗ = "quiz_required"
 УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ЧУЖОЕ_ЗАНЯТИЕ = "not_your_session"
 
@@ -133,6 +134,36 @@ def report_checkpoint(session: str, note: str) -> dict:
 	занятие = _своё_занятие(session)
 	занятие.записать_событие("Checkpoint Reported", note)
 	return {"recorded_at": now_datetime().isoformat()}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def complete_lesson(session: str) -> dict:
+	"""Отмечает урок пройденным, когда проверять нечего.
+
+	Для урока с обязательным квизом отказывает: иначе этот метод стал бы
+	обходом проверки. Зачёт по квизу ставит только сервер, и обойти его
+	вызовом нельзя.
+	"""
+	занятие = _своё_занятие(session)
+	if quiz.требуется_квиз(занятие.lesson, занятие.student, занятие.course):
+		raise Отказ(
+			НУЖЕН_КВИЗ,
+			"Этот урок закрывается только сдачей квиза",
+			session=session,
+		)
+
+	quiz.отметить_урок_пройденным(занятие)
+	if занятие.status in ("In Progress", "Awaiting Quiz"):
+		занятие.status = "Completed"
+		занятие.save(ignore_permissions=True)
+	занятие.записать_событие("Verdict Returned", "урок закрыт без квиза")
+
+	return {
+		"lesson": занятие.lesson,
+		"session_status": занятие.status,
+		"next_lesson": _следующий_урок(занятие.student, занятие.course),
+	}
 
 
 @frappe.whitelist(methods=["POST"])
