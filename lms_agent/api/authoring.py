@@ -520,6 +520,35 @@ def course_draft(course: str) -> dict:
 	}
 
 
+@frappe.whitelist()
+@контракт
+def get_lesson(lesson: str) -> dict:
+	"""Урок целиком: материал, действующая директива и квиз с эталонами.
+
+	`Why:` материал попадает на платформу вызовом `add_lesson`, а `course_draft`
+	показывает лишь признак `has_body` — сверить, что на платформе лежит ровно
+	утверждённый текст, было нечем, кроме как открыть урок глазами на сайте.
+
+	Отдельный инструмент, а не поле черновика: полные тексты всех уроков в
+	одном ответе — десятки килобайт на каждый вызов, а сверяют поурочно.
+	"""
+	_автор()
+	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
+	сведения = frappe.db.get_value(
+		"Course Lesson", lesson, ["title", "body", "chapter", "course"], as_dict=True
+	)
+	квиз = quiz._квиз_урока(lesson)
+	return {
+		"id": lesson,
+		"title": сведения.title,
+		"chapter": сведения.chapter,
+		"course": сведения.course,
+		"body": сведения.body,
+		"directive": _действующая_директива(lesson),
+		"quiz": _вопросы_с_эталонами(квиз) if квиз else None,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 @контракт
 def publish_course(course: str) -> dict:
@@ -600,6 +629,36 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 			}
 		)
 	return {"id": квиз, "questions": вопросы}
+
+
+def _действующая_директива(lesson: str) -> dict | None:
+	"""Директива, которую сейчас получает агент ученика, со своей версией."""
+	записи = frappe.get_all(
+		"Agent Lesson Directive",
+		filters={"lesson": lesson, "is_active": 1},
+		fields=[
+			"name",
+			"version",
+			"objectives",
+			"teaching_directive",
+			"probing_questions",
+			"common_misconceptions",
+			"success_criteria",
+		],
+		limit=1,
+	)
+	if not записи:
+		return None
+	запись = записи[0]
+	return {
+		"id": запись.name,
+		"version": запись.version,
+		"objectives": запись.objectives,
+		"teaching_directive": запись.teaching_directive,
+		"probing_questions": запись.probing_questions,
+		"common_misconceptions": запись.common_misconceptions,
+		"success_criteria": запись.success_criteria,
+	}
 
 
 def _следы_учеников(lesson: str) -> dict:
