@@ -16,6 +16,7 @@ from lms_agent.agent_learning.doctype.course_allocation.course_allocation import
 	адресаты_назначения,
 )
 from lms_agent.agent_learning.errors import Отказ
+from lms_agent.agent_learning.structure import уроки_курса
 from lms_agent.agent_learning.permissions import (
 	организации_менеджера,
 	свои_организации_пересекаются,
@@ -55,7 +56,7 @@ def org_report(course: str | None = None, status: str | None = None) -> dict:
 		участники = _адресаты(назначение)
 		if not участники:
 			continue
-		уроки = _уроки_курса(назначение.course)
+		уроки = уроки_курса(назначение.course)
 		пройдено = _пройдено_по_участникам(назначение.course, участники, уроки)
 		имена = _имена(участники)
 		последняя_активность = _последняя_активность(назначение.course, участники)
@@ -238,7 +239,3 @@ def _строка_отчёта(
 	}
 
 
-def _уроки_курса(курс: str) -> list[str]:
-	from lms_agent.api.student import _уроки_курса as уроки
-
-	return уроки(курс)

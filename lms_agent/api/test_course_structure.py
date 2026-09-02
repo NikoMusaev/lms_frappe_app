@@ -22,7 +22,7 @@ from lms_agent.agent_learning.sample_data import (
 	создать_ученика,
 	создать_урок,
 )
-from lms_agent.api.student import _главы_курса, _уроки_курса
+from lms_agent.agent_learning.structure import главы_курса, уроки_курса
 
 
 class IntegrationTestCourseStructure(IntegrationTestCase):
@@ -46,20 +46,20 @@ class IntegrationTestCourseStructure(IntegrationTestCase):
 		from lms.lms.utils import get_lessons
 
 		их = [урок["name"] for урок in get_lessons(self.курс)]
-		наш = _уроки_курса(self.курс)
+		наш = уроки_курса(self.курс)
 
 		self.assertEqual(наш, их, "структура курса разошлась с Frappe Learning")
 
 	def test_порядок_уроков_соответствует_заданному(self):
 		# Явная проверка того, что сломалось: idx у самих записей всегда ноль,
 		# и сортировка по нему давала случайный порядок.
-		self.assertEqual(_уроки_курса(self.курс), self.уроки)
+		self.assertEqual(уроки_курса(self.курс), self.уроки)
 
 	def test_главы_читаются_тем_же_правилом(self):
 		from lms.lms.utils import get_chapters
 
 		их = [глава["name"] for глава in get_chapters(self.курс)]
-		наш = [глава["name"] for глава in _главы_курса(self.курс)]
+		наш = [глава["name"] for глава in главы_курса(self.курс)]
 
 		self.assertEqual(наш, их)
 
@@ -89,7 +89,7 @@ class IntegrationTestCourseStructure(IntegrationTestCase):
 			{"doctype": "Course Lesson", "title": "Одинокий", "chapter": пустая.name}
 		).insert(ignore_permissions=True).name
 
-		состав = _уроки_курса(self.курс)
+		состав = уроки_курса(self.курс)
 
 		self.assertEqual(состав[: len(self.уроки)], self.уроки, "порядок сбился")
 		self.assertIn(сирота, состав, "урок без строки порядка потерян")
