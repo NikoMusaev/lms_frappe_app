@@ -145,11 +145,11 @@ def course_outline(course: str) -> dict:
 
 def _главы_курса(курс: str) -> list[dict]:
 	"""Главы курса по порядку — тем же правилом, что и уроки."""
-	из_ссылок = frappe.get_all(
-		"Chapter Reference", filters={"parent": курс}, pluck="chapter", order_by="idx asc"
-	)
-	имена = из_ссылок or frappe.get_all(
-		"Course Chapter", filters={"course": курс}, pluck="name"
+	имена = _в_порядке(
+		frappe.get_all(
+			"Chapter Reference", filters={"parent": курс}, pluck="chapter", order_by="idx asc"
+		),
+		frappe.get_all("Course Chapter", filters={"course": курс}, pluck="name"),
 	)
 	названия = {
 		глава.name: глава.title
@@ -390,19 +390,28 @@ def _уроки_курса(курс: str) -> list[str]:
 	Прямые ссылки остаются запасным путём: курс, собранный импортом или
 	миграцией, может не иметь строк-ссылок, и терять его уроки нельзя.
 	"""
-	главы = frappe.get_all(
-		"Chapter Reference", filters={"parent": курс}, pluck="chapter", order_by="idx asc"
-	) or frappe.get_all("Course Chapter", filters={"course": курс}, pluck="name")
-
 	уроки = []
-	for глава in главы:
-		из_ссылок = frappe.get_all(
-			"Lesson Reference", filters={"parent": глава}, pluck="lesson", order_by="idx asc"
-		)
-		уроки += из_ссылок or frappe.get_all(
-			"Course Lesson", filters={"chapter": глава}, pluck="name"
+	for глава in [г["name"] for г in _главы_курса(курс)]:
+		уроки += _в_порядке(
+			frappe.get_all(
+				"Lesson Reference", filters={"parent": глава}, pluck="lesson", order_by="idx asc"
+			),
+			frappe.get_all("Course Lesson", filters={"chapter": глава}, pluck="name"),
 		)
 	return уроки
+
+
+def _в_порядке(по_ссылкам: list[str], все: list[str]) -> list[str]:
+	"""Известный порядок плюс всё, что в него не попало.
+
+	`Why:` запасной путь, включавшийся только при полном отсутствии ссылок,
+	терял записи в смешанном случае — а он обычный: часть глав заведена через
+	интерфейс, часть приехала импортом. Терять урок хуже, чем показать его
+	последним.
+	"""
+	порядок = list(по_ссылкам)
+	известные = set(порядок)
+	return порядок + [запись for запись in все if запись not in известные]
 
 
 def _пройденные(ученик: str, курс: str) -> set[str]:
