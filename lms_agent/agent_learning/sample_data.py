@@ -73,6 +73,21 @@ def создать_ученика(почта: str) -> str:
 	return почта
 
 
+def создать_куратора(почта: str) -> str:
+	"""Пользователь с правом собирать курсы."""
+	if not frappe.db.exists("User", почта, cache=False):
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": почта,
+				"first_name": почта.split("@")[0],
+				"send_welcome_email": 0,
+			}
+		).insert(ignore_permissions=True)
+		user.add_roles("Course Creator")
+	return почта
+
+
 def создать_организацию(название: str, **поля) -> str:
 	"""Организация с политикой по умолчанию."""
 	if frappe.db.exists("Learning Organization", название, cache=False):
