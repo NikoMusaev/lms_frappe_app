@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_agent.agent_learning.sample_data import (
+	привязать_урок,
 	создать_курс,
 	создать_занятие,
 	зачислить,
@@ -18,6 +19,7 @@ from lms_agent.agent_learning.sample_data import (
 	создать_урок,
 )
 from lms_agent.agent_learning.access import (
+	НЕ_ЗАЧИСЛЕН,
 	КУРС_НЕ_ОПУБЛИКОВАН,
 	КУРС_НЕ_ОТКРЫТ,
 	УЖЕ_ЗАПИСАН,
@@ -283,6 +285,7 @@ class IntegrationTestCompleteLesson(IntegrationTestCase):
 		self.практика = frappe.get_doc(
 			{"doctype": "Course Lesson", "title": "Практика", "chapter": глава}
 		).insert(ignore_permissions=True).name
+		привязать_урок(глава, self.практика)
 		вопрос = создать_вопрос("Два плюс два?", варианты=[("4", True), ("5", False)])
 		создать_квиз(self.практика, [вопрос])
 		frappe.set_user(self.ученик)
@@ -430,3 +433,69 @@ class IntegrationTestSelfEnroll(IntegrationTestCase):
 		frappe.set_user(self.ученик)
 
 		self.assertIn(self.курс, self.каталог())
+
+
+class IntegrationTestCourseOutline(IntegrationTestCase):
+	"""Структура курса: агент должен уметь вернуться к пройденному."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"out-{суффикс}@example.com")
+		self.первый = создать_урок(f"Первый {суффикс}")
+		self.курс = зачислить(self.ученик, self.первый)
+		глава = frappe.db.get_value("Course Lesson", self.первый, "chapter")
+		self.второй = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": "Второй", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		привязать_урок(глава, self.второй)
+		frappe.set_user(self.ученик)
+
+	def уроки(self):
+		структура = student.course_outline(self.курс)["data"]
+		return [урок for глава in структура["chapters"] for урок in глава["lessons"]]
+
+	def test_структура_показывает_все_уроки_и_текущий(self):
+		уроки = self.уроки()
+
+		self.assertEqual([у["id"] for у in уроки], [self.первый, self.второй])
+		self.assertTrue(уроки[0]["current"])
+		self.assertFalse(уроки[0]["completed"])
+
+	def test_после_прохождения_урок_помечен_пройденным(self):
+		student.complete_lesson(student.start_lesson()["data"]["session"])
+
+		уроки = self.уроки()
+
+		self.assertTrue(уроки[0]["completed"])
+		self.assertTrue(уроки[1]["current"], "текущим должен стать следующий урок")
+
+	def test_по_структуре_можно_вернуться_к_пройденному(self):
+		# Ровно то, ради чего метод и нужен: идентификатор пройденного урока
+		# больше неоткуда взять — list_my_courses отдаёт только следующий.
+		student.complete_lesson(student.start_lesson()["data"]["session"])
+
+		пройденный = next(у["id"] for у in self.уроки() if у["completed"])
+		повтор = student.start_lesson(lesson=пройденный)["data"]
+
+		self.assertEqual(повтор["lesson"]["id"], пройденный)
+		self.assertTrue(повтор["content"]["markdown"] is not None)
+
+	def test_повтор_пройденного_не_двигает_прогресс(self):
+		student.complete_lesson(student.start_lesson()["data"]["session"])
+		до = student.list_my_courses()["data"]["courses"][0]["progress"]
+
+		повтор = student.start_lesson(lesson=self.первый)["data"]
+		student.complete_lesson(повтор["session"])
+
+		self.assertEqual(student.list_my_courses()["data"]["courses"][0]["progress"], до)
+
+	def test_структура_чужого_курса_недоступна(self):
+		frappe.set_user("Administrator")
+		чужой = создать_курс(f"Чужой {frappe.generate_hash(length=6)}")
+		frappe.set_user(self.ученик)
+
+		ответ = student.course_outline(чужой)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], НЕ_ЗАЧИСЛЕН)
