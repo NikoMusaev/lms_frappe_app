@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_agent.agent_learning.sample_data import (
+	создать_курс,
 	создать_занятие,
 	зачислить,
 	добавить_в_организацию,
@@ -15,6 +16,11 @@ from lms_agent.agent_learning.sample_data import (
 	создать_организацию,
 	создать_ученика,
 	создать_урок,
+)
+from lms_agent.agent_learning.access import (
+	КУРС_НЕ_ОПУБЛИКОВАН,
+	КУРС_НЕ_ОТКРЫТ,
+	УЖЕ_ЗАПИСАН,
 )
 from lms_agent.api import student
 
@@ -345,3 +351,82 @@ class IntegrationTestCompleteLesson(IntegrationTestCase):
 
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
+
+
+class IntegrationTestSelfEnroll(IntegrationTestCase):
+	"""Самозапись: частный ученик и сотрудник компании."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"self-{суффикс}@example.com")
+		self.урок = создать_урок(f"Открытый {суффикс}")
+		self.курс = frappe.db.get_value(
+			"Course Chapter", frappe.db.get_value("Course Lesson", self.урок, "chapter"), "course"
+		)
+		frappe.db.set_value("LMS Course", self.курс, "published", 1)
+
+	def каталог(self):
+		return {к["id"] for к in student.list_catalog()["data"]["courses"]}
+
+	def test_частный_ученик_видит_каталог_и_записывается(self):
+		frappe.set_user(self.ученик)
+		self.assertIn(self.курс, self.каталог())
+
+		ответ = student.enroll(self.курс)["data"]
+
+		self.assertEqual(ответ["course"], self.курс)
+		self.assertEqual(ответ["first_lesson"]["id"], self.урок)
+		self.assertTrue(
+			frappe.db.exists("LMS Enrollment", {"member": self.ученик, "course": self.курс})
+		)
+
+	def test_записанный_курс_из_каталога_исчезает(self):
+		# Он и так виден в list_my_courses — дублировать незачем.
+		frappe.set_user(self.ученик)
+		student.enroll(self.курс)
+		self.assertNotIn(self.курс, self.каталог())
+
+	def test_повторная_запись_отклоняется(self):
+		frappe.set_user(self.ученик)
+		student.enroll(self.курс)
+
+		ответ = student.enroll(self.курс)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], УЖЕ_ЗАПИСАН)
+
+	def test_неопубликованный_курс_недоступен(self):
+		frappe.db.set_value("LMS Course", self.курс, "published", 0)
+		frappe.set_user(self.ученик)
+
+		self.assertNotIn(self.курс, self.каталог())
+		self.assertEqual(student.enroll(self.курс)["error"]["code"], КУРС_НЕ_ОПУБЛИКОВАН)
+
+	def test_сотрудник_видит_только_курсы_своей_компании(self):
+		"""Обучение идёт за счёт компании: запись на произвольный курс
+		каталога тратила бы чужой бюджет."""
+		frappe.set_user("Administrator")
+		свой = создать_курс(f"Свой {frappe.generate_hash(length=6)}")
+		frappe.db.set_value("LMS Course", свой, "published", 1)
+		организация = создать_организацию(
+			f"Компания {frappe.generate_hash(length=6)}",
+			allowed_courses=[{"course": свой}],
+		)
+		добавить_в_организацию(self.ученик, организация)
+
+		frappe.set_user(self.ученик)
+		каталог = self.каталог()
+
+		self.assertIn(свой, каталог)
+		self.assertNotIn(self.курс, каталог)
+		self.assertEqual(student.enroll(self.курс)["error"]["code"], КУРС_НЕ_ОТКРЫТ)
+
+	def test_компания_без_ограничений_открывает_весь_каталог(self):
+		frappe.set_user("Administrator")
+		организация = создать_организацию(f"Компания {frappe.generate_hash(length=6)}")
+		добавить_в_организацию(self.ученик, организация)
+
+		frappe.set_user(self.ученик)
+
+		self.assertIn(self.курс, self.каталог())

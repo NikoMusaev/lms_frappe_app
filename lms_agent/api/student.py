@@ -15,7 +15,9 @@ from lms_agent.agent_learning import quiz
 from lms_agent.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
 	ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА,
+	каталог_для,
 	курсы_ученика,
+	можно_записаться,
 	политика_квиза_для_курса,
 )
 from lms_agent.agent_learning.errors import Отказ
@@ -55,6 +57,38 @@ def list_my_courses() -> dict:
 			}
 		)
 	return {"courses": курсы}
+
+
+@frappe.whitelist()
+@контракт
+def list_catalog() -> dict:
+	"""Курсы, на которые ученик может записаться сам."""
+	return {"courses": каталог_для(текущий_пользователь())}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def enroll(course: str) -> dict:
+	"""Записывает ученика на курс из каталога."""
+	ученик = текущий_пользователь()
+	можно, причина = можно_записаться(ученик, course)
+	if not можно:
+		raise Отказ(причина, "На этот курс записаться нельзя", course=course)
+
+	frappe.get_doc(
+		{
+			"doctype": "LMS Enrollment",
+			"member": ученик,
+			"course": course,
+			"member_type": "Student",
+		}
+	).insert(ignore_permissions=True)
+
+	return {
+		"course": course,
+		"title": frappe.db.get_value("LMS Course", course, "title"),
+		"first_lesson": _следующий_урок(ученик, course),
+	}
 
 
 @frappe.whitelist(methods=["POST"])
