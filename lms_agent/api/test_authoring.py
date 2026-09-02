@@ -271,3 +271,53 @@ class IntegrationTestAuthoringStructure(IntegrationTestCase):
 		self.assertNotIn(
 			self.вторая, [глава["name"] for глава in structure.главы_курса(self.курс)]
 		)
+
+
+class IntegrationTestAuthoringReadBack(IntegrationTestCase):
+	"""Обратное чтение: сверить, что на платформе лежит утверждённый текст."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"reader-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Чтение {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.материал = "## Заголовок\n\nАбзац с примером.\n\n- пункт\n- ещё пункт\n"
+		self.урок = authoring.add_lesson(
+			chapter=глава, title="Урок", body=self.материал
+		)["data"]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_материал_возвращается_дословно(self):
+		"""`Why:` иначе сверять собранное с исходником нечем — `course_draft`
+		показывает только признак `has_body`."""
+		урок = authoring.get_lesson(lesson=self.урок)["data"]
+
+		self.assertEqual(урок["body"], self.материал)
+		self.assertEqual(урок["title"], "Урок")
+
+	def test_директива_приходит_действующей_версией(self):
+		authoring.set_directive(lesson=self.урок, teaching_directive="Первая редакция")
+		authoring.set_directive(
+			lesson=self.урок, teaching_directive="Вторая редакция", objectives="Цель"
+		)
+
+		директива = authoring.get_lesson(lesson=self.урок)["data"]["directive"]
+
+		self.assertEqual(директива["teaching_directive"], "Вторая редакция")
+		self.assertEqual(директива["version"], 2)
+
+	def test_урок_без_директивы_не_ломает_чтение(self):
+		урок = authoring.get_lesson(lesson=self.урок)["data"]
+
+		self.assertIsNone(урок["directive"])
+		self.assertIsNone(урок["quiz"])
+
+	def test_ученик_не_читает_урок_авторским_методом(self):
+		ученик = создать_ученика(f"pupil-{frappe.generate_hash(length=6)}@example.com")
+		frappe.set_user(ученик)
+
+		with self.assertRaises(frappe.PermissionError):
+			authoring.get_lesson(lesson=self.урок)
