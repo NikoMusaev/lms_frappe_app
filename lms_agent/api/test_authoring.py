@@ -13,6 +13,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_agent.agent_learning.sample_data import создать_куратора, создать_ученика
+from lms_agent.agent_learning import quiz
 from lms_agent.agent_learning.structure import уроки_главы
 from lms_agent.api import authoring
 
@@ -94,3 +95,97 @@ class IntegrationTestAuthoring(IntegrationTestCase):
 		):
 			with self.assertRaises(frappe.PermissionError):
 				вызов()
+
+
+class IntegrationTestAuthoringEdits(IntegrationTestCase):
+	"""Правка собранного: без неё сборка через агента разваливается."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"editor-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Правка {суффикс}", summary="было")["data"]["id"]
+		self.глава = authoring.add_chapter(course=self.курс, title="Было")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=self.глава, title="Урок", body="# Урок")["data"]["id"]
+		authoring.add_quiz(
+			lesson=self.урок,
+			questions=[{"text": "Первый?", "options": [{"text": "a", "correct": True}, {"text": "b"}]}],
+		)
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_курс_находится_по_списку(self):
+		"""Без списка идентификатор курса взять негде — все методы требуют его."""
+		курсы = authoring.list_courses()["data"]["courses"]
+
+		наш = [курс for курс in курсы if курс["id"] == self.курс]
+		self.assertTrue(наш, "созданный курс не виден в списке")
+		self.assertFalse(наш[0]["published"])
+		self.assertEqual(наш[0]["lessons_total"], 1)
+
+	def test_название_курса_и_главы_правятся(self):
+		authoring.update_course(course=self.курс, title="Стало", summary="и описание")
+		authoring.update_chapter(chapter=self.глава, title="Стало")
+
+		self.assertEqual(frappe.db.get_value("LMS Course", self.курс, "title"), "Стало")
+		self.assertEqual(frappe.db.get_value("Course Chapter", self.глава, "title"), "Стало")
+
+	def test_второй_квиз_на_уроке_отклоняется(self):
+		"""`Why:` урок отдаёт агенту ровно один квиз, второй становится
+		невидимым мусором — а куратор считает, что заменил вопросы."""
+		ответ = authoring.add_quiz(
+			lesson=self.урок,
+			questions=[{"text": "Другой?", "options": [{"text": "c", "correct": True}, {"text": "d"}]}],
+		)
+
+		self.assertEqual(ответ["error"]["code"], "quiz_exists")
+		self.assertEqual(frappe.db.count("LMS Quiz", {"lesson": self.урок}), 1)
+
+	def test_вопросы_квиза_добавляются_правятся_и_убираются(self):
+		квиз = quiz._квиз_урока(self.урок)
+		первый = frappe.get_all("LMS Quiz Question", filters={"parent": квиз}, pluck="question")[0]
+
+		добавлен = authoring.add_question(
+			lesson=self.урок,
+			question={"text": "Второй?", "options": [{"text": "c", "correct": True}, {"text": "d"}]},
+		)["data"]
+		self.assertEqual(добавлен["questions_total"], 2)
+
+		authoring.update_question(question=первый, text="Исправленный?")
+		self.assertEqual(frappe.db.get_value("LMS Question", первый, "question"), "Исправленный?")
+
+		убран = authoring.remove_question(lesson=self.урок, question=первый)["data"]
+		self.assertEqual(убран["questions_total"], 1)
+		# Сам вопрос остаётся: на него ссылаются ответы прошлых попыток.
+		self.assertTrue(frappe.db.exists("LMS Question", первый))
+
+	def test_варианты_заменяются_целиком(self):
+		"""Правка «трёх вариантов на два» не должна оставлять третий."""
+		вопрос = frappe.get_all(
+			"LMS Quiz Question", filters={"parent": quiz._квиз_урока(self.урок)}, pluck="question"
+		)[0]
+		authoring.update_question(
+			question=вопрос,
+			options=[{"text": "1", "correct": True}, {"text": "2"}, {"text": "3"}],
+		)
+
+		authoring.update_question(
+			question=вопрос, options=[{"text": "новый", "correct": True}, {"text": "другой"}]
+		)
+
+		документ = frappe.get_doc("LMS Question", вопрос)
+		self.assertEqual(документ.option_1, "новый")
+		self.assertIsNone(документ.option_3, "третий вариант остался от прошлой редакции")
+
+	def test_неверная_правка_не_оставляет_вопрос_наполовину(self):
+		вопрос = frappe.get_all(
+			"LMS Quiz Question", filters={"parent": quiz._квиз_урока(self.урок)}, pluck="question"
+		)[0]
+
+		ответ = authoring.update_question(
+			question=вопрос, text="Без верного", options=[{"text": "x"}, {"text": "y"}]
+		)
+
+		self.assertEqual(ответ["error"]["code"], "invalid_question")
+		self.assertEqual(frappe.db.get_value("LMS Question", вопрос, "question"), "Первый?")

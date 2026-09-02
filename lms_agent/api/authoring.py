@@ -14,7 +14,7 @@ import json
 
 import frappe
 
-from lms_agent.agent_learning import course_builder, structure
+from lms_agent.agent_learning import course_builder, quiz, structure
 from lms_agent.agent_learning.errors import Отказ
 from lms_agent.api import контракт, текущий_пользователь
 
@@ -26,6 +26,9 @@ from lms_agent.api import контракт, текущий_пользовате�
 УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ГЛАВА_НЕ_НАЙДЕНА = "chapter_not_found"
 КУРС_НЕ_ГОТОВ = "course_not_ready"
+КВИЗ_УЖЕ_ЕСТЬ = "quiz_exists"
+КВИЗА_НЕТ = "quiz_missing"
+ВОПРОС_НЕ_НАЙДЕН = "question_not_found"
 НЕВЕРНЫЙ_ВОПРОС = "invalid_question"
 
 
@@ -76,6 +79,75 @@ def create_course(title: str, summary: str, description: str | None = None) -> d
 		}
 	).insert()
 	return {"id": курс.name, "title": курс.title, "published": False}
+
+
+@frappe.whitelist()
+@контракт
+def list_courses(published: bool | None = None) -> dict:
+	"""Курсы платформы: черновики и опубликованные.
+
+	Без этого метода сборка разваливается на второй сессии: все остальные
+	инструменты требуют идентификатор, а взять его было негде — куратор,
+	вернувшийся назавтра, не мог найти собственный курс.
+
+	Курсы общие, поэтому список полный, а не «мои». Фильтр `published`
+	сужает до одного состояния.
+	"""
+	_автор()
+	отбор = {}
+	if published is not None:
+		отбор["published"] = 1 if published in (True, 1, "1", "true") else 0
+	курсы = frappe.get_all(
+		"LMS Course",
+		filters=отбор,
+		fields=["name", "title", "short_introduction", "published", "modified"],
+		order_by="modified desc",
+	)
+	return {
+		"courses": [
+			{
+				"id": курс.name,
+				"title": курс.title,
+				"summary": курс.short_introduction,
+				"published": bool(курс.published),
+				"lessons_total": len(structure.уроки_курса(курс.name)),
+				"updated_at": курс.modified.isoformat() if курс.modified else None,
+			}
+			for курс in курсы
+		]
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def update_course(
+	course: str, title: str | None = None, summary: str | None = None, description: str | None = None
+) -> dict:
+	"""Правит название, краткое описание или полное описание курса."""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+	документ = frappe.get_doc("LMS Course", course)
+	for поле, значение in (
+		("title", title),
+		("short_introduction", summary),
+		("description", description),
+	):
+		if значение is not None:
+			документ.set(поле, значение)
+	документ.save()
+	return {"id": документ.name, "title": документ.title, "summary": документ.short_introduction}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def update_chapter(chapter: str, title: str) -> dict:
+	"""Правит название главы."""
+	_автор()
+	_должен_существовать("Course Chapter", chapter, ГЛАВА_НЕ_НАЙДЕНА)
+	документ = frappe.get_doc("Course Chapter", chapter)
+	документ.title = title
+	документ.save()
+	return {"id": документ.name, "title": документ.title}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -196,6 +268,17 @@ def add_quiz(lesson: str, questions, title: str | None = None, passing_percentag
 	if not вопросы:
 		raise Отказ(course_builder.КВИЗ_БЕЗ_ВОПРОСОВ, "Квизу нужен хотя бы один вопрос", lesson=lesson)
 
+	# Второй квиз на уроке — это не «ещё один квиз», а потерянный первый:
+	# урок отдаёт агенту ровно один, остальные становятся невидимым мусором.
+	# Правится вопросами существующего квиза, а не созданием нового.
+	if существующий := quiz._квиз_урока(lesson):
+		raise Отказ(
+			КВИЗ_УЖЕ_ЕСТЬ,
+			"У урока уже есть квиз: правьте его вопросы",
+			lesson=lesson,
+			quiz=существующий,
+		)
+
 	квиз = frappe.get_doc(
 		{
 			"doctype": "LMS Quiz",
@@ -229,6 +312,83 @@ def add_quiz(lesson: str, questions, title: str | None = None, passing_percentag
 	# связанный только полем квиза, в интерфейсе выглядит без квиза.
 	frappe.db.set_value("Course Lesson", lesson, "quiz_id", квиз.name)
 	return {"id": квиз.name, "lesson": lesson, "questions": созданы}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def add_question(lesson: str, question: dict | str) -> dict:
+	"""Добавляет вопрос в существующий квиз урока."""
+	_автор()
+	квиз = _квиз_урока_или_отказ(lesson)
+	идентификатор, тип = _создать_вопрос_или_отказ(question, lesson)
+	документ = frappe.get_doc("LMS Quiz", квиз)
+	документ.append(
+		"questions",
+		{"question": идентификатор, "type": тип, "marks": (_как_словарь(question).get("marks") or 1)},
+	)
+	документ.save()
+	return {"quiz": квиз, "question": идентификатор, "questions_total": len(документ.questions)}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def update_question(question: str, text: str | None = None, options=None, answers=None) -> dict:
+	"""Правит текст вопроса, варианты или образцы ответа.
+
+	Правка разрешена и после того, как по квизу отвечали: блокировать
+	исправление опечатки в опубликованном курсе хуже, чем оставить её. Но
+	число затронутых попыток возвращается — куратор должен знать, что меняет
+	вопрос, который кто-то уже видел.
+	"""
+	_автор()
+	_должен_существовать("LMS Question", question, ВОПРОС_НЕ_НАЙДЕН)
+	документ = frappe.get_doc("LMS Question", question)
+
+	if text is not None:
+		документ.question = text
+	if options is not None:
+		course_builder.заменить_варианты(документ, _список(options))
+	if answers is not None:
+		course_builder.заменить_образцы(документ, _список(answers))
+
+	frappe.db.savepoint("agent_question_edit")
+	try:
+		документ.save()
+	except Отказ:
+		raise
+	except frappe.ValidationError as причина:
+		# Правка, ломающая состав вариантов, отменяется целиком: иначе вопрос
+		# остался бы наполовину переписанным.
+		frappe.db.rollback(save_point="agent_question_edit")
+		raise Отказ(НЕВЕРНЫЙ_ВОПРОС, str(причина), question=question) from причина
+
+	return {
+		"id": question,
+		"text": документ.question,
+		"affects_attempts": frappe.db.count("Agent Quiz Answer", {"question": question}),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def remove_question(lesson: str, question: str) -> dict:
+	"""Убирает вопрос из квиза урока.
+
+	Сам вопрос не удаляется: на него ссылаются ответы прошлых попыток, и
+	стирание записи испортило бы историю зачётов.
+	"""
+	_автор()
+	квиз = _квиз_урока_или_отказ(lesson)
+	документ = frappe.get_doc("LMS Quiz", квиз)
+	осталось = [строка for строка in документ.questions if строка.question != question]
+	if len(осталось) == len(документ.questions):
+		raise Отказ(ВОПРОС_НЕ_НАЙДЕН, "В этом квизе такого вопроса нет", quiz=квиз, question=question)
+
+	документ.questions = []
+	for строка in осталось:
+		документ.append("questions", {"question": строка.question, "type": строка.type, "marks": строка.marks})
+	документ.save()
+	return {"quiz": квиз, "questions_total": len(документ.questions)}
 
 
 # --- обзор и публикация ---
@@ -341,6 +501,29 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 			}
 		)
 	return {"id": квиз, "questions": вопросы}
+
+
+def _как_словарь(вопрос) -> dict:
+	return json.loads(вопрос) if isinstance(вопрос, str) else dict(вопрос or {})
+
+
+def _квиз_урока_или_отказ(lesson: str) -> str:
+	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
+	квиз = quiz._квиз_урока(lesson)
+	if not квиз:
+		raise Отказ(КВИЗА_НЕТ, "У урока нет квиза: создайте его целиком", lesson=lesson)
+	return квиз
+
+
+def _создать_вопрос_или_отказ(вопрос, lesson: str) -> tuple[str, str]:
+	frappe.db.savepoint("agent_question_build")
+	try:
+		return course_builder.создать_вопрос(_как_словарь(вопрос))
+	except Отказ:
+		raise
+	except frappe.ValidationError as причина:
+		frappe.db.rollback(save_point="agent_question_build")
+		raise Отказ(НЕВЕРНЫЙ_ВОПРОС, str(причина), lesson=lesson) from причина
 
 
 def _должен_существовать(doctype: str, имя: str, код: str) -> None:
