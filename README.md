@@ -1,4 +1,4 @@
-# lms_agent
+# lms_frappe_app
 
 Frappe-приложение платформы **MCP-LMS**: хранит директивы уроков, учебные
 сессии и результаты серверного квиза, отдаёт их наружу документированным
@@ -46,9 +46,9 @@ REST-контрактом.
 
 ```bash
 docker compose up -d                      # compose.yaml + compose.override.yaml
-docker compose exec backend bench --site lms.localhost install-app lms_agent
+docker compose exec backend bench --site lms.localhost install-app lms_frappe_app
 docker compose exec backend bench --site lms.localhost migrate     # после правок DocType
-docker compose exec backend bench --site lms.localhost run-tests --app lms_agent
+docker compose exec backend bench --site lms.localhost run-tests --app lms_frappe_app
 ```
 
 ## Видимость репозитория
