@@ -77,7 +77,7 @@ jobs:
           # и без него не устанавливается.
           bench get-app --branch version-16 https://github.com/frappe/payments
           bench get-app --branch main https://github.com/frappe/lms
-          bench get-app lms_agent "$GITHUB_WORKSPACE"
+          bench get-app lms_frappe_app "$GITHUB_WORKSPACE"
 
       - name: Создать сайт и установить приложения
         working-directory: /home/runner/frappe-bench
@@ -86,10 +86,10 @@ jobs:
             --db-root-username root --db-root-password root \
             --admin-password admin test.local
           bench --site test.local install-app lms
-          bench --site test.local install-app lms_agent
+          bench --site test.local install-app lms_frappe_app
           bench setup requirements --dev
           bench --site test.local set-config allow_tests true
 
       - name: Прогнать тесты
         working-directory: /home/runner/frappe-bench
-        run: bench --site test.local run-tests --app lms_agent
+        run: bench --site test.local run-tests --app lms_frappe_app

@@ -1,0 +1,501 @@
+# Copyright (c) 2026, NikoMusaev and Contributors
+# See license.txt
+
+import json
+
+import frappe
+from frappe.tests import IntegrationTestCase
+
+from lms_frappe_app.agent_learning.sample_data import (
+	привязать_урок,
+	создать_курс,
+	создать_занятие,
+	зачислить,
+	добавить_в_организацию,
+	создать_вопрос,
+	создать_квиз,
+	создать_организацию,
+	создать_ученика,
+	создать_урок,
+)
+from lms_frappe_app.agent_learning.access import (
+	НЕ_ЗАЧИСЛЕН,
+	КУРС_НЕ_ОПУБЛИКОВАН,
+	КУРС_НЕ_ОТКРЫТ,
+	УЖЕ_ЗАПИСАН,
+)
+from lms_frappe_app.api import student
+
+ЭТАЛОННЫЕ_ПОЛЯ = ("is_correct", "possibility", "explanation_")
+
+
+class IntegrationTestStudentAPI(IntegrationTestCase):
+	"""Методы учебного потока — в том виде, в каком их увидит агент."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+
+		self.ученик = создать_ученика(f"api-{суффикс}@example.com")
+		self.урок = создать_урок(f"Урок {суффикс}")
+		self.курс = frappe.db.get_value(
+			"Course Chapter", frappe.db.get_value("Course Lesson", self.урок, "chapter"), "course"
+		)
+		frappe.db.set_value(
+			"Course Lesson",
+			self.урок,
+			"body",
+			"## Циклы\n\nЦикл повторяет действие. {{ YouTubeVideo(abc) }}",
+		)
+		self.директива = frappe.get_doc(
+			{
+				"doctype": "Agent Lesson Directive",
+				"lesson": self.урок,
+				"objectives": "Понимать цикл\nУметь читать код",
+				"teaching_directive": "Начать с примера, не с определения",
+				"probing_questions": "Что произойдёт при нуле итераций?",
+			}
+		).insert(ignore_permissions=True)
+
+		self.организация = создать_организацию(f"Компания {суффикс}")
+		добавить_в_организацию(self.ученик, self.организация)
+		frappe.get_doc(
+			{
+				"doctype": "Course Allocation",
+				"organization": self.организация,
+				"course": self.курс,
+				"deadline": "2026-12-31",
+				"mandatory": 1,
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(self.ученик)
+
+	# --- форма ответа ---
+
+	def test_успех_приходит_в_форме_контракта(self):
+		ответ = student.list_my_courses()
+		self.assertTrue(ответ["ok"])
+		self.assertIn("courses", ответ["data"])
+
+	def test_отказ_приходит_успешным_ответом_с_кодом(self):
+		# Ожидаемый отказ не может ехать HTTP-ошибкой: тело ошибки формирует
+		# Frappe, и машинного кода в нём не остаётся.
+		ответ = student.start_lesson(lesson="такого-урока-нет")
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.УРОК_НЕ_НАЙДЕН)
+
+	# --- список курсов ---
+
+	def test_курс_приходит_с_дедлайном_и_прогрессом(self):
+		курсы = student.list_my_courses()["data"]["courses"]
+		мой = next(к for к in курсы if к["id"] == self.курс)
+
+		self.assertEqual(str(мой["deadline"]), "2026-12-31")
+		self.assertTrue(мой["mandatory"])
+		self.assertEqual(мой["progress"]["lessons_total"], 1)
+		self.assertEqual(мой["progress"]["lessons_completed"], 0)
+		self.assertEqual(мой["next_lesson"]["id"], self.урок)
+
+	def test_во_внутренностях_frappe_наружу_не_течёт(self):
+		# Контракт обязан оставаться интерфейсом общего назначения.
+		выдано = json.dumps(student.list_my_courses(), ensure_ascii=False, default=str)
+		for поле in ("doctype", "docstatus", "modified_by", "owner"):
+			self.assertNotIn(поле, выдано)
+
+	# --- начало урока ---
+
+	def test_урок_отдаётся_с_материалом_целями_и_директивой(self):
+		данные = student.start_lesson()["data"]
+
+		self.assertEqual(данные["lesson"]["id"], self.урок)
+		self.assertIn("Цикл повторяет действие", данные["content"]["markdown"])
+		self.assertEqual(данные["objectives"], ["Понимать цикл", "Уметь читать код"])
+		self.assertEqual(данные["directive"]["audience"], "teacher_only")
+		self.assertIn("Начать с примера", данные["directive"]["teaching_directive"])
+
+	def test_материал_и_директива_разными_полями(self):
+		# Одна из трёх митигаций против пересказа директивы ученику.
+		данные = student.start_lesson()["data"]
+		self.assertNotIn("Начать с примера", данные["content"]["markdown"])
+
+	def test_макрос_видео_ушёл_в_медиа(self):
+		данные = student.start_lesson()["data"]
+		self.assertEqual([м["kind"] for м in данные["media"]], ["video"])
+		self.assertNotIn("{{", данные["content"]["markdown"])
+
+	def test_занятие_создано_и_помечено_доверенным(self):
+		данные = student.start_lesson()["data"]
+		занятие = frappe.get_doc("Agent Learning Session", данные["session"])
+		self.assertEqual(занятие.student, self.ученик)
+		self.assertTrue(занятие.via_trusted_service)
+
+	def test_без_аргумента_берётся_урок_с_ближайшим_дедлайном(self):
+		# Ученик, сказавший «давай заниматься», должен получить то, что горит.
+		frappe.set_user("Administrator")
+		срочный_урок = создать_урок(f"Срочный {frappe.generate_hash(length=6)}")
+		срочный_курс = frappe.db.get_value(
+			"Course Chapter",
+			frappe.db.get_value("Course Lesson", срочный_урок, "chapter"),
+			"course",
+		)
+		frappe.get_doc(
+			{
+				"doctype": "Course Allocation",
+				"organization": self.организация,
+				"course": срочный_курс,
+				"deadline": "2026-06-30",
+				"mandatory": 1,
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+
+		данные = student.start_lesson()["data"]
+
+		self.assertEqual(данные["lesson"]["id"], срочный_урок)
+
+	# --- квиз через методы ---
+
+	def test_полный_проход_квиза_через_методы(self):
+		frappe.set_user("Administrator")
+		вопрос = создать_вопрос("Два плюс два?", варианты=[("4", True), ("5", False)])
+		создать_квиз(self.урок, [вопрос])
+		frappe.set_user(self.ученик)
+
+		занятие = student.start_lesson()["data"]["session"]
+		начало = student.request_quiz(занятие)["data"]
+		итог = student.submit_answer(начало["attempt"], вопрос, "1")["data"]
+
+		self.assertTrue(итог["verdict"]["correct"])
+		self.assertTrue(итог["result"]["passed"])
+		self.assertEqual(итог["result"]["session_status"], "Completed")
+
+	def test_в_вопросе_квиза_нет_полей_эталона(self):
+		frappe.set_user("Administrator")
+		вопрос = создать_вопрос(
+			"Столица?", варианты=[("Москва", True), ("Тула", False)], пояснение="Так исторически"
+		)
+		создать_квиз(self.урок, [вопрос])
+		frappe.set_user(self.ученик)
+
+		занятие = student.start_lesson()["data"]["session"]
+		выдано = json.dumps(student.request_quiz(занятие), ensure_ascii=False, default=str)
+
+		for поле in ЭТАЛОННЫЕ_ПОЛЯ:
+			self.assertNotIn(поле, выдано)
+		self.assertNotIn("Так исторически", выдано)
+
+	def test_чекпоинт_пишется_в_журнал(self):
+		занятие = student.start_lesson()["data"]["session"]
+		student.report_checkpoint(занятие, "разобрали пример с циклом")
+
+		self.assertTrue(
+			frappe.db.exists(
+				"Agent Session Event", {"session": занятие, "kind": "Checkpoint Reported"}
+			)
+		)
+
+	# --- чужое ---
+
+	def test_чужое_занятие_отклоняется_машинным_кодом(self):
+		# Отказ, а не исключение прав: агенту нужен код, по которому он
+		# объяснит ученику происходящее. Проверка идёт по принадлежности
+		# занятия, а не по праву чтения — читать чужое занятие вправе ещё и
+		# руководитель, но действовать в нём он не должен.
+		frappe.set_user("Administrator")
+		чужой = создать_ученика(f"other-{frappe.generate_hash(length=6)}@example.com")
+		чужое = frappe.get_doc(
+			{"doctype": "Agent Learning Session", "student": чужой, "lesson": self.урок}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+
+		ответ = student.report_checkpoint(чужое.name, "чужой урок")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
+
+	# --- сводка ---
+
+	def test_сводка_считает_курсы_и_последние_занятия(self):
+		student.start_lesson()
+		сводка = student.get_my_progress()["data"]
+
+		# Ровно один: «не меньше» замаскировало бы утечку чужих зачислений.
+		self.assertEqual(сводка["courses_total"], 1)
+		self.assertEqual(сводка["courses_overdue"], 0)
+		self.assertEqual(сводка["recent_sessions"][0]["lesson"], self.урок)
+
+
+class IntegrationTestLongLesson(IntegrationTestCase):
+	"""Длинный урок: агент должен уметь дочитать его до конца."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"seg-{суффикс}@example.com")
+		self.урок = создать_урок(f"Длинный {суффикс}")
+		frappe.db.set_value(
+			"Course Lesson",
+			self.урок,
+			"body",
+			"\n\n".join(f"## Часть {i}\n\n" + "текст. " * 400 for i in range(4)),
+		)
+		зачислить(self.ученик, self.урок)
+		frappe.set_user(self.ученик)
+
+	def test_урок_режется_на_сегменты(self):
+		данные = student.start_lesson(lesson=self.урок)["data"]
+		self.assertGreater(данные["content"]["total_segments"], 1)
+		self.assertEqual(данные["content"]["segment_index"], 1)
+
+	def test_второй_сегмент_достижим(self):
+		# Без параметра сегмента агент видел только начало урока: способа
+		# попросить продолжение не было вовсе.
+		первый = student.start_lesson(lesson=self.урок)["data"]["content"]["markdown"]
+		второй = student.start_lesson(lesson=self.урок, segment=2)["data"]
+
+		self.assertEqual(второй["content"]["segment_index"], 2)
+		self.assertNotEqual(второй["content"]["markdown"], первый)
+
+	def test_продолжение_не_плодит_занятия(self):
+		# Иначе на один урок копятся незакрытые сессии, которые потом
+		# закрывает фоновая задача, засоряя журнал и отчётность.
+		первое = student.start_lesson(lesson=self.урок)["data"]["session"]
+		второе = student.start_lesson(lesson=self.урок, segment=2)["data"]["session"]
+		self.assertEqual(первое, второе)
+
+	def test_номер_за_границами_не_роняет_выдачу(self):
+		данные = student.start_lesson(lesson=self.урок, segment=99)["data"]
+		self.assertEqual(
+			данные["content"]["segment_index"], данные["content"]["total_segments"]
+		)
+
+
+class IntegrationTestCompleteLesson(IntegrationTestCase):
+	"""Урок без квиза должен закрываться, урок с квизом — только квизом."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"cl-{суффикс}@example.com")
+		self.теория = создать_урок(f"Теория {суффикс}")
+		self.курс = зачислить(self.ученик, self.теория)
+		# Второй урок того же курса, с квизом.
+		глава = frappe.db.get_value("Course Lesson", self.теория, "chapter")
+		self.практика = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": "Практика", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		привязать_урок(глава, self.практика)
+		вопрос = создать_вопрос("Два плюс два?", варианты=[("4", True), ("5", False)])
+		создать_квиз(self.практика, [вопрос])
+		frappe.set_user(self.ученик)
+
+	def test_урок_без_квиза_закрывается_и_двигает_прогресс(self):
+		"""Иначе ученик застревает на первом же теоретическом уроке."""
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+
+		ответ = student.complete_lesson(занятие)["data"]
+
+		self.assertEqual(ответ["session_status"], "Completed")
+		self.assertTrue(
+			frappe.db.exists(
+				"LMS Course Progress",
+				{"member": self.ученик, "lesson": self.теория, "status": "Complete"},
+			)
+		)
+
+	def test_после_закрытия_приходит_следующий_урок(self):
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+		student.complete_lesson(занятие)
+
+		следующий = student.start_lesson()["data"]
+
+		self.assertEqual(следующий["lesson"]["id"], self.практика)
+
+	def test_урок_с_обязательным_квизом_так_не_закрыть(self):
+		"""Несущее ограничение: иначе метод стал бы обходом проверки."""
+		занятие = student.start_lesson(lesson=self.практика)["data"]["session"]
+
+		ответ = student.complete_lesson(занятие)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.НУЖЕН_КВИЗ)
+		self.assertFalse(
+			frappe.db.exists(
+				"LMS Course Progress",
+				{"member": self.ученик, "lesson": self.практика, "status": "Complete"},
+			)
+		)
+
+	def test_курс_проходится_целиком(self):
+		# Критерий готовности: оба урока закрыты, курс пройден.
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+		student.complete_lesson(занятие)
+
+		практика = student.start_lesson()["data"]
+		квиз = student.request_quiz(практика["session"])["data"]
+		student.submit_answer(квиз["attempt"], квиз["question"]["id"], "1")
+
+		курс = next(
+			к for к in student.list_my_courses()["data"]["courses"] if к["id"] == self.курс
+		)
+		self.assertEqual(курс["progress"]["lessons_completed"], 2)
+		self.assertEqual(курс["progress"]["lessons_total"], 2)
+		self.assertIsNone(курс["next_lesson"])
+
+	def test_чужое_занятие_закрыть_нельзя(self):
+		frappe.set_user("Administrator")
+		чужой = создать_ученика(f"cl-other-{frappe.generate_hash(length=6)}@example.com")
+		зачислить(чужой, self.теория)
+		чужое = создать_занятие(чужой, self.теория)
+		frappe.set_user(self.ученик)
+
+		ответ = student.complete_lesson(чужое)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
+
+
+class IntegrationTestSelfEnroll(IntegrationTestCase):
+	"""Самозапись: частный ученик и сотрудник компании."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"self-{суффикс}@example.com")
+		self.урок = создать_урок(f"Открытый {суффикс}")
+		self.курс = frappe.db.get_value(
+			"Course Chapter", frappe.db.get_value("Course Lesson", self.урок, "chapter"), "course"
+		)
+		frappe.db.set_value("LMS Course", self.курс, "published", 1)
+
+	def каталог(self):
+		return {к["id"] for к in student.list_catalog()["data"]["courses"]}
+
+	def test_частный_ученик_видит_каталог_и_записывается(self):
+		frappe.set_user(self.ученик)
+		self.assertIn(self.курс, self.каталог())
+
+		ответ = student.enroll(self.курс)["data"]
+
+		self.assertEqual(ответ["course"], self.курс)
+		self.assertEqual(ответ["first_lesson"]["id"], self.урок)
+		self.assertTrue(
+			frappe.db.exists("LMS Enrollment", {"member": self.ученик, "course": self.курс})
+		)
+
+	def test_записанный_курс_из_каталога_исчезает(self):
+		# Он и так виден в list_my_courses — дублировать незачем.
+		frappe.set_user(self.ученик)
+		student.enroll(self.курс)
+		self.assertNotIn(self.курс, self.каталог())
+
+	def test_повторная_запись_отклоняется(self):
+		frappe.set_user(self.ученик)
+		student.enroll(self.курс)
+
+		ответ = student.enroll(self.курс)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], УЖЕ_ЗАПИСАН)
+
+	def test_неопубликованный_курс_недоступен(self):
+		frappe.db.set_value("LMS Course", self.курс, "published", 0)
+		frappe.set_user(self.ученик)
+
+		self.assertNotIn(self.курс, self.каталог())
+		self.assertEqual(student.enroll(self.курс)["error"]["code"], КУРС_НЕ_ОПУБЛИКОВАН)
+
+	def test_сотрудник_видит_только_курсы_своей_компании(self):
+		"""Обучение идёт за счёт компании: запись на произвольный курс
+		каталога тратила бы чужой бюджет."""
+		frappe.set_user("Administrator")
+		свой = создать_курс(f"Свой {frappe.generate_hash(length=6)}")
+		frappe.db.set_value("LMS Course", свой, "published", 1)
+		организация = создать_организацию(
+			f"Компания {frappe.generate_hash(length=6)}",
+			allowed_courses=[{"course": свой}],
+		)
+		добавить_в_организацию(self.ученик, организация)
+
+		frappe.set_user(self.ученик)
+		каталог = self.каталог()
+
+		self.assertIn(свой, каталог)
+		self.assertNotIn(self.курс, каталог)
+		self.assertEqual(student.enroll(self.курс)["error"]["code"], КУРС_НЕ_ОТКРЫТ)
+
+	def test_компания_без_ограничений_открывает_весь_каталог(self):
+		frappe.set_user("Administrator")
+		организация = создать_организацию(f"Компания {frappe.generate_hash(length=6)}")
+		добавить_в_организацию(self.ученик, организация)
+
+		frappe.set_user(self.ученик)
+
+		self.assertIn(self.курс, self.каталог())
+
+
+class IntegrationTestCourseOutline(IntegrationTestCase):
+	"""Структура курса: агент должен уметь вернуться к пройденному."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"out-{суффикс}@example.com")
+		self.первый = создать_урок(f"Первый {суффикс}")
+		self.курс = зачислить(self.ученик, self.первый)
+		глава = frappe.db.get_value("Course Lesson", self.первый, "chapter")
+		self.второй = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": "Второй", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		привязать_урок(глава, self.второй)
+		frappe.set_user(self.ученик)
+
+	def уроки(self):
+		структура = student.course_outline(self.курс)["data"]
+		return [урок for глава in структура["chapters"] for урок in глава["lessons"]]
+
+	def test_структура_показывает_все_уроки_и_текущий(self):
+		уроки = self.уроки()
+
+		self.assertEqual([у["id"] for у in уроки], [self.первый, self.второй])
+		self.assertTrue(уроки[0]["current"])
+		self.assertFalse(уроки[0]["completed"])
+
+	def test_после_прохождения_урок_помечен_пройденным(self):
+		student.complete_lesson(student.start_lesson()["data"]["session"])
+
+		уроки = self.уроки()
+
+		self.assertTrue(уроки[0]["completed"])
+		self.assertTrue(уроки[1]["current"], "текущим должен стать следующий урок")
+
+	def test_по_структуре_можно_вернуться_к_пройденному(self):
+		# Ровно то, ради чего метод и нужен: идентификатор пройденного урока
+		# больше неоткуда взять — list_my_courses отдаёт только следующий.
+		student.complete_lesson(student.start_lesson()["data"]["session"])
+
+		пройденный = next(у["id"] for у in self.уроки() if у["completed"])
+		повтор = student.start_lesson(lesson=пройденный)["data"]
+
+		self.assertEqual(повтор["lesson"]["id"], пройденный)
+		self.assertTrue(повтор["content"]["markdown"] is not None)
+
+	def test_повтор_пройденного_не_двигает_прогресс(self):
+		student.complete_lesson(student.start_lesson()["data"]["session"])
+		до = student.list_my_courses()["data"]["courses"][0]["progress"]
+
+		повтор = student.start_lesson(lesson=self.первый)["data"]
+		student.complete_lesson(повтор["session"])
+
+		self.assertEqual(student.list_my_courses()["data"]["courses"][0]["progress"], до)
+
+	def test_структура_чужого_курса_недоступна(self):
+		frappe.set_user("Administrator")
+		чужой = создать_курс(f"Чужой {frappe.generate_hash(length=6)}")
+		frappe.set_user(self.ученик)
+
+		ответ = student.course_outline(чужой)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], НЕ_ЗАЧИСЛЕН)

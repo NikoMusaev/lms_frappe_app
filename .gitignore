@@ -4,7 +4,7 @@ __pycache__/
 *.egg-info/
 dist/
 node_modules/
-lms_agent/public/dist/
+lms_frappe_app/public/dist/
 
 # Секреты — НИКОГДА в git. Значения живут в переменных окружения Coolify
 # (прод) и в .env локально. Дом конвенции — CLAUDE.md, §9 репозитория lms-mcp.

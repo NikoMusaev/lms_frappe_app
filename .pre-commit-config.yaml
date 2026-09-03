@@ -8,7 +8,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        files: "lms_agent.*"
+        files: "lms_frappe_app.*"
         exclude: ".*json$|.*txt$|.*csv|.*md|.*svg"
       - id: check-merge-conflict
       - id: check-ast
@@ -38,11 +38,11 @@ repos:
         # Ignore any files that might contain jinja / bundles
         exclude: |
             (?x)^(
-                lms_agent/public/dist/.*|
+                lms_frappe_app/public/dist/.*|
                 .*node_modules.*|
                 .*boilerplate.*|
-                lms_agent/templates/includes/.*|
-                lms_agent/public/js/lib/.*
+                lms_frappe_app/templates/includes/.*|
+                lms_frappe_app/public/js/lib/.*
             )$
 
 
@@ -55,12 +55,12 @@ repos:
         # Ignore any files that might contain jinja / bundles
         exclude: |
             (?x)^(
-                lms_agent/public/dist/.*|
+                lms_frappe_app/public/dist/.*|
                 cypress/.*|
                 .*node_modules.*|
                 .*boilerplate.*|
-                lms_agent/templates/includes/.*|
-                lms_agent/public/js/lib/.*
+                lms_frappe_app/templates/includes/.*|
+                lms_frappe_app/public/js/lib/.*
             )$
 
 ci:
