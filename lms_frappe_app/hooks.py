@@ -73,6 +73,11 @@ required_apps = ["frappe/lms"]
 # automatically create page for each record of this doctype
 # website_generators = ["Web Page"]
 
+# Пункт сайдбара Frappe Learning ведёт по маршруту своей Web Page (fetch_from),
+# а страница «Подключить агента» живёт в коде. Редирект отрабатывает до выбора
+# страницы, поэтому заглушку публиковать не нужно.
+website_redirects = [{"source": "/agent-sidebar", "target": "/agent"}]
+
 # automatically load and sync documents of this doctype from downstream apps
 # importable_doctypes = [doctype_1]
 

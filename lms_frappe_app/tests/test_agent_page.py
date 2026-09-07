@@ -70,11 +70,17 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 		обеспечить_пункт_сайдбара()
 		пункты = frappe.get_all(
 			"LMS Sidebar Item",
-			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "agent"},
+			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "agent-sidebar"},
 			["title", "web_page"],
 		)
 		self.assertEqual(len(пункты), 1)
 		self.assertEqual(пункты[0].title, "Подключить агента")
-		# Web Page у пункта обязателен, но это заглушка: сайдбар ведёт по
-		# route, а публиковать заглушку нельзя — она перекрыла бы смысл.
+		# Web Page у пункта обязателен, но это заглушка: сайдбар ведёт по её
+		# route, а на настоящую страницу уводит редирект. Публиковать нельзя.
 		self.assertFalse(frappe.db.get_value("Web Page", пункты[0].web_page, "published"))
+
+	def test_маршрут_пункта_ведёт_на_страницу(self):
+		# `route` пункта — это route его Web Page (fetch_from); без редиректа
+		# сайдбар привёл бы на неопубликованную заглушку и 404.
+		редиректы = {п["source"]: п["target"] for п in frappe.get_hooks("website_redirects")}
+		self.assertEqual(редиректы.get("/agent-sidebar"), "/agent")

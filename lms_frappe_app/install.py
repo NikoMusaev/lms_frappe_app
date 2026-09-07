@@ -4,29 +4,31 @@
 
 import frappe
 
-ПУНКТ = {"route": "agent", "title": "Подключить агента", "icon": "bot"}
-#: Web Page — обязательное поле пункта сайдбара, хотя сайдбар ведёт по `route`.
-#: Заглушка не публикуется: сама страница живёт в коде, по адресу /agent.
+#: Web Page — обязательное поле пункта, а `route` и `title` пункт берёт из неё
+#: (`fetch_from`). Заглушка не публикуется: сама страница живёт в коде по
+#: адресу /agent, а с /agent-sidebar на неё ведёт `website_redirects` в hooks.
 ЗАГЛУШКА = {"title": "Подключить агента", "route": "agent-sidebar"}
+ИКОНКА = "bot"
 
 
 def обеспечить_пункт_сайдбара() -> None:
 	"""Пункт «Подключить агента» в сайдбаре Frappe Learning.
 
-	Сайдбар читает дочернюю таблицу `LMS Settings.sidebar_items`; строка с
-	`route` уводит на страницу обычной ссылкой. Идемпотентно: вызывается и
-	при установке, и при каждой миграции.
+	Сайдбар читает дочернюю таблицу `LMS Settings.sidebar_items` и ведёт по
+	`route` обычной ссылкой. Идемпотентно: вызывается и при установке, и при
+	каждой миграции.
 	"""
+	заглушка = _заглушка()
 	фильтры = {
 		"parenttype": "LMS Settings",
 		"parentfield": "sidebar_items",
 		"parent": "LMS Settings",
-		"route": ПУНКТ["route"],
+		"web_page": заглушка,
 	}
 	if frappe.db.exists("LMS Sidebar Item", фильтры):
 		return
 	настройки = frappe.get_single("LMS Settings")
-	настройки.append("sidebar_items", {**ПУНКТ, "web_page": _заглушка()})
+	настройки.append("sidebar_items", {"web_page": заглушка, "icon": ИКОНКА})
 	настройки.save(ignore_permissions=True)
 
 
