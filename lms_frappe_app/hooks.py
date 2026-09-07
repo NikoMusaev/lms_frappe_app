@@ -141,7 +141,10 @@ scheduler_events = {
 # ------------
 
 # before_install = "lms_frappe_app.install.before_install"
-# after_install = "lms_frappe_app.install.after_install"
+# Пункт «Подключить агента» в сайдбаре Frappe Learning — и при установке, и
+# при каждой миграции: на уже развёрнутом стенде after_install не сработает.
+after_install = "lms_frappe_app.install.after_install"
+after_migrate = ["lms_frappe_app.install.after_migrate"]
 
 # Uninstallation
 # ------------
