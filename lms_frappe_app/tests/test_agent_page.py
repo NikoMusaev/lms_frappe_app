@@ -71,7 +71,10 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 		пункты = frappe.get_all(
 			"LMS Sidebar Item",
 			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "agent"},
-			["title"],
+			["title", "web_page"],
 		)
 		self.assertEqual(len(пункты), 1)
 		self.assertEqual(пункты[0].title, "Подключить агента")
+		# Web Page у пункта обязателен, но это заглушка: сайдбар ведёт по
+		# route, а публиковать заглушку нельзя — она перекрыла бы смысл.
+		self.assertFalse(frappe.db.get_value("Web Page", пункты[0].web_page, "published"))
