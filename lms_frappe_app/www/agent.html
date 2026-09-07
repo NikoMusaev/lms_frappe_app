@@ -1,0 +1,43 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block page_content %}
+<div class="agent-page" style="max-width: 720px; margin: 2rem auto; line-height: 1.55;">
+	<h1>Подключить агента</h1>
+	<p>Занятия и сборка курсов на этой платформе идут через вашего AI-агента:
+	он подключается к сайту по протоколу MCP и входит той же учётной записью,
+	что и вы.</p>
+
+	{% if is_guest %}
+	<p>Чтобы увидеть адреса подключения, <a href="{{ login_url }}">войдите</a>.</p>
+	{% else %}
+	<h2>Куда подключаться</h2>
+	{% for c in connections %}
+	<section style="margin: 1.5rem 0; padding: 1rem 1.25rem; border: 1px solid #e2e6ea; border-radius: 8px;">
+		<h3 style="margin-top: 0;">{{ c.title }}</h3>
+		<p><strong>Адрес:</strong> <code>{{ c.url }}</code></p>
+		<p>{{ c.first_step }}</p>
+	</section>
+	{% endfor %}
+
+	<h2>Как подключить в Claude Desktop</h2>
+	<ol>
+		<li>Settings → Connectors → <strong>Add custom connector</strong>.</li>
+		<li>Name — любое, URL — адрес из блока выше. Поля OAuth оставьте пустыми.</li>
+		<li>В открывшемся окне войдите на этот сайт своей учётной записью и подтвердите доступ.</li>
+		<li>При первом вызове инструмента разрешите его: <em>Allow always</em>.</li>
+	</ol>
+	<p>Другие MCP-клиенты (Claude Code, Cursor) подключаются тем же адресом
+	через OAuth.</p>
+
+	<p><strong>Ограничение:</strong> не больше {{ registration_limit }}. Каждое
+	новое подключение регистрирует клиента заново, так что не переподключайте
+	коннектор без нужды.</p>
+	{% endif %}
+
+	<hr>
+	<p style="color: #6c757d;">Приложение платформы открыто под AGPL-3.0:
+	<a href="{{ source_url }}">исходный код</a>.</p>
+</div>
+{% endblock %}

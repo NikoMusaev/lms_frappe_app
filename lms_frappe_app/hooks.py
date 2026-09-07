@@ -73,6 +73,11 @@ required_apps = ["frappe/lms"]
 # automatically create page for each record of this doctype
 # website_generators = ["Web Page"]
 
+# Пункт сайдбара Frappe Learning ведёт по маршруту своей Web Page (fetch_from),
+# а страница «Подключить агента» живёт в коде. Редирект отрабатывает до выбора
+# страницы, поэтому заглушку публиковать не нужно.
+website_redirects = [{"source": "/agent-sidebar", "target": "/agent"}]
+
 # automatically load and sync documents of this doctype from downstream apps
 # importable_doctypes = [doctype_1]
 
@@ -141,7 +146,10 @@ scheduler_events = {
 # ------------
 
 # before_install = "lms_frappe_app.install.before_install"
-# after_install = "lms_frappe_app.install.after_install"
+# Пункт «Подключить агента» в сайдбаре Frappe Learning — и при установке, и
+# при каждой миграции: на уже развёрнутом стенде after_install не сработает.
+after_install = "lms_frappe_app.install.after_install"
+after_migrate = ["lms_frappe_app.install.after_migrate"]
 
 # Uninstallation
 # ------------
