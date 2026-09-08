@@ -207,13 +207,14 @@ after_migrate = ["lms_frappe_app.install.after_migrate"]
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+# OAuth-клиентов агенты регистрируют сами, а Frappe разрешает их только
+# Desk User — ученик без desk-доступа не мог авторизовать агента. Хук идёт
+# после validate Frappe и добавляет роли платформы (#26).
+doc_events = {
+	"OAuth Client": {
+		"validate": "lms_frappe_app.agent_learning.oauth_client.разрешить_роли_платформы",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
