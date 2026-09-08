@@ -14,7 +14,7 @@ import json
 
 import frappe
 
-from lms_frappe_app.agent_learning import course_builder, quiz, structure
+from lms_frappe_app.agent_learning import course_builder, directives, quiz, structure
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.api import контракт, текущий_пользователь
 
@@ -322,34 +322,51 @@ def set_directive(
 	common_misconceptions: str | None = None,
 	success_criteria: str | None = None,
 ) -> dict:
-	"""Задаёт директиву преподавателя новой версией.
-
-	Прошлые версии не удаляются, а снимаются с действия: занятие, идущее
-	прямо сейчас, уже получило свою директиву, и стирать её из истории
-	значит потерять основание выставленного зачёта.
-	"""
+	"""Задаёт директиву преподавателя новой версией."""
 	_автор()
 	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
-
-	прошлые = frappe.get_all("Agent Lesson Directive", filters={"lesson": lesson}, fields=["name", "version"])
-	for прошлая in прошлые:
-		frappe.db.set_value("Agent Lesson Directive", прошлая.name, "is_active", 0)
-
-	версия = max([п.version or 0 for п in прошлые], default=0) + 1
-	директива = frappe.get_doc(
+	return directives.записать(
+		"Agent Lesson Directive",
+		"lesson",
+		lesson,
 		{
-			"doctype": "Agent Lesson Directive",
-			"lesson": lesson,
-			"version": версия,
-			"is_active": 1,
 			"objectives": objectives,
 			"teaching_directive": teaching_directive,
 			"probing_questions": probing_questions,
 			"common_misconceptions": common_misconceptions,
 			"success_criteria": success_criteria,
-		}
-	).insert()
-	return {"id": директива.name, "lesson": lesson, "version": версия}
+		},
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def set_course_directive(
+	course: str,
+	teaching_directive: str,
+	objectives: str | None = None,
+	student_profile: str | None = None,
+	glossary: str | None = None,
+) -> dict:
+	"""Задаёт сквозную директиву курса новой версией.
+
+	Сюда идёт то, что одинаково на каждом уроке: роль и тон преподавателя,
+	формат занятия, кого учим, как называть вещи. Агент ученика получает её
+	вместе с директивой урока, поэтому повторять её в каждом уроке не нужно.
+	"""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+	return directives.записать(
+		"Agent Course Directive",
+		"course",
+		course,
+		{
+			"objectives": objectives,
+			"teaching_directive": teaching_directive,
+			"student_profile": student_profile,
+			"glossary": glossary,
+		},
+	)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -516,6 +533,7 @@ def course_draft(course: str) -> dict:
 			{"id": глава["name"], "title": глава["title"], "lessons": _уроки_главы(глава["name"])}
 			for глава in structure.главы_курса(course)
 		],
+		"directive": _действующая_директива_курса(course),
 		"readiness": course_builder.проверить_готовность(course),
 	}
 
@@ -545,6 +563,7 @@ def get_lesson(lesson: str) -> dict:
 		"course": сведения.course,
 		"body": сведения.body,
 		"directive": _действующая_директива(lesson),
+		"course_directive": _действующая_директива_курса(сведения.course),
 		"quiz": _вопросы_с_эталонами(квиз) if квиз else None,
 	}
 
@@ -658,6 +677,27 @@ def _действующая_директива(lesson: str) -> dict | None:
 		"probing_questions": запись.probing_questions,
 		"common_misconceptions": запись.common_misconceptions,
 		"success_criteria": запись.success_criteria,
+	}
+
+
+def _действующая_директива_курса(course: str) -> dict | None:
+	"""Сквозная директива, которую агент получает на каждом занятии курса."""
+	записи = frappe.get_all(
+		"Agent Course Directive",
+		filters={"course": course, "is_active": 1},
+		fields=["name", "version", "objectives", "teaching_directive", "student_profile", "glossary"],
+		limit=1,
+	)
+	if not записи:
+		return None
+	запись = записи[0]
+	return {
+		"id": запись.name,
+		"version": запись.version,
+		"objectives": запись.objectives,
+		"teaching_directive": запись.teaching_directive,
+		"student_profile": запись.student_profile,
+		"glossary": запись.glossary,
 	}
 
 

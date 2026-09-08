@@ -114,6 +114,32 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertEqual(данные["directive"]["audience"], "teacher_only")
 		self.assertIn("Начать с примера", данные["directive"]["teaching_directive"])
 
+	def test_директива_курса_приходит_отдельным_полем(self):
+		frappe.get_doc(
+			{
+				"doctype": "Agent Course Directive",
+				"course": self.курс,
+				"objectives": "Вести проект по системе",
+				"teaching_directive": "Разбирай всё на проекте ученика",
+				"student_profile": "Руководители малого бизнеса",
+				"glossary": "Цикл — месяц работы проекта",
+			}
+		).insert(ignore_permissions=True)
+
+		данные = student.start_lesson()["data"]
+
+		self.assertEqual(данные["course_objectives"], ["Вести проект по системе"])
+		self.assertEqual(данные["course_directive"]["audience"], "teacher_only")
+		self.assertIn("Разбирай всё", данные["course_directive"]["teaching_directive"])
+		self.assertEqual(данные["course_directive"]["glossary"], ["Цикл — месяц работы проекта"])
+
+	def test_курс_без_директивы_не_ломает_урок(self):
+		# Директива курса необязательна: урок обязан открываться и без неё.
+		данные = student.start_lesson()["data"]
+
+		self.assertIsNone(данные["course_directive"])
+		self.assertEqual(данные["course_objectives"], [])
+
 	def test_материал_и_директива_разными_полями(self):
 		# Одна из трёх митигаций против пересказа директивы ученику.
 		данные = student.start_lesson()["data"]
