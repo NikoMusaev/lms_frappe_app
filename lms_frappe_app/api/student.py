@@ -183,6 +183,9 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 	материал = нормализовать_урок(lesson)
 	segment = max(1, int(segment or 1))
 	директива = _директива(lesson)
+	курсовая = _директива_курса(курс)
+	# Событие одно: занятие выдало инструкцию, а из скольких она частей — деталь,
+	# за которой в журнале нет смысла следить.
 	занятие.записать_событие("Directive Issued", f"урок {lesson}")
 
 	политика = политика_квиза_для_курса(ученик, курс)
@@ -206,6 +209,8 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 		],
 		"objectives": директива.get("objectives", []),
 		"directive": директива.get("directive"),
+		"course_objectives": курсовая.get("objectives", []),
+		"course_directive": курсовая.get("directive"),
 		"quiz": {
 			"required": политика["quiz_required"],
 			"pass_threshold": политика["pass_threshold"],
@@ -424,6 +429,33 @@ def _директива(lesson: str) -> dict:
 			"probing_questions": _строки(д.probing_questions),
 			"common_misconceptions": _строки(д.common_misconceptions),
 			"success_criteria": _строки(д.success_criteria),
+		},
+	}
+
+
+def _директива_курса(course: str) -> dict:
+	"""Сквозная директива курса — тем же способом, что и урочная.
+
+	Цели курса идут наружу, а не внутрь директивы: их агент вправе озвучить
+	ученику, как и цели урока.
+	"""
+	запись = frappe.get_all(
+		"Agent Course Directive",
+		filters={"course": course, "is_active": 1},
+		fields=["objectives", "teaching_directive", "student_profile", "glossary"],
+		limit=1,
+		ignore_permissions=True,
+	)
+	if not запись:
+		return {}
+	д = запись[0]
+	return {
+		"objectives": _строки(д.objectives),
+		"directive": {
+			"audience": "teacher_only",
+			"teaching_directive": д.teaching_directive,
+			"student_profile": д.student_profile,
+			"glossary": _строки(д.glossary),
 		},
 	}
 

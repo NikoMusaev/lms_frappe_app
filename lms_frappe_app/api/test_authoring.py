@@ -93,6 +93,7 @@ class IntegrationTestAuthoring(IntegrationTestCase):
 			lambda: authoring.add_lesson(chapter=self.глава, title="Свой урок", body="x"),
 			lambda: authoring.publish_course(course=self.курс),
 			lambda: authoring.set_directive(lesson=self.уроки[0], teaching_directive="x"),
+			lambda: authoring.set_course_directive(course=self.курс, teaching_directive="x"),
 		):
 			with self.assertRaises(frappe.PermissionError):
 				вызов()
@@ -321,3 +322,65 @@ class IntegrationTestAuthoringReadBack(IntegrationTestCase):
 
 		with self.assertRaises(frappe.PermissionError):
 			authoring.get_lesson(lesson=self.урок)
+
+
+class IntegrationTestCourseDirective(IntegrationTestCase):
+	"""Сквозная директива курса: одна на курс, версионируется, видна автору."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"course-dir-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Сквозной {суффикс}", summary="есть")["data"]["id"]
+		self.глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=self.глава, title="Урок", body="# Урок")["data"]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_новая_редакция_вытесняет_прежнюю(self):
+		authoring.set_course_directive(course=self.курс, teaching_directive="Первая редакция")
+		вторая = authoring.set_course_directive(
+			course=self.курс,
+			teaching_directive="Вторая редакция",
+			student_profile="Руководители малого бизнеса",
+		)["data"]
+
+		директива = authoring.course_draft(course=self.курс)["data"]["directive"]
+		self.assertEqual(вторая["version"], 2)
+		self.assertEqual(директива["teaching_directive"], "Вторая редакция")
+		self.assertEqual(директива["student_profile"], "Руководители малого бизнеса")
+		self.assertEqual(
+			frappe.db.count("Agent Course Directive", {"course": self.курс, "is_active": 1}),
+			1,
+			"действующих директив курса должно оставаться ровно одна",
+		)
+
+	def test_прежняя_редакция_остаётся_в_истории(self):
+		"""`Why:` занятие, идущее сейчас, уже получило свою директиву."""
+		authoring.set_course_directive(course=self.курс, teaching_directive="Первая редакция")
+		authoring.set_course_directive(course=self.курс, teaching_directive="Вторая редакция")
+
+		self.assertEqual(frappe.db.count("Agent Course Directive", {"course": self.курс}), 2)
+
+	def test_урок_показывает_директиву_курса(self):
+		"""Автор правит урок, видя сказанное на уровне курса, и не дублирует."""
+		authoring.set_course_directive(course=self.курс, teaching_directive="Сквозное правило")
+
+		урок = authoring.get_lesson(lesson=self.урок)["data"]
+
+		self.assertIn("Сквозное правило", урок["course_directive"]["teaching_directive"])
+
+	def test_курс_без_директивы_предупреждает_но_не_блокирует(self):
+		готовность = authoring.course_draft(course=self.курс)["data"]["readiness"]
+
+		self.assertIn("course_without_directive", [п["code"] for п in готовность["warnings"]])
+		self.assertNotIn(
+			"course_without_directive", [п["code"] for п in готовность["blocking"]]
+		)
+
+	def test_директива_курса_не_путается_с_чужим_курсом(self):
+		другой = authoring.create_course(title="Соседний", summary="есть")["data"]["id"]
+		authoring.set_course_directive(course=self.курс, teaching_directive="Наше правило")
+
+		self.assertIsNone(authoring.course_draft(course=другой)["data"]["directive"])

@@ -111,6 +111,7 @@ def _проверить_количество(элементы: list) -> None:
 НЕТ_ОПИСАНИЯ = "no_summary"
 
 БЕЗ_ДИРЕКТИВЫ = "lesson_without_directive"
+БЕЗ_ДИРЕКТИВЫ_КУРСА = "course_without_directive"
 БЕЗ_КВИЗОВ = "course_without_quiz"
 
 
@@ -132,6 +133,14 @@ def проверить_готовность(курс: str) -> dict:
 
 	if not frappe.db.get_value("LMS Course", курс, "short_introduction"):
 		мешает.append({"code": НЕТ_ОПИСАНИЯ, "message": "Без краткого описания карточка в каталоге пустая"})
+
+	if not frappe.db.exists("Agent Course Directive", {"course": курс, "is_active": 1}):
+		стоит_знать.append(
+			{
+				"code": БЕЗ_ДИРЕКТИВЫ_КУРСА,
+				"message": "Курс без сквозной директивы: каждый урок агент поведёт сам по себе",
+			}
+		)
 
 	уроки = уроки_курса(курс)
 	if not уроки:
