@@ -224,6 +224,82 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 			)
 		)
 
+	# --- заметки об ученике ---
+
+	def test_заметка_замещается_по_ключу(self):
+		student.remember(kind="fact", key="role", text="Директор агентства")
+		student.remember(kind="fact", key="Role", text="Совладелец агентства")
+
+		факты = student.my_notes()["data"]["facts"]
+
+		self.assertEqual(
+			[(ф["key"], ф["text"]) for ф in факты],
+			[("role", "Совладелец агентства")],
+			"ключ нормализуется, а запись по нему замещается, а не удваивается",
+		)
+
+	def test_наблюдение_живёт_при_курсе_и_помнит_занятие(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		student.remember(
+			kind="observation", key="pace", text="Торопится", session=занятие
+		)
+
+		запись = frappe.get_doc(
+			"Agent Student Note", {"student": self.ученик, "note_key": "pace"}
+		)
+		self.assertEqual(запись.course, self.курс)
+		self.assertEqual(запись.source_session, занятие)
+		self.assertEqual(запись.kind, "Observation")
+
+	def test_наблюдение_без_занятия_отклоняется(self):
+		ответ = student.remember(kind="observation", key="pace", text="Торопится")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
+
+	def test_неизвестный_вид_заметки_отклоняется(self):
+		ответ = student.remember(kind="мнение", key="pace", text="Торопится")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.НЕИЗВЕСТНЫЙ_ВИД)
+
+	def test_лимит_заметок_упирается_в_предел(self):
+		for номер in range(student.ЛИМИТ_ЗАМЕТОК):
+			student.remember(kind="fact", key=f"k{номер}", text="да")
+
+		ответ = student.remember(kind="fact", key="ещё один", text="да")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ПЕРЕПОЛНЕНО)
+
+	def test_замена_по_ключу_проходит_и_на_пределе(self):
+		"""Иначе упор в лимит становится тупиком: заменить тоже нельзя."""
+		for номер in range(student.ЛИМИТ_ЗАМЕТОК):
+			student.remember(kind="fact", key=f"k{номер}", text="да")
+
+		self.assertTrue(student.remember(kind="fact", key="k0", text="нет")["ok"])
+
+	def test_забытая_заметка_исчезает(self):
+		student.remember(kind="fact", key="role", text="Директор")
+
+		self.assertTrue(student.forget(key="role")["ok"])
+		self.assertEqual(student.my_notes()["data"]["facts"], [])
+
+	def test_забыть_несуществующее_отклоняется(self):
+		ответ = student.forget(key="ничего-такого")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЗАМЕТКА_НЕ_НАЙДЕНА)
+
+	def test_заметки_приходят_с_датами(self):
+		student.remember(kind="fact", key="role", text="Директор")
+
+		факт = student.my_notes()["data"]["facts"][0]
+
+		self.assertIsNotNone(факт["since"])
+		self.assertIsNotNone(факт["updated"])
+
 	# --- отчёт по целям ---
 
 	def test_отчёт_по_целям_сохраняется(self):

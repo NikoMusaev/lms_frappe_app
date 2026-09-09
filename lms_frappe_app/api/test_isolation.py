@@ -214,3 +214,39 @@ class IntegrationTestQuizAnswerLeak(IntegrationTestCase):
 		выдано = json.dumps(данные, ensure_ascii=False, default=str)
 		self.assertNotIn("Москва", выдано)
 		self.assertNotIn("is_correct", выдано)
+
+
+	def test_заметки_ученика_не_видит_руководитель(self):
+		"""Заметки — про разговор, а не про результат.
+
+		Граница проходит по сущности целиком: руководителю не отдаётся ни
+		методом, ни прямым чтением записи.
+		"""
+		frappe.set_user(self.сотрудник)
+		student.remember(kind="fact", key="role", text="Директор по маркетингу")
+
+		frappe.set_user(self.руководитель)
+		выдано = json.dumps(
+			manager.student_detail(self.сотрудник), ensure_ascii=False, default=str
+		)
+
+		self.assertNotIn("Директор по маркетингу", выдано)
+		# get_list, а не get_all: права применяет только он, и проверять
+		# нужно именно их — фильтр в самом методе к делу не относится.
+		self.assertFalse(
+			frappe.get_list(
+				"Agent Student Note", filters={"student": self.сотрудник}, limit=1
+			),
+			"руководитель не должен видеть заметок своих людей",
+		)
+
+	def test_чужую_заметку_не_прочитать_и_не_забыть(self):
+		frappe.set_user(self.сотрудник)
+		student.remember(kind="fact", key="role", text="Директор по маркетингу")
+
+		frappe.set_user(self.руководитель)
+
+		self.assertEqual(student.my_notes()["data"]["facts"], [])
+		self.assertEqual(
+			student.forget(key="role")["error"]["code"], student.ЗАМЕТКА_НЕ_НАЙДЕНА
+		)

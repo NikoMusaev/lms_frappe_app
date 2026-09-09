@@ -38,6 +38,18 @@ from lms_frappe_app.api import контракт, список, текущий_п
 #: по-разному.
 СТАТУСЫ_ЦЕЛЕЙ = ("covered", "touched", "skipped")
 
+ПЕРЕПОЛНЕНО = "note_limit_reached"
+ЗАМЕТКА_НЕ_НАЙДЕНА = "note_not_found"
+НЕИЗВЕСТНЫЙ_ВИД = "unknown_note_kind"
+
+#: Наружу вид заметки зовётся строчными словами, внутри — значениями Select.
+ВИДЫ_ЗАМЕТОК = {"fact": "Fact", "observation": "Observation"}
+
+#: Сколько ключей помещается в один набор. `Why:` предел вместо фоновой
+#: уборки: он держит профиль читаемым без второй движущейся части, а упор в
+#: него агент разрешает сам — заменой записи по существующему ключу.
+ЛИМИТ_ЗАМЕТОК = 20
+
 
 @frappe.whitelist()
 @контракт
@@ -228,6 +240,102 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @контракт
+def remember(kind: str, key: str, text: str, session: str | None = None) -> dict:
+	"""Записывает об ученике то, что пригодится на следующих занятиях.
+
+	Ключ короткий и повторяемый: запись по существующему ключу замещает
+	текст. Наблюдение привязывается к курсу занятия, факт живёт у ученика
+	целиком — роль и отрасль от предмета не зависят.
+	"""
+	ученик = текущий_пользователь()
+	вид = ВИДЫ_ЗАМЕТОК.get((kind or "").strip().lower())
+	if not вид:
+		raise Отказ(НЕИЗВЕСТНЫЙ_ВИД, "Вид заметки — fact или observation", kind=kind)
+
+	# Пустая строка, а не None: ею Frappe хранит незаполненный Link, и фильтр
+	# по None искал бы `course is null`, не находя ни одной записи.
+	курс = ""
+	занятие = None
+	if вид == "Observation":
+		if not session:
+			raise Отказ(
+				ЧУЖОЕ_ЗАНЯТИЕ,
+				"Наблюдение записывается в рамках занятия: передайте session",
+			)
+		занятие = _своё_занятие(session)
+		курс = занятие.course
+
+	ключ = (key or "").strip().lower()
+	if not ключ:
+		raise Отказ(НЕИЗВЕСТНЫЙ_ВИД, "Ключ заметки обязателен", key=key)
+
+	существующая = frappe.db.exists(
+		"Agent Student Note", {"student": ученик, "course": курс, "note_key": ключ}
+	)
+	if not существующая:
+		сколько = frappe.db.count(
+			"Agent Student Note", {"student": ученик, "course": курс, "kind": вид}
+		)
+		if сколько >= ЛИМИТ_ЗАМЕТОК:
+			raise Отказ(
+				ПЕРЕПОЛНЕНО,
+				"Заметок уже предельно много: замените запись по существующему ключу",
+				limit=ЛИМИТ_ЗАМЕТОК,
+			)
+
+	значения = {
+		"text": text,
+		"kind": вид,
+		"source_session": занятие.name if занятие else None,
+	}
+	if существующая:
+		запись = frappe.get_doc("Agent Student Note", существующая)
+		запись.update(значения)
+		запись.save(ignore_permissions=True)
+	else:
+		запись = frappe.get_doc(
+			{
+				"doctype": "Agent Student Note",
+				"student": ученик,
+				"course": курс,
+				"note_key": ключ,
+				**значения,
+			}
+		).insert(ignore_permissions=True)
+
+	return {"key": запись.note_key, "kind": kind}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def forget(key: str, course: str | None = None) -> dict:
+	"""Удаляет заметку об ученике по ключу.
+
+	Ученик вправе стереть о себе всё: заметки ведутся о нём и доступны ему.
+	"""
+	имя = frappe.db.exists(
+		"Agent Student Note",
+		{
+			"student": текущий_пользователь(),
+			"course": course or "",
+			"note_key": (key or "").strip().lower(),
+		},
+	)
+	if not имя:
+		raise Отказ(ЗАМЕТКА_НЕ_НАЙДЕНА, "Такой заметки нет", key=key)
+	frappe.delete_doc("Agent Student Note", имя, ignore_permissions=True)
+	return {"key": key}
+
+
+@frappe.whitelist()
+@контракт
+def my_notes(course: str | None = None) -> dict:
+	"""Что агент запомнил об ученике. Ученик вправе это видеть."""
+	return _заметки(текущий_пользователь(), course)
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
 def report_outcomes(session: str, outcomes) -> dict:
 	"""Отчёт о покрытии целей урока — граница занятия.
 
@@ -393,6 +501,38 @@ def _своё_занятие(session: str):
 	if занятие.student != текущий_пользователь():
 		raise Отказ(ЧУЖОЕ_ЗАНЯТИЕ, "Это чужое занятие", session=session)
 	return занятие
+
+
+def _заметки(ученик: str, course: str | None) -> dict:
+	"""Факты и наблюдения курса — с датами.
+
+	Даты наружу не для красоты: наблюдение трёхмесячной давности и вчерашнее
+	— разные утверждения, и без даты агент примет старое за текущее и станет
+	объяснять человеку давно освоенное.
+
+	`ignore_permissions` здесь безопасен: фильтр по ученику уже сузил выборку
+	до своего, а права повторили бы то же условие вторым способом.
+	"""
+	записи = frappe.get_all(
+		"Agent Student Note",
+		filters={"student": ученик},
+		or_filters=[["course", "=", ""], ["course", "=", course or ""]],
+		fields=["note_key", "text", "kind", "creation", "modified"],
+		order_by="modified desc",
+		ignore_permissions=True,
+	)
+	факты, наблюдения = [], []
+	for з in записи:
+		если_факт = з.kind == "Fact"
+		(факты if если_факт else наблюдения).append(
+			{
+				"key": з.note_key,
+				"text": з.text,
+				"since": з.creation.isoformat() if если_факт else None,
+				"updated": з.modified.isoformat(),
+			}
+		)
+	return {"facts": факты, "observations": наблюдения}
 
 
 def _цели_урока(lesson: str) -> list[str]:
