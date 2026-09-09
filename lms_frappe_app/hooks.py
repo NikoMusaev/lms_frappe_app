@@ -89,9 +89,12 @@ get_website_user_home_page = "lms_frappe_app.www.home.домашняя_стра�
 # website_generators = ["Web Page"]
 
 # Пункт сайдбара Frappe Learning ведёт по маршруту своей Web Page (fetch_from),
-# а страница «Подключить агента» живёт в коде. Редирект отрабатывает до выбора
-# страницы, поэтому заглушку публиковать не нужно.
-website_redirects = [{"source": "/agent-sidebar", "target": "/agent"}]
+# а страницы «Подключить агента» и «Мои документы» живут в коде. Редирект
+# отрабатывает до выбора страницы, поэтому заглушки публиковать не нужно.
+website_redirects = [
+	{"source": "/agent-sidebar", "target": "/agent"},
+	{"source": "/artifacts-sidebar", "target": "/artifacts"},
+]
 
 # automatically load and sync documents of this doctype from downstream apps
 # importable_doctypes = [doctype_1]
@@ -122,6 +125,7 @@ permission_query_conditions = {
 	"Organization Membership": f"{_права}.условие_членства",
 	"Course Allocation": f"{_права}.условие_назначения",
 	"Agent Student Note": f"{_права}.условие_заметки",
+	"Agent Student Artifact": f"{_права}.условие_артефакта",
 }
 
 has_permission = {
@@ -132,6 +136,7 @@ has_permission = {
 	"Organization Membership": f"{_права}.доступно_членство",
 	"Course Allocation": f"{_права}.доступно_назначение",
 	"Agent Student Note": f"{_права}.доступна_заметка",
+	"Agent Student Artifact": f"{_права}.доступен_артефакт",
 }
 
 # Роли ставятся вместе с приложением: без них права на DocType ссылались бы
@@ -163,8 +168,8 @@ scheduler_events = {
 # ------------
 
 # before_install = "lms_frappe_app.install.before_install"
-# Пункт «Подключить агента» в сайдбаре Frappe Learning — и при установке, и
-# при каждой миграции: на уже развёрнутом стенде after_install не сработает.
+# Пункты приложения в сайдбаре Frappe Learning — и при установке, и при
+# каждой миграции: на уже развёрнутом стенде after_install не сработает.
 after_install = "lms_frappe_app.install.after_install"
 after_migrate = ["lms_frappe_app.install.after_migrate"]
 

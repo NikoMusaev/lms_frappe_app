@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-09-10 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "student",
+  "course",
+  "artifact",
+  "schema_version",
+  "sb_blocks",
+  "blocks"
+ ],
+ "fields": [
+  {
+   "fieldname": "student",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Ученик",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "course",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Курс",
+   "options": "LMS Course",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "Ключ артефакта из схемы курса",
+   "fieldname": "artifact",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Артефакт",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "По какой версии схемы блоки заполнялись в последний раз",
+   "fieldname": "schema_version",
+   "fieldtype": "Link",
+   "label": "Версия схемы",
+   "options": "Agent Course Artifact",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_blocks",
+   "fieldtype": "Section Break",
+   "label": "Блоки"
+  },
+  {
+   "fieldname": "blocks",
+   "fieldtype": "Table",
+   "label": "Блоки",
+   "options": "Agent Artifact Content"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-10 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Agent Learning",
+ "name": "Agent Student Artifact",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "role": "LMS Student",
+   "read": 1,
+   "report": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "artifact",
+ "track_changes": 1
+}

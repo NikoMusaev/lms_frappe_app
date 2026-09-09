@@ -22,6 +22,9 @@ from lms_frappe_app.agent_learning.access import (
 	можно_записаться,
 	политика_квиза_для_курса,
 )
+from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
+	нормализовать_ключ,
+)
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
 from lms_frappe_app.agent_learning.structure import главы_курса, уроки_курса
@@ -51,6 +54,10 @@ from lms_frappe_app.api import контракт, список, текущий_п
 #: уборки: он держит профиль читаемым без второй движущейся части, а упор в
 #: него агент разрешает сам — заменой записи по существующему ключу.
 ЛИМИТ_ЗАМЕТОК = 20
+
+АРТЕФАКТ_НЕ_НАЙДЕН = "artifact_not_found"
+БЛОК_НЕ_НАЙДЕН = "artifact_block_not_found"
+ПУСТОЙ_БЛОК = "artifact_content_required"
 
 
 @frappe.whitelist()
@@ -125,9 +132,7 @@ def course_outline(course: str) -> dict:
 	материалу.
 	"""
 	ученик = текущий_пользователь()
-	можно, причина = доступен_курс(ученик, course)
-	if not можно:
-		raise Отказ(причина, "Этот курс сейчас недоступен", course=course)
+	_требовать_доступ_к_курсу(ученик, course)
 
 	пройдены = _пройденные(ученик, course)
 	следующий = _следующий_урок(ученик, course)
@@ -244,6 +249,9 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 			**_заметки(ученик, курс),
 			"carried_over": _незакрытые_цели(ученик, курс, кроме=lesson),
 		},
+		# Подсказка «сегодня собираем резюме проекта», а не ограничение:
+		# update_artifact принимает любой ключ, и ученик волен забежать вперёд.
+		"artifact_blocks": _блоки_урока(ученик, курс, lesson),
 	}
 
 
@@ -378,6 +386,66 @@ def whoami() -> dict:
 def my_notes(course: str | None = None) -> dict:
 	"""Что агент запомнил об ученике. Ученик вправе это видеть."""
 	return _заметки(текущий_пользователь(), course)
+
+
+@frappe.whitelist()
+@контракт
+def artifact(course: str, artifact: str | None = None) -> dict:
+	"""Документы курса или один из них целиком.
+
+	Без ключа — перечисление: что за документы и насколько собраны. С ключом
+	— блоки со схемой и содержимым: заполненные с текстом, пустые с
+	подсказкой автора. Один вызов и на обзор, и на чтение: два инструмента
+	для одного вопроса агент выбирает наугад.
+	"""
+	ученик = текущий_пользователь()
+	_требовать_доступ_к_курсу(ученик, course)
+	if artifact is None:
+		return {"course": course, "artifacts": _перечень_артефактов(ученик, course)}
+	return _артефакт_целиком(ученик, course, artifact)
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def update_artifact(course: str, artifact: str, key: str, content: str) -> dict:
+	"""Записывает блок артефакта целиком.
+
+	Замещение, а не дописывание: ученик уточняет уже сказанное, и склейка
+	превратила бы документ в стенограмму разговора. Сервер проверяет только
+	форму — документ и блок есть в схеме, текст непуст; отвечает ли текст
+	подсказке автора, смотрит агент: артефакт на зачёт не влияет, и
+	подыгрывать здесь нечему.
+	"""
+	ученик = текущий_пользователь()
+	_требовать_доступ_к_курсу(ученик, course)
+	схема = _действующая_схема(course, artifact)
+	ключ = нормализовать_ключ(key)
+	if ключ not in {блок.block_key for блок in схема.blocks}:
+		raise Отказ(
+			БЛОК_НЕ_НАЙДЕН, "В этом документе нет такого блока", artifact=схема.slug, key=key
+		)
+	if not (content or "").strip():
+		raise Отказ(ПУСТОЙ_БЛОК, "Блок записывается непустым", artifact=схема.slug, key=ключ)
+
+	документ = _экземпляр(ученик, course, схема.slug) or frappe.get_doc(
+		{
+			"doctype": "Agent Student Artifact",
+			"student": ученик,
+			"course": course,
+			"artifact": схема.slug,
+		}
+	)
+	for строка in документ.blocks:
+		if строка.block_key == ключ:
+			строка.content = content
+			break
+	else:
+		документ.append("blocks", {"block_key": ключ, "content": content})
+	документ.schema_version = схема.name
+	документ.save(ignore_permissions=True)
+
+	заполнено = _заполненность(схема, _содержимое(документ))
+	return {"artifact": схема.slug, "key": ключ, **заполнено}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -525,6 +593,128 @@ def get_my_progress() -> dict:
 
 
 # --- вспомогательное ---
+
+
+def _требовать_доступ_к_курсу(ученик: str, course: str) -> None:
+	"""Тот же отказ, что у начала урока: курс не назначен или приостановлен."""
+	можно, причина = доступен_курс(ученик, course)
+	if not можно:
+		raise Отказ(причина, "Этот курс сейчас недоступен", course=course)
+
+
+def _схемы_курса(course: str) -> list:
+	"""Действующие схемы артефактов курса — в порядке, в каком документы
+	впервые объявили.
+
+	`Why:` порядок по дате действующей версии менялся бы при каждой правке
+	схемы: поправленный документ уезжал бы в конец. Порядок по ключу — в
+	алфавитном, а не в смысловом. Первая версия у документа одна и навсегда.
+	"""
+	действующие = frappe.get_all(
+		"Agent Course Artifact",
+		filters={"course": course, "is_active": 1},
+		fields=["name", "slug"],
+	)
+	первые = {
+		запись.slug: запись.creation
+		for запись in frappe.get_all(
+			"Agent Course Artifact",
+			filters={"course": course, "version": 1},
+			fields=["slug", "creation"],
+		)
+	}
+	действующие.sort(key=lambda з: (первые.get(з.slug) is None, первые.get(з.slug) or "", з.slug))
+	return [frappe.get_doc("Agent Course Artifact", з.name) for з in действующие]
+
+
+def _действующая_схема(course: str, artifact: str):
+	имя = frappe.db.get_value(
+		"Agent Course Artifact",
+		{"course": course, "slug": нормализовать_ключ(artifact), "is_active": 1},
+	)
+	if not имя:
+		raise Отказ(АРТЕФАКТ_НЕ_НАЙДЕН, "В этом курсе нет такого документа", artifact=artifact)
+	return frappe.get_doc("Agent Course Artifact", имя)
+
+
+def _экземпляр(ученик: str, course: str, artifact: str):
+	"""Документ ученика по этой схеме, если он уже заполнялся."""
+	имя = frappe.db.get_value(
+		"Agent Student Artifact", {"student": ученик, "course": course, "artifact": artifact}
+	)
+	return frappe.get_doc("Agent Student Artifact", имя) if имя else None
+
+
+def _содержимое(экземпляр) -> dict[str, str]:
+	if not экземпляр:
+		return {}
+	return {строка.block_key: строка.content or "" for строка in экземпляр.blocks}
+
+
+def _заполненность(схема, содержимое: dict[str, str]) -> dict:
+	ключи = [блок.block_key for блок in схема.blocks]
+	return {
+		"blocks_total": len(ключи),
+		"blocks_filled": sum(1 for ключ in ключи if содержимое.get(ключ, "").strip()),
+	}
+
+
+def _блок(блок, содержимое: dict[str, str]) -> dict:
+	"""Блок схемы с содержимым ученика; пустой — с подсказкой автора."""
+	return {
+		"key": блок.block_key,
+		"title": блок.title,
+		# Строкой, а не null: пустую подсказку агент и страница проверяют
+		# одинаково с непустой, без второй ветки на «нет значения».
+		"hint": блок.hint or "",
+		"lesson": блок.lesson or None,
+		"span": блок.span or 1,
+		"content": содержимое.get(блок.block_key, ""),
+	}
+
+
+def _перечень_артефактов(ученик: str, course: str) -> list[dict]:
+	перечень = []
+	for схема in _схемы_курса(course):
+		содержимое = _содержимое(_экземпляр(ученик, course, схема.slug))
+		перечень.append(
+			{
+				"artifact": схема.slug,
+				"title": схема.title,
+				"layout": схема.layout,
+				**_заполненность(схема, содержимое),
+			}
+		)
+	return перечень
+
+
+def _артефакт_целиком(ученик: str, course: str, artifact: str) -> dict:
+	"""Блоки в порядке схемы. Блок, убранный из схемы, не показывается, но
+	его содержимое остаётся в базе — вернётся вместе с блоком."""
+	схема = _действующая_схема(course, artifact)
+	содержимое = _содержимое(_экземпляр(ученик, course, схема.slug))
+	return {
+		"course": course,
+		"artifact": схема.slug,
+		"title": схема.title,
+		"layout": схема.layout,
+		"blocks": [_блок(блок, содержимое) for блок in схема.blocks],
+	}
+
+
+def _блоки_урока(ученик: str, курс: str, lesson: str) -> list[dict]:
+	"""Блоки документов курса, привязанные к уроку, с содержимым ученика."""
+	блоки = []
+	for схема in _схемы_курса(курс):
+		свои = [блок for блок in схема.blocks if блок.lesson == lesson]
+		if not свои:
+			continue
+		содержимое = _содержимое(_экземпляр(ученик, курс, схема.slug))
+		for блок in свои:
+			блоки.append(
+				{"artifact": схема.slug, "artifact_title": схема.title, **_блок(блок, содержимое)}
+			)
+	return блоки
 
 
 def _текущее_занятие(ученик: str, lesson: str):

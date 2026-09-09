@@ -4,21 +4,29 @@
 
 import frappe
 
-#: Web Page — обязательное поле пункта, а `route` и `title` пункт берёт из неё
-#: (`fetch_from`). Заглушка не публикуется: сама страница живёт в коде по
-#: адресу /agent, а с /agent-sidebar на неё ведёт `website_redirects` в hooks.
-ЗАГЛУШКА = {"title": "Подключить агента", "route": "agent-sidebar"}
-ИКОНКА = "bot"
+#: Пункты сайдбара Frappe Learning. Web Page — обязательное поле пункта, а
+#: `route` и `title` пункт берёт из неё (`fetch_from`). Заглушки не
+#: публикуются: сами страницы живут в коде, а с маршрута заглушки на них ведёт
+#: `website_redirects` в hooks.
+ПУНКТЫ_САЙДБАРА = (
+	{"title": "Подключить агента", "route": "agent-sidebar", "icon": "bot", "page": "/agent"},
+	{"title": "Мои документы", "route": "artifacts-sidebar", "icon": "file-text", "page": "/artifacts"},
+)
 
 
-def обеспечить_пункт_сайдбара() -> None:
-	"""Пункт «Подключить агента» в сайдбаре Frappe Learning.
+def обеспечить_пункты_сайдбара() -> None:
+	"""Пункты приложения в сайдбаре Frappe Learning.
 
 	Сайдбар читает дочернюю таблицу `LMS Settings.sidebar_items` и ведёт по
 	`route` обычной ссылкой. Идемпотентно: вызывается и при установке, и при
 	каждой миграции.
 	"""
-	заглушка = _заглушка()
+	for пункт in ПУНКТЫ_САЙДБАРА:
+		_обеспечить_пункт(пункт)
+
+
+def _обеспечить_пункт(пункт: dict) -> None:
+	заглушка = _заглушка(пункт)
 	фильтры = {
 		"parenttype": "LMS Settings",
 		"parentfield": "sidebar_items",
@@ -28,12 +36,12 @@ def обеспечить_пункт_сайдбара() -> None:
 	if frappe.db.exists("LMS Sidebar Item", фильтры):
 		return
 	настройки = frappe.get_single("LMS Settings")
-	настройки.append("sidebar_items", {"web_page": заглушка, "icon": ИКОНКА})
+	настройки.append("sidebar_items", {"web_page": заглушка, "icon": пункт["icon"]})
 	настройки.save(ignore_permissions=True)
 
 
-def _заглушка() -> str:
-	имя = frappe.db.get_value("Web Page", {"route": ЗАГЛУШКА["route"]})
+def _заглушка(пункт: dict) -> str:
+	имя = frappe.db.get_value("Web Page", {"route": пункт["route"]})
 	if имя:
 		return имя
 	return (
@@ -42,8 +50,9 @@ def _заглушка() -> str:
 				"doctype": "Web Page",
 				"published": 0,
 				"content_type": "Rich Text",
-				"main_section": "<p>Страница живёт в приложении: /agent.</p>",
-				**ЗАГЛУШКА,
+				"main_section": f"<p>Страница живёт в приложении: {пункт['page']}.</p>",
+				"title": пункт["title"],
+				"route": пункт["route"],
 			}
 		)
 		.insert(ignore_permissions=True)
@@ -64,6 +73,22 @@ def обеспечить_индекс_заметок() -> None:
 		"""
 		CREATE UNIQUE INDEX IF NOT EXISTS `agent_student_note_key`
 		ON `tabAgent Student Note` (`student`, `course`, `note_key`)
+		"""
+	)
+
+
+def обеспечить_индекс_артефактов() -> None:
+	"""Экземпляр артефакта один на «ученик + курс + артефакт».
+
+	`Why:` та же причина, что у индекса заметок: метод записи ищет экземпляр
+	перед созданием, но гонку двух вызовов агента и правку из админки держит
+	только база. Два экземпляра одного документа — это два разных «резюме
+	проекта», из которых страница покажет случайный.
+	"""
+	frappe.db.sql_ddl(
+		"""
+		CREATE UNIQUE INDEX IF NOT EXISTS `agent_student_artifact_key`
+		ON `tabAgent Student Artifact` (`student`, `course`, `artifact`)
 		"""
 	)
 
@@ -140,12 +165,14 @@ def _расходится(ключ, client_id: str, client_secret: str) -> bool:
 
 
 def after_install() -> None:
-	обеспечить_пункт_сайдбара()
+	обеспечить_пункты_сайдбара()
 	обеспечить_индекс_заметок()
+	обеспечить_индекс_артефактов()
 	обеспечить_вход_через_google()
 
 
 def after_migrate() -> None:
-	обеспечить_пункт_сайдбара()
+	обеспечить_пункты_сайдбара()
 	обеспечить_индекс_заметок()
+	обеспечить_индекс_артефактов()
 	обеспечить_вход_через_google()

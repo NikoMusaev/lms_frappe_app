@@ -1,0 +1,110 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block page_content %}
+<div class="artifacts-page" style="max-width: 960px; margin: 2rem auto; line-height: 1.55;">
+
+	{% if is_guest %}
+	<h1>Мои документы</h1>
+	<p>Документы курса собираются по ходу обучения и видны только вам.
+	Чтобы открыть их, <a href="{{ login_url }}">войдите</a>.</p>
+
+	{% elif document %}
+	<p><a href="{{ page_url }}">← Все документы</a> · {{ document.course_title | e }}</p>
+	<h1>{{ document.title | e }}</h1>
+	<p>
+		<a class="btn btn-sm btn-secondary" href="{{ document.download_url }}">Скачать markdown</a>
+	</p>
+
+	{# Раскладка — про вёрстку и только: canvas рисует сеткой по span, sections — столбцом. #}
+	{% set сетка = document.layout == "canvas" %}
+	<div style="{% if сетка %}display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem;{% endif %}">
+	{% for b in document.blocks %}
+		<section class="artifact-block" data-key="{{ b.key }}"
+			style="border: 1px solid #e2e6ea; border-radius: 8px; padding: 1rem 1.25rem; margin: {% if сетка %}0{% else %}0 0 1rem{% endif %};
+			{% if сетка %}grid-column: span {{ [b.span, 4] | min }};{% endif %}">
+			<h3 style="margin-top: 0;">{{ b.title | e }}</h3>
+			{% if b.html %}
+			<div class="artifact-content">{{ b.html }}</div>
+			{% else %}
+			<p style="color: #6c757d;"><em>Пока пусто.</em>{% if b.hint %} {{ b.hint | e }}{% endif %}</p>
+			{% endif %}
+			<details style="margin-top: .5rem;">
+				<summary style="cursor: pointer; color: #6c757d;">Править</summary>
+				<form class="artifact-form" style="margin-top: .5rem;">
+					<textarea name="content" rows="6" style="width: 100%; font-family: inherit;">{{ b.content | e }}</textarea>
+					<p style="margin: .5rem 0 0;">
+						<button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+						<span class="artifact-status" style="margin-left: .5rem; color: #6c757d;"></span>
+					</p>
+				</form>
+			</details>
+		</section>
+	{% endfor %}
+	</div>
+
+	<script>
+	// Запись тем же методом, что у агента: у страницы своего пути нет.
+	frappe.csrf_token = "{{ csrf_token }}";
+	document.querySelectorAll(".artifact-form").forEach(function (form) {
+		form.addEventListener("submit", async function (event) {
+			event.preventDefault();
+			var status = form.querySelector(".artifact-status");
+			status.textContent = "Сохраняю…";
+			var response = await fetch("/api/method/{{ update_method }}", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Accept": "application/json",
+					"X-Frappe-CSRF-Token": frappe.csrf_token,
+				},
+				body: JSON.stringify({
+					course: {{ document.course | tojson }},
+					artifact: {{ document.artifact | tojson }},
+					key: form.closest(".artifact-block").dataset.key,
+					content: form.elements.content.value,
+				}),
+			});
+			var body = response.ok ? await response.json() : null;
+			var ответ = body && body.message;
+			if (ответ && ответ.ok) {
+				window.location.reload();
+			} else {
+				status.textContent = (ответ && ответ.error && ответ.error.message) || "Не удалось сохранить";
+			}
+		});
+	});
+	</script>
+
+	{% elif missing %}
+	<h1>Мои документы</h1>
+	<p>Такого документа у вас нет: курс недоступен или документ убран из
+	схемы. <a href="{{ page_url }}">К списку документов</a>.</p>
+
+	{% else %}
+	<h1>Мои документы</h1>
+	{% if not courses %}
+	<p>Пока ни один из ваших курсов не собирает документов. Они появятся
+	здесь, как только агент запишет первый блок.</p>
+	{% endif %}
+	{% for c in courses %}
+	<section style="margin: 1.5rem 0;">
+		<h2 style="font-size: 1.15rem;">{{ c.title | e }}</h2>
+		<ul style="list-style: none; padding: 0;">
+		{% for a in c.artifacts %}
+			<li style="margin: .35rem 0;">
+				<a href="{{ page_url }}?course={{ c.id | urlencode }}&artifact={{ a.artifact | urlencode }}">{{ a.title | e }}</a>
+				<span style="color: #6c757d;">— заполнено {{ a.blocks_filled }} из {{ a.blocks_total }}</span>
+			</li>
+		{% endfor %}
+		</ul>
+	</section>
+	{% endfor %}
+	{% endif %}
+
+	{% if not is_guest %}
+	<p style="margin-top: 2rem;"><a href="/lms/courses">← К курсам</a></p>
+	{% endif %}
+</div>
+{% endblock %}

@@ -250,3 +250,65 @@ class IntegrationTestQuizAnswerLeak(IntegrationTestCase):
 		self.assertEqual(
 			student.forget(key="role")["error"]["code"], student.ЗАМЕТКА_НЕ_НАЙДЕНА
 		)
+
+
+class IntegrationTestArtifactIsolation(IntegrationTestCase):
+	"""Артефакт — рабочий документ ученика: свой и только свой."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.компания = создать_организацию(f"Компания {суффикс}")
+		self.урок = создать_урок(f"Урок {суффикс}")
+		self.сотрудник = создать_ученика(f"art-a-{суффикс}@example.com")
+		self.коллега = создать_ученика(f"art-b-{суффикс}@example.com")
+		добавить_в_организацию(self.сотрудник, self.компания)
+		добавить_в_организацию(self.коллега, self.компания)
+		self.курс = зачислить(self.сотрудник, self.урок)
+		зачислить(self.коллега, self.урок)
+		self.руководитель = создать_менеджера(f"art-m-{суффикс}@example.com", self.компания)
+		frappe.get_doc(
+			{
+				"doctype": "Agent Course Artifact",
+				"course": self.курс,
+				"slug": "summary",
+				"title": "Резюме проекта",
+				"blocks": [{"block_key": "goal", "title": "Цель"}],
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(self.сотрудник)
+		student.update_artifact(self.курс, "summary", "goal", "Открыть седьмую кофейню")
+		self.документ = frappe.db.get_value(
+			"Agent Student Artifact", {"student": self.сотрудник, "artifact": "summary"}
+		)
+		frappe.set_user("Administrator")
+
+	def test_коллега_видит_свой_пустой_документ_а_не_чужой(self):
+		frappe.set_user(self.коллега)
+
+		блоки = student.artifact(self.курс, "summary")["data"]["blocks"]
+
+		self.assertEqual(блоки[0]["content"], "")
+		self.assertFalse(
+			frappe.has_permission("Agent Student Artifact", "read", doc=self.документ)
+		)
+
+	def test_руководитель_не_видит_документов_своих_людей(self):
+		"""Менеджеру идёт покрытие целей; черновик резюме — не отчётность."""
+		frappe.set_user(self.руководитель)
+
+		self.assertFalse(
+			frappe.get_list("Agent Student Artifact", filters={"student": self.сотрудник}, limit=1)
+		)
+		self.assertFalse(
+			frappe.has_permission("Agent Student Artifact", "read", doc=self.документ)
+		)
+		выдано = json.dumps(manager.student_detail(self.сотрудник), ensure_ascii=False, default=str)
+		self.assertNotIn("седьмую кофейню", выдано)
+
+	def test_ученик_не_правит_документ_напрямую(self):
+		frappe.set_user(self.сотрудник)
+
+		self.assertTrue(frappe.has_permission("Agent Student Artifact", "read", doc=self.документ))
+		self.assertFalse(frappe.has_permission("Agent Student Artifact", "write", doc=self.документ))
