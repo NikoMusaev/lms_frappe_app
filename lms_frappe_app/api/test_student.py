@@ -224,6 +224,25 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 			)
 		)
 
+	# --- контекст ученика ---
+
+	def test_start_lesson_отдаёт_заметки_об_ученике(self):
+		student.remember(kind="fact", key="role", text="Директор")
+
+		контекст = student.start_lesson()["data"]["student_context"]
+
+		self.assertEqual([ф["key"] for ф in контекст["facts"]], ["role"])
+		self.assertEqual(контекст["carried_over"], [])
+
+	def test_заметки_приходят_вне_директивной_рамки(self):
+		"""Ученику они доступны, грифа «не показывать» на них нет."""
+		student.remember(kind="fact", key="role", text="Директор")
+
+		данные = student.start_lesson()["data"]
+
+		self.assertNotIn("Директор", json.dumps(данные["directive"], ensure_ascii=False))
+		self.assertIn("Директор", json.dumps(данные["student_context"], ensure_ascii=False))
+
 	# --- заметки об ученике ---
 
 	def test_заметка_замещается_по_ключу(self):
@@ -658,6 +677,39 @@ class IntegrationTestCourseOutline(IntegrationTestCase):
 		).insert(ignore_permissions=True).name
 		привязать_урок(глава, self.второй)
 		frappe.set_user(self.ученик)
+
+	def test_незакрытая_цель_переносится_на_следующий_урок(self):
+		"""Агент следующего занятия должен знать, что осталось подобрать."""
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{
+				"doctype": "Agent Lesson Directive",
+				"lesson": self.первый,
+				"objectives": "Разобрать основу\nПосчитать сроки",
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+
+		первое = student.start_lesson(lesson=self.первый)["data"]["session"]
+		student.report_outcomes(
+			первое,
+			outcomes=[
+				{"objective": "Разобрать основу", "status": "covered"},
+				{"objective": "Посчитать сроки", "status": "skipped"},
+			],
+		)
+		student.complete_lesson(первое)
+
+		перенос = student.start_lesson(lesson=self.второй)["data"]["student_context"][
+			"carried_over"
+		]
+
+		self.assertEqual(
+			[(п["objective"], п["status"]) for п in перенос],
+			[("Посчитать сроки", "skipped")],
+			"разобранная цель переноситься не должна",
+		)
+		self.assertEqual(перенос[0]["lesson"], self.первый)
 
 	def уроки(self):
 		структура = student.course_outline(self.курс)["data"]

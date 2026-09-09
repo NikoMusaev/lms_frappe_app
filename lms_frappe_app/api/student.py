@@ -235,6 +235,13 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 			"pass_threshold": политика["pass_threshold"],
 			"attempts_left": _осталось_попыток(ученик, lesson, политика),
 		},
+		# Отдельным полем, а не внутри директивы: заметки ведутся об ученике
+		# и доступны ему, грифа «не показывать» на них нет. Смешать одно с
+		# другим значило бы соврать агенту про режим обращения.
+		"student_context": {
+			**_заметки(ученик, курс),
+			"carried_over": _незакрытые_цели(ученик, курс, кроме=lesson),
+		},
 	}
 
 
@@ -533,6 +540,52 @@ def _заметки(ученик: str, course: str | None) -> dict:
 			}
 		)
 	return {"facts": факты, "observations": наблюдения}
+
+
+#: Сколько последних уроков курса приносят с собой незакрытые цели. `Why:`
+#: без границы к концу курса это список всего, что когда-либо не дошло, —
+#: агент прочитает его целиком и целиком же проигнорирует.
+ГЛУБИНА_ПЕРЕНОСА = 3
+
+
+def _незакрытые_цели(ученик: str, курс: str, кроме: str) -> list[dict]:
+	"""Цели прошлых уроков курса, до которых не дошли или дошли вскользь."""
+	занятия = frappe.get_all(
+		"Agent Learning Session",
+		filters={"student": ученик, "course": курс, "status": "Completed"},
+		fields=["name", "lesson", "finished_at"],
+		order_by="finished_at desc",
+		ignore_permissions=True,
+	)
+	перенос = []
+	увиденные = set()
+	for занятие in занятия:
+		# Урок мог проходиться дважды: значим последний отчёт по нему.
+		if занятие.lesson == кроме or занятие.lesson in увиденные:
+			continue
+		увиденные.add(занятие.lesson)
+		if len(увиденные) > ГЛУБИНА_ПЕРЕНОСА:
+			break
+		for строка in frappe.get_all(
+			"Agent Objective Outcome",
+			filters={
+				"parent": занятие.name,
+				"parenttype": "Agent Learning Session",
+				"status": ("in", ("touched", "skipped")),
+			},
+			fields=["objective", "status"],
+			order_by="idx asc",
+			ignore_permissions=True,
+		):
+			перенос.append(
+				{
+					"objective": строка.objective,
+					"status": строка.status,
+					"lesson": занятие.lesson,
+					"when": занятие.finished_at.isoformat() if занятие.finished_at else None,
+				}
+			)
+	return перенос
 
 
 def _цели_урока(lesson: str) -> list[str]:
