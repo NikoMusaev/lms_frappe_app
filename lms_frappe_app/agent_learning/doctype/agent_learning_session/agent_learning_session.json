@@ -17,7 +17,9 @@
   "last_activity_at",
   "finished_at",
   "sb_client",
-  "via_trusted_service"
+  "via_trusted_service",
+  "sb_outcomes",
+  "outcomes"
  ],
  "fields": [
   {
@@ -90,6 +92,19 @@
    "fieldtype": "Check",
    "label": "Через контракт",
    "read_only": 1
+  },
+  {
+   "fieldname": "sb_outcomes",
+   "fieldtype": "Section Break",
+   "label": "Покрытие целей"
+  },
+  {
+   "fieldname": "outcomes",
+   "fieldtype": "Table",
+   "label": "Цели урока",
+   "options": "Agent Objective Outcome",
+   "read_only": 1,
+   "description": "Заполняется отчётом агента, а не руками"
   }
  ],
  "grid_page_length": 50,
