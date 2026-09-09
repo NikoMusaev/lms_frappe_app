@@ -49,6 +49,25 @@ class IntegrationTestLanguage(IntegrationTestCase):
 			frappe.db.get_single_value("System Settings", "language"), ЯЗЫК
 		)
 
+	def test_русский_включён(self):
+		"""`Why:` Frappe заводит его выключенным, и тогда языка нет ни в
+		селекторе профиля, ни в подборе по `Accept-Language`."""
+		from lms_frappe_app.patches.v0_1.enable_russian_language import execute as включить
+
+		frappe.db.set_value("Language", ЯЗЫК, "enabled", 0)
+		включить()
+
+		self.assertTrue(frappe.db.get_value("Language", ЯЗЫК, "enabled"))
+
+	def test_русский_в_списке_доступных(self):
+		"""Именно этот список видит селектор языка и подбор по заголовку."""
+		from frappe.translate import get_all_languages
+		from lms_frappe_app.patches.v0_1.enable_russian_language import execute as включить
+
+		включить()
+
+		self.assertIn(ЯЗЫК, get_all_languages())
+
 	def test_русский_известен_платформе(self):
 		"""`sync_languages` заводит запись на каждой миграции — без неё
 		настройка указывала бы на несуществующий язык."""
