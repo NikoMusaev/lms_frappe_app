@@ -158,9 +158,11 @@ def обеспечить_язык_платформы() -> None:
 	"""
 	if frappe.db.get_single_value("System Settings", "language"):
 		return
-	настройки = frappe.get_single("System Settings")
-	настройки.language = ЯЗЫК
-	настройки.save(ignore_permissions=True)
+	# Полем, а не сохранением документа: у свежего сайта в System Settings не
+	# заполнен обязательный `time_zone`, и `save()` падает MandatoryError —
+	# установка приложения обрывается целиком. Проверено CI.
+	frappe.db.set_single_value("System Settings", "language", ЯЗЫК)
+	frappe.clear_document_cache("System Settings", "System Settings")
 
 
 def after_install() -> None:
