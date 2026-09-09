@@ -16,7 +16,7 @@ import frappe
 
 from lms_frappe_app.agent_learning import course_builder, directives, quiz, structure
 from lms_frappe_app.agent_learning.errors import Отказ
-from lms_frappe_app.api import контракт, текущий_пользователь
+from lms_frappe_app.api import контракт, список, текущий_пользователь
 
 #: Роли, которым разрешено собирать курсы. Совпадают с административными в
 #: `permissions`: там они уже дают полный доступ к учебным записям.
@@ -48,18 +48,6 @@ def _автор() -> str:
 	if not set(frappe.get_roles(пользователь)) & АВТОРСКИЕ_РОЛИ:
 		frappe.throw(frappe._("Сборка курсов доступна кураторам"), frappe.PermissionError)
 	return пользователь
-
-
-def _список(значение) -> list:
-	"""Аргумент, который мог приехать строкой JSON.
-
-	`Why:` Frappe отдаёт тело запроса как форму, и список превращается в
-	строку. Без разбора `reorder_lessons` получал бы строку и молча считал
-	её посимвольно.
-	"""
-	if isinstance(значение, str):
-		значение = json.loads(значение)
-	return list(значение or [])
 
 
 # --- курс ---
@@ -295,8 +283,8 @@ def reorder_lessons(chapter: str, lessons) -> dict:
 	"""Задаёт порядок уроков главы полным списком."""
 	_автор()
 	_должен_существовать("Course Chapter", chapter, ГЛАВА_НЕ_НАЙДЕНА)
-	structure.переставить(chapter, "Course Chapter", _список(lessons))
-	return {"chapter": chapter, "lessons": _список(lessons)}
+	structure.переставить(chapter, "Course Chapter", список(lessons))
+	return {"chapter": chapter, "lessons": список(lessons)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -305,8 +293,8 @@ def reorder_chapters(course: str, chapters) -> dict:
 	"""Задаёт порядок глав курса полным списком."""
 	_автор()
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
-	structure.переставить(course, "LMS Course", _список(chapters))
-	return {"course": course, "chapters": _список(chapters)}
+	structure.переставить(course, "LMS Course", список(chapters))
+	return {"course": course, "chapters": список(chapters)}
 
 
 # --- директива и квиз ---
@@ -347,12 +335,17 @@ def set_course_directive(
 	objectives: str | None = None,
 	student_profile: str | None = None,
 	glossary: str | None = None,
+	remember_about_student: str | None = None,
 ) -> dict:
 	"""Задаёт сквозную директиву курса новой версией.
 
 	Сюда идёт то, что одинаково на каждом уроке: роль и тон преподавателя,
 	формат занятия, кого учим, как называть вещи. Агент ученика получает её
 	вместе с директивой урока, поэтому повторять её в каждом уроке не нужно.
+
+	`remember_about_student` — что в этом курсе стоит помнить об ученике
+	между занятиями, по пункту на строку. Заметки агент ведёт сам; здесь
+	задаётся, чему в них место.
 	"""
 	_автор()
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
@@ -365,6 +358,7 @@ def set_course_directive(
 			"teaching_directive": teaching_directive,
 			"student_profile": student_profile,
 			"glossary": glossary,
+			"remember_about_student": remember_about_student,
 		},
 	)
 
@@ -380,7 +374,7 @@ def add_quiz(lesson: str, questions, title: str | None = None, passing_percentag
 	"""
 	_автор()
 	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
-	вопросы = _список(questions)
+	вопросы = список(questions)
 	if not вопросы:
 		raise Отказ(course_builder.КВИЗ_БЕЗ_ВОПРОСОВ, "Квизу нужен хотя бы один вопрос", lesson=lesson)
 
@@ -463,9 +457,9 @@ def update_question(question: str, text: str | None = None, options=None, answer
 	if text is not None:
 		документ.question = text
 	if options is not None:
-		course_builder.заменить_варианты(документ, _список(options))
+		course_builder.заменить_варианты(документ, список(options))
 	if answers is not None:
-		course_builder.заменить_образцы(документ, _список(answers))
+		course_builder.заменить_образцы(документ, список(answers))
 
 	frappe.db.savepoint("agent_question_edit")
 	try:
@@ -685,7 +679,15 @@ def _действующая_директива_курса(course: str) -> dict |
 	записи = frappe.get_all(
 		"Agent Course Directive",
 		filters={"course": course, "is_active": 1},
-		fields=["name", "version", "objectives", "teaching_directive", "student_profile", "glossary"],
+		fields=[
+			"name",
+			"version",
+			"objectives",
+			"teaching_directive",
+			"student_profile",
+			"glossary",
+			"remember_about_student",
+		],
 		limit=1,
 	)
 	if not записи:
@@ -698,6 +700,7 @@ def _действующая_директива_курса(course: str) -> dict |
 		"teaching_directive": запись.teaching_directive,
 		"student_profile": запись.student_profile,
 		"glossary": запись.glossary,
+		"remember_about_student": запись.remember_about_student,
 	}
 
 

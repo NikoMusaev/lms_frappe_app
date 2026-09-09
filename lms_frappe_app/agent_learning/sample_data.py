@@ -201,6 +201,27 @@ def создать_занятие(student: str, lesson: str) -> str:
 	).insert(ignore_permissions=True).name
 
 
+def сдать_отчёт(session: str) -> dict:
+	"""Закрывает границу занятия: `covered` по всем целям урока.
+
+	`Why:` тестам про квиз и закрытие урока отчёт не интересен, но без него
+	сервер до них не допустит. Повторять сверку целей в каждом тесте значит
+	прятать смысл теста за шумом.
+	"""
+	from lms_frappe_app.api import student
+
+	занятие = frappe.get_doc("Agent Learning Session", session)
+	цели = frappe.db.get_value(
+		"Agent Lesson Directive",
+		{"lesson": занятие.lesson, "is_active": 1},
+		"objectives",
+	)
+	строки = [с.strip() for с in (цели or "").splitlines() if с.strip()]
+	return student.report_outcomes(
+		session, [{"objective": цель, "status": "covered"} for цель in строки]
+	)
+
+
 def зачислить(ученик: str, lesson: str) -> str:
 	"""Зачисление на курс урока — основание доступа ко всему учебному потоку."""
 	глава = frappe.db.get_value("Course Lesson", lesson, "chapter")

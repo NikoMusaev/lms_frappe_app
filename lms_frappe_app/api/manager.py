@@ -125,8 +125,10 @@ def _последняя_активность(курс: str, участники: 
 def student_detail(user: str) -> dict:
 	"""Подробности по одному ученику своей организации.
 
-	Тексты ответов на вопросы не отдаются: отчёт про результат, а не про
-	содержание диалога с агентом.
+	Тексты ответов на вопросы не отдаются, заметки агента об ученике — тем
+	более: отчёт про результат, а не про содержание диалога. Покрытие целей
+	при этом отдаётся — это тот же учебный результат, что и зачёт, просто
+	мельче: видно, какие темы разобраны, а на какие обратить внимание дальше.
 	"""
 	if not свои_организации_пересекаются(текущий_пользователь(), user):
 		raise Отказ(ЧУЖОЙ_УЧЕНИК, "Этот ученик не из вашей организации", user=user)
@@ -145,6 +147,7 @@ def student_detail(user: str) -> dict:
 		order_by="finished_at desc",
 		limit=50,
 	)
+	покрытие = _покрытие_целей([з.name for з in занятия])
 	return {
 		"user": user,
 		"full_name": frappe.db.get_value("User", user, "full_name"),
@@ -169,6 +172,7 @@ def student_detail(user: str) -> dict:
 				"status": з.status,
 				"started_at": з.started_at.isoformat() if з.started_at else None,
 				"finished_at": з.finished_at.isoformat() if з.finished_at else None,
+				"objectives": покрытие.get(з.name, []),
 			}
 			for з in занятия
 		],
@@ -184,6 +188,27 @@ def student_detail(user: str) -> dict:
 			for п in попытки
 		],
 	}
+
+
+def _покрытие_целей(занятия: list[str]) -> dict[str, list[dict]]:
+	"""Как прошли цели каждого занятия — одним запросом на всю выдачу.
+
+	`Why:` занятий здесь до полусотни, и запрос на каждое превратил бы
+	открытие карточки сотрудника в полсотни обходов базы.
+	"""
+	покрытие: dict[str, list[dict]] = {}
+	if not занятия:
+		return покрытие
+	for строка in frappe.get_all(
+		"Agent Objective Outcome",
+		filters={"parent": ("in", занятия), "parenttype": "Agent Learning Session"},
+		fields=["parent", "objective", "status"],
+		order_by="parent asc, idx asc",
+	):
+		покрытие.setdefault(строка.parent, []).append(
+			{"objective": строка.objective, "status": строка.status}
+		)
+	return покрытие
 
 
 def _адресаты(назначение) -> list[str]:

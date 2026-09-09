@@ -15,7 +15,8 @@
   "objectives",
   "teaching_directive",
   "student_profile",
-  "glossary"
+  "glossary",
+  "remember_about_student"
  ],
  "fields": [
   {
@@ -70,6 +71,12 @@
    "fieldtype": "Small Text",
    "label": "Термины курса",
    "description": "По термину в строке: как называть вещи и что они значат"
+  },
+  {
+   "fieldname": "remember_about_student",
+   "fieldtype": "Small Text",
+   "label": "Что запоминать об ученике",
+   "description": "По пункту на строку: что пригодится агенту на следующих занятиях курса"
   }
  ],
  "grid_page_length": 50,

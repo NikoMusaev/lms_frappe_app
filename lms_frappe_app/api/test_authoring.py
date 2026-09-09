@@ -356,6 +356,20 @@ class IntegrationTestCourseDirective(IntegrationTestCase):
 			"действующих директив курса должно оставаться ровно одна",
 		)
 
+	def test_директива_курса_хранит_что_запоминать(self):
+		"""Автор задаёт, чему место в заметках агента об ученике."""
+		authoring.set_course_directive(
+			course=self.курс,
+			teaching_directive="Веди спокойно",
+			remember_about_student="роль и отрасль\nтекущий проект",
+		)
+
+		директива = authoring.course_draft(course=self.курс)["data"]["directive"]
+
+		self.assertEqual(
+			директива["remember_about_student"], "роль и отрасль\nтекущий проект"
+		)
+
 	def test_прежняя_редакция_остаётся_в_истории(self):
 		"""`Why:` занятие, идущее сейчас, уже получило свою директиву."""
 		authoring.set_course_directive(course=self.курс, teaching_directive="Первая редакция")

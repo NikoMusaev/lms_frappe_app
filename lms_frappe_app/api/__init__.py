@@ -10,11 +10,24 @@
 """
 
 import functools
+import json
 from collections.abc import Callable
 
 import frappe
 
 from lms_frappe_app.agent_learning.errors import Отказ
+
+
+def список(значение) -> list:
+	"""Аргумент, который мог приехать строкой JSON.
+
+	`Why:` Frappe отдаёт тело запроса как форму, и список превращается в
+	строку. Без разбора `reorder_lessons` получал бы строку и молча считал
+	её посимвольно.
+	"""
+	if isinstance(значение, str):
+		значение = json.loads(значение)
+	return list(значение or [])
 
 
 def успех(данные: dict | None = None) -> dict:
