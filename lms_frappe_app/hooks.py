@@ -106,6 +106,7 @@ permission_query_conditions = {
 	"Agent Quiz Answer": f"{_права}.условие_ответа",
 	"Organization Membership": f"{_права}.условие_членства",
 	"Course Allocation": f"{_права}.условие_назначения",
+	"Agent Student Note": f"{_права}.условие_заметки",
 }
 
 has_permission = {
@@ -115,6 +116,7 @@ has_permission = {
 	"Agent Quiz Answer": f"{_права}.доступен_ответ",
 	"Organization Membership": f"{_права}.доступно_членство",
 	"Course Allocation": f"{_права}.доступно_назначение",
+	"Agent Student Note": f"{_права}.доступна_заметка",
 }
 
 # Роли ставятся вместе с приложением: без них права на DocType ссылались бы

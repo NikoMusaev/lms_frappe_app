@@ -273,3 +273,24 @@ def свои_организации_пересекаются(менеджер: s
 			"Organization Membership", {"user": ученик, "organization": ("in", организации)}
 		)
 	)
+
+
+def условие_заметки(user: str | None = None) -> str:
+	"""`Agent Student Note`: только свои, менеджеру — ничего.
+
+	`Why:` заметки об ученике — про разговор, а не про результат. Менеджеру
+	идёт покрытие целей урока, и граница проходит по сущности целиком: так её
+	видно в одном месте, вместо фильтра полей по роли в каждом методе.
+	"""
+	user = user or frappe.session.user
+	if видит_всё(user):
+		return ""
+	return f"`tabAgent Student Note`.`student` = {frappe.db.escape(user)}"
+
+
+def доступна_заметка(doc, ptype: str = "read", user: str | None = None) -> bool:
+	"""Права на конкретную заметку. Удаляет ученик через `forget`, не напрямую."""
+	user = user or frappe.session.user
+	if not _только_чтение(ptype, user):
+		return False
+	return видит_всё(user) or doc.student == user
