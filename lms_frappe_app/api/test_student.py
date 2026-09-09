@@ -17,6 +17,7 @@ from lms_frappe_app.agent_learning.sample_data import (
 	создать_организацию,
 	создать_ученика,
 	создать_урок,
+	сдать_отчёт,
 )
 from lms_frappe_app.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
@@ -189,6 +190,7 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		frappe.set_user(self.ученик)
 
 		занятие = student.start_lesson()["data"]["session"]
+		сдать_отчёт(занятие)
 		начало = student.request_quiz(занятие)["data"]
 		итог = student.submit_answer(начало["attempt"], вопрос, "1")["data"]
 
@@ -205,6 +207,7 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		frappe.set_user(self.ученик)
 
 		занятие = student.start_lesson()["data"]["session"]
+		сдать_отчёт(занятие)
 		выдано = json.dumps(student.request_quiz(занятие), ensure_ascii=False, default=str)
 
 		for поле in ЭТАЛОННЫЕ_ПОЛЯ:
@@ -220,6 +223,105 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 				"Agent Session Event", {"session": занятие, "kind": "Checkpoint Reported"}
 			)
 		)
+
+	# --- отчёт по целям ---
+
+	def test_отчёт_по_целям_сохраняется(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_outcomes(
+			занятие,
+			outcomes=[
+				{"objective": "Понимать цикл", "status": "covered"},
+				{"objective": "Уметь читать код", "status": "skipped"},
+			],
+		)
+
+		self.assertTrue(ответ["ok"])
+		документ = frappe.get_doc("Agent Learning Session", занятие)
+		self.assertEqual(
+			[(с.objective, с.status) for с in документ.outcomes],
+			[("Понимать цикл", "covered"), ("Уметь читать код", "skipped")],
+			"порядок берётся из директивы, а не из отчёта",
+		)
+
+	def test_отчёт_с_пропущенной_целью_отклоняется(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_outcomes(
+			занятие, outcomes=[{"objective": "Понимать цикл", "status": "covered"}]
+		)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЦЕЛИ_НЕ_СОВПАЛИ)
+		self.assertEqual(ответ["error"]["missing"], ["Уметь читать код"])
+
+	def test_отчёт_с_чужой_целью_отклоняется(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_outcomes(
+			занятие,
+			outcomes=[
+				{"objective": "Понимать цикл", "status": "covered"},
+				{"objective": "Уметь читать код", "status": "covered"},
+				{"objective": "Выдуманная цель", "status": "covered"},
+			],
+		)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["unexpected"], ["Выдуманная цель"])
+
+	def test_неизвестный_статус_отклоняется(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_outcomes(
+			занятие, outcomes=[{"objective": "Понимать цикл", "status": "почти"}]
+		)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЦЕЛИ_НЕ_СОВПАЛИ)
+
+	def test_повторный_отчёт_замещает_прежний(self):
+		"""Занятие продолжили — отчёт должен обновиться, а не удвоиться."""
+		занятие = student.start_lesson()["data"]["session"]
+		сдать_отчёт(занятие)
+
+		student.report_outcomes(
+			занятие,
+			outcomes=[
+				{"objective": "Понимать цикл", "status": "covered"},
+				{"objective": "Уметь читать код", "status": "touched"},
+			],
+		)
+
+		документ = frappe.get_doc("Agent Learning Session", занятие)
+		self.assertEqual(len(документ.outcomes), 2)
+		self.assertEqual(документ.outcomes[1].status, "touched")
+
+	def test_урок_не_закрывается_без_отчёта(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.complete_lesson(занятие)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.НЕТ_ОТЧЁТА)
+
+	def test_квиз_не_начинается_без_отчёта(self):
+		frappe.set_user("Administrator")
+		создать_квиз(self.урок, [создать_вопрос("Два?", варианты=[("2", True), ("3", False)])])
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.request_quiz(занятие)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.НЕТ_ОТЧЁТА)
+
+	def test_после_отчёта_урок_закрывается(self):
+		занятие = student.start_lesson()["data"]["session"]
+		сдать_отчёт(занятие)
+
+		self.assertTrue(student.complete_lesson(занятие)["ok"])
 
 	# --- чужое ---
 
@@ -317,7 +419,11 @@ class IntegrationTestCompleteLesson(IntegrationTestCase):
 		frappe.set_user(self.ученик)
 
 	def test_урок_без_квиза_закрывается_и_двигает_прогресс(self):
-		"""Иначе ученик застревает на первом же теоретическом уроке."""
+		"""Иначе ученик застревает на первом же теоретическом уроке.
+
+		Директивы у этого урока нет, значит нет и целей: отчёт не требуется —
+		требовать было бы нечего, а отказ загнал бы агента в тупик.
+		"""
 		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
 
 		ответ = student.complete_lesson(занятие)["data"]

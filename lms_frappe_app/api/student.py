@@ -24,12 +24,19 @@ from lms_frappe_app.agent_learning.access import (
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
 from lms_frappe_app.agent_learning.structure import главы_курса, уроки_курса
-from lms_frappe_app.api import контракт, текущий_пользователь
+from lms_frappe_app.api import контракт, список, текущий_пользователь
 
 НЕЧЕГО_УЧИТЬ = "nothing_to_study"
+НЕТ_ОТЧЁТА = "outcomes_required"
+ЦЕЛИ_НЕ_СОВПАЛИ = "objectives_mismatch"
 НУЖЕН_КВИЗ = "quiz_required"
 УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ЧУЖОЕ_ЗАНЯТИЕ = "not_your_session"
+
+#: Как прошла цель на занятии. Промежуточного «почти разобрали» нет намеренно:
+#: шкала из трёх делений заполняется одинаково разными агентами, из пяти —
+#: по-разному.
+СТАТУСЫ_ЦЕЛЕЙ = ("covered", "touched", "skipped")
 
 
 @frappe.whitelist()
@@ -221,6 +228,50 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @контракт
+def report_outcomes(session: str, outcomes) -> dict:
+	"""Отчёт о покрытии целей урока — граница занятия.
+
+	Сдаётся до квиза и до закрытия урока: проверять знания или закрывать
+	урок, не сказав, что разобрано, бессмысленно. Состав сверяется с целями
+	действующей директивы — без сверки обязательный отчёт вырождается в
+	пустой список.
+	"""
+	занятие = _своё_занятие(session)
+	цели = _цели_урока(занятие.lesson)
+	сданные = {}
+	for пункт in список(outcomes):
+		цель = (пункт.get("objective") or "").strip()
+		статус = (пункт.get("status") or "").strip()
+		if статус not in СТАТУСЫ_ЦЕЛЕЙ:
+			raise Отказ(
+				ЦЕЛИ_НЕ_СОВПАЛИ,
+				"Статус цели должен быть covered, touched или skipped",
+				objective=цель,
+				status=статус,
+			)
+		сданные[цель] = статус
+
+	if set(сданные) != set(цели):
+		raise Отказ(
+			ЦЕЛИ_НЕ_СОВПАЛИ,
+			"Отчёт должен покрывать ровно цели урока",
+			missing=sorted(set(цели) - set(сданные)),
+			unexpected=sorted(set(сданные) - set(цели)),
+		)
+
+	# Порядок целей — из директивы, а не из отчёта: строки таблицы читаются в
+	# том же порядке, в каком автор задумывал урок.
+	занятие.outcomes = []
+	for цель in цели:
+		занятие.append("outcomes", {"objective": цель, "status": сданные[цель]})
+	занятие.save(ignore_permissions=True)
+	занятие.записать_событие("Checkpoint Reported", "отчёт по целям урока")
+
+	return {"session": session, "reported": len(цели)}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
 def report_checkpoint(session: str, note: str) -> dict:
 	"""Отметка о пройденном по ходу занятия. Телеметрия, не зачёт."""
 	занятие = _своё_занятие(session)
@@ -238,6 +289,7 @@ def complete_lesson(session: str) -> dict:
 	вызовом нельзя.
 	"""
 	занятие = _своё_занятие(session)
+	_требовать_отчёт(занятие)
 	if quiz.требуется_квиз(занятие.lesson, занятие.student, занятие.course):
 		raise Отказ(
 			НУЖЕН_КВИЗ,
@@ -262,7 +314,7 @@ def complete_lesson(session: str) -> dict:
 @контракт
 def request_quiz(session: str) -> dict:
 	"""Создаёт попытку и отдаёт первый вопрос."""
-	_своё_занятие(session)
+	_требовать_отчёт(_своё_занятие(session))
 	return quiz.начать_попытку(session)
 
 
@@ -341,6 +393,26 @@ def _своё_занятие(session: str):
 	if занятие.student != текущий_пользователь():
 		raise Отказ(ЧУЖОЕ_ЗАНЯТИЕ, "Это чужое занятие", session=session)
 	return занятие
+
+
+def _цели_урока(lesson: str) -> list[str]:
+	"""Цели действующей директивы урока, в порядке автора."""
+	return _директива(lesson).get("objectives", [])
+
+
+def _требовать_отчёт(занятие) -> None:
+	"""Отказывает, пока отчёт по целям не сдан.
+
+	Урок без целей отчёта не требует: требовать нечего, и отказ загнал бы
+	агента в тупик без способа из него выйти.
+	"""
+	if not _цели_урока(занятие.lesson) or занятие.outcomes:
+		return
+	raise Отказ(
+		НЕТ_ОТЧЁТА,
+		"Сначала сдайте отчёт по целям урока: report_outcomes",
+		session=занятие.name,
+	)
 
 
 def _курс_урока(lesson: str) -> str:
