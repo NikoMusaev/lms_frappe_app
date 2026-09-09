@@ -28,11 +28,20 @@
 		</div>
       	{% endfor %}
 	</div>
+	{#
+		Имя — необязательное украшение, логин — суть. `Why:` падение этого
+		шаблона рушит страницу авторизации целиком, и агента становится
+		нечем подключить; ради полного имени такой риск не берут.
+	#}
+	{% set имя = frappe.get_fullname(frappe.session.user) if frappe.get_fullname else None %}
 	<div class="portal-section">
 		<p class="text-muted" style="margin-bottom: 0.25rem;">
 			{{ _("Вы вошли как") }}
-			<b>{{ get_fullname(frappe.session.user) }}</b>
-			({{ frappe.session.user }})
+			{% if имя and имя != frappe.session.user %}
+			<b>{{ имя }}</b> ({{ frappe.session.user }})
+			{% else %}
+			<b>{{ frappe.session.user }}</b>
+			{% endif %}
 		</p>
 		<p class="text-muted small">
 			{{ _("Не тот аккаунт? Нажмите «Запретить», выйдите из LMS и повторите подключение.") }}
