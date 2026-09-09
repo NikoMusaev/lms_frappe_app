@@ -432,6 +432,57 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.НЕТ_ОТЧЁТА)
 
+	def _урок_с_квизом(self):
+		frappe.set_user("Administrator")
+		создать_квиз(self.урок, [создать_вопрос("Два?", варианты=[("2", True), ("3", False)])])
+		frappe.set_user(self.ученик)
+		return student.start_lesson()["data"]["session"]
+
+	def test_квиз_не_начинается_с_пропущенной_целью(self):
+		"""Иначе ученик получает вопрос по теме, которой на занятии не было."""
+		занятие = self._урок_с_квизом()
+		student.report_outcomes(
+			занятие,
+			outcomes=[
+				{"objective": "Понимать цикл", "status": "covered"},
+				{"objective": "Уметь читать код", "status": "skipped"},
+			],
+		)
+
+		ответ = student.request_quiz(занятие)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЦЕЛИ_ПРОПУЩЕНЫ)
+		self.assertEqual(ответ["error"]["skipped"], ["Уметь читать код"])
+
+	def test_разобранная_заново_цель_открывает_квиз(self):
+		"""Отказ не тупик: отчёт замещается, и путь вперёд есть."""
+		занятие = self._урок_с_квизом()
+		student.report_outcomes(
+			занятие,
+			outcomes=[
+				{"objective": "Понимать цикл", "status": "covered"},
+				{"objective": "Уметь читать код", "status": "skipped"},
+			],
+		)
+
+		сдать_отчёт(занятие)
+
+		self.assertTrue(student.request_quiz(занятие)["ok"])
+
+	def test_задетая_вскользь_цель_квиз_не_блокирует(self):
+		"""`touched` — разобранная тема, пусть и коротко."""
+		занятие = self._урок_с_квизом()
+		student.report_outcomes(
+			занятие,
+			outcomes=[
+				{"objective": "Понимать цикл", "status": "covered"},
+				{"objective": "Уметь читать код", "status": "touched"},
+			],
+		)
+
+		self.assertTrue(student.request_quiz(занятие)["ok"])
+
 	def test_после_отчёта_урок_закрывается(self):
 		занятие = student.start_lesson()["data"]["session"]
 		сдать_отчёт(занятие)
