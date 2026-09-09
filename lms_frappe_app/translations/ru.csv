@@ -1,0 +1,433 @@
+A new batch '{0}' has been published that might interest you. Check it out!,"Опубликован новый поток «{0}», который может вас заинтересовать. Загляните!"
+A new course '{0}' has been published that might interest you. Check it out!,"Опубликован новый курс «{0}», который может вас заинтересовать. Загляните!"
+A new course has been published on {0},Новый курс опубликован на {0}
+A short summary of the course for search results.,Краткое описание курса для результатов поиска.
+About this course,О курсе
+"Access courses, join batches, and track learning progress","Доступ к курсам, участие в потоках и отслеживание прогресса"
+Activate this Google Meet account for scheduling meetings.,Активировать этот аккаунт Google Meet для планирования встреч.
+Activate this Zoom account for scheduling meetings.,Активировать этот аккаунт Zoom для планирования встреч.
+Add New Member,Добавить участника
+Add Option,Добавить вариант
+Add Possibility,Добавить вариант ответа
+Add Question,Добавить вопрос
+Add a course to the batch,Добавить курс в поток
+Add a question to get started.,"Добавьте вопрос, чтобы начать."
+Add new question,Добавить новый вопрос
+Add students to the batch to make an announcement,"Добавьте студентов в поток, чтобы сделать объявление"
+Add tag,Добавить тег
+Allow Job Posting,Разрешить публикацию вакансий
+Allow this badge to be awarded to learners.,Разрешить выдавать этот бейдж студентам.
+Allow this coupon to be used for discounts.,Разрешить использовать этот купон для скидок.
+Allow users to enroll in this batch on their own.,Разрешить пользователям самостоятельно записываться на этот поток.
+Allow users to view their past quiz attempts.,Разрешить пользователям просматривать свои прошлые попытки прохождения теста.
+Also teaching,Также преподают
+Answer a few quick questions so we can set Frappe Learning up for you,"Ответьте на несколько коротких вопросов, чтобы мы настроили Frappe Learning под вас"
+"Are you sure you want to clear the demo data? This would delete the course ""A guide  to Frappe Learning"" along with all its associated data. This action cannot be undone.","Вы уверены, что хотите удалить демоданные? Будет удалён курс «A guide  to Frappe Learning» вместе со всеми связанными данными. Это действие нельзя отменить."
+Are you sure you want to submit the quiz?,"Вы уверены, что хотите отправить тест?"
+As a part of this batch's curriculum you will have to complete the following courses and assessments.,В программе этого потока вам нужно пройти следующие курсы и оценки.
+Assignment Progress,Прогресс по заданиям
+Assignments deleted successfully,Задания успешно удалены
+Attempted Questions,Отвечено вопросов
+Average Completion Rate,Средняя доля прохождения
+Average Watch Time (mins),Среднее время просмотра (мин)
+Award my first certificate,Выдать первый сертификат
+Back to previous question,К предыдущему вопросу
+Badge assigned successfully,Бейдж успешно назначен
+Badge {0} not found,Бейдж {0} не найден
+Batch Enrollments,Записи на потоки
+Batch Feedback,Отзывы о потоках
+Batch created successfully,Поток успешно создан
+Batch overview,Обзор потока
+Batch published,Поток опубликован
+Batch unpublished,Поток снят с публикации
+Batch updated successfully,Поток успешно обновлён
+Book a free onboarding session with the Frappe team,Записаться на бесплатную вводную встречу с командой Frappe
+"Build and manage courses, chapters, and lessons","Создание и ведение курсов, глав и уроков"
+Cannot search for roles: {0},Не удалось выполнить поиск по ролям: {0}
+Canvas,Canvas
+Certificate of completion,Сертификат об окончании
+Certificate price,Цена сертификата
+Certificates render from a Print Format. Build or customize templates from the desk.,Сертификаты формируются из формата печати. Создавайте и настраивайте шаблоны в интерфейсе Desk.
+Certification cannot be issued as the member has not completed the course.,Сертификат нельзя выдать: участник не завершил курс.
+Certification cannot be issued as the member is not enrolled in this batch.,Сертификат нельзя выдать: участник не записан на этот поток.
+Certification cannot be issued as the member is not enrolled in this course.,Сертификат нельзя выдать: участник не записан на этот курс.
+Chapter renamed successfully,Глава успешно переименована
+Charge a fee for batch enrollment.,Брать плату за запись на поток.
+Charge learners to enroll in this course.,Брать плату за запись на этот курс.
+Checkout the batch,Перейти к потоку
+Checkout the course,Перейти к курсу
+Choose a payment provider to configure its credentials.,"Выберите платёжного провайдера, чтобы настроить его доступы."
+Click to upload an image.,"Нажмите, чтобы загрузить изображение."
+Close student view,Выйти из режима студента
+Coaching or Training Institute,Курсы или учебный центр
+College or University,Колледж или университет
+Comma separated keywords,Ключевые слова через запятую
+Company or Workplace,Компания или рабочее место
+Complete your profile,Заполните профиль
+Completion Rate,Доля прохождения
+Completion certificate,Сертификат об окончании
+Conferencing,Видеосвязь
+Conferencing Provider,Сервис видеосвязи
+Configure the credentials and options for this payment gateway.,Настройте доступы и параметры этого платёжного шлюза.
+"Configure your Brand Name, Logo, and Favicon","Настройте название бренда, логотип и фавикон"
+Confirm Cancellation?,Подтвердить отмену?
+Confirm Your Action,Подтвердите действие
+Confirm clearing demo data?,Удалить демоданные?
+Connect a Google Meet account to schedule and host live classes.,"Подключите аккаунт Google Meet, чтобы планировать и проводить онлайн-уроки."
+Connect a Zoom account to schedule and host live classes.,"Подключите аккаунт Zoom, чтобы планировать и проводить онлайн-уроки."
+Could not create the course ZIP file. Please try again later. Error: {0},Не удалось создать ZIP-файл курса. Попробуйте позже. Ошибка: {0}
+Could not delete the quiz,Не удалось удалить тест
+Could not update publish status,Не удалось изменить статус публикации
+Coupon updated successfully,Купон успешно обновлён
+Course Content coming soon!,Содержание курса скоро появится!
+Course Progress,Прогресс по курсу
+Course Reviews,Отзывы о курсах
+Course added to batch successfully,Курс успешно добавлен в поток
+Course content,Содержание курса
+Course creator,Автор курса
+Course description,Описание курса
+Course details,Сведения о курсе
+Course editor,Редактор курса
+Course or Batch is required to issue a certificate.,"Чтобы выдать сертификат, нужно указать курс или поток."
+Course overview,Обзор курса
+Course price,Цена курса
+Course published,Курс опубликован
+Course thumbnail,Обложка курса
+Course unpublished,Курс снят с публикации
+Create a reusable email template for your notifications.,Создайте многоразовый шаблон письма для ваших уведомлений.
+Create and manage reusable email templates for your notifications.,Создавайте и ведите многоразовые шаблоны писем для ваших уведомлений.
+Create chapter,Создать главу
+Curriculum,Программа обучения
+Customer Academy,Академия для клиентов
+Deduct marks for incorrect answers.,Снимать баллы за неверные ответы.
+Default Sending & Inbox,Отправка и входящие по умолчанию
+Define a badge and the criteria for awarding it to learners.,Опишите бейдж и условия его выдачи студентам.
+Delete quiz,Удалить тест
+Delete this quiz?,Удалить этот тест?
+Delete user,Удалить пользователя
+"Deleting these exercises will permanently remove them from the system, along with all associated submissions. This action is irreversible. Are you sure you want to proceed?",Удаление этих упражнений навсегда уберёт их из системы вместе со всеми отправленными работами. Это действие необратимо. Продолжить?
+Deleting this quiz permanently removes it and its submissions. This action cannot be undone. Are you sure you want to continue?,Удаление теста навсегда уберёт его и все отправленные по нему работы. Это действие нельзя отменить. Продолжить?
+Deletion not allowed for {0},Удаление {0} запрещено
+Demo Data Present,Демоданные загружены
+Demo data cleared successfully,Демоданные успешно удалены
+Details cannot be empty.,Описание не может быть пустым.
+Display correct answers after each question is attempted.,Показывать правильные ответы после каждого отвеченного вопроса.
+"Do not refresh the page or close this window. If you do, the quiz will be submitted automatically.",Не обновляйте страницу и не закрывайте это окно. Иначе тест будет отправлен автоматически.
+"Drag and drop a ZIP file, or upload from your",Перетащите ZIP-файл или загрузите со своего
+Duplicate Template,Дублировать шаблон
+Each user can only receive this badge one time.,Каждый пользователь может получить этот бейдж только один раз.
+Edit Google Meet Account,Изменить аккаунт Google Meet
+Edit Member,Изменить участника
+Edit Question,Изменить вопрос
+Edit lesson,Изменить урок
+Edit member,Изменить участника
+Edit your reusable email template.,Отредактируйте свой многоразовый шаблон письма.
+Email Account deleted successfully,Почтовый аккаунт успешно удалён
+Email Template deleted successfully,Шаблон письма успешно удалён
+Email is required,Укажите email
+Email service {0} is not supported,Почтовый сервис {0} не поддерживается
+Enable evaluations for batch participants.,Включить оценки для участников потока.
+Enforce Assignment Completion,Требовать выполнения заданий
+Enforce Quiz Completion,Требовать прохождения тестов
+Enforce Video Completion,Требовать полного просмотра видео
+Enroll,Записаться
+Enroll a Student,Записать студента
+Enroll for Free,Записаться бесплатно
+Enroll students to track their progress here.,"Запишите студентов, чтобы отслеживать их прогресс здесь."
+Enrolled On,Дата записи
+Enrollment & Certification,Запись и сертификация
+Enrollment Confirmation Email Template,Шаблон письма о подтверждении записи
+Enter Brand Name,Введите название бренда
+Error Uploading File,Ошибка при загрузке файла
+Error creating Google Meet Account,Ошибка при создании аккаунта Google Meet
+Error creating batch,Ошибка при создании потока
+Error deleting Google Meet Account,Ошибка при удалении аккаунта Google Meet
+Error deleting email account,Ошибка при удалении почтового аккаунта
+Error deleting email template,Ошибка при удалении шаблона письма
+Error deleting payment gateways,Ошибка при удалении платёжных шлюзов
+Error downloading file,Ошибка при скачивании файла
+Error updating Google Meet Account,Ошибка при обновлении аккаунта Google Meet
+Error uploading file,Ошибка при загрузке файла
+Evaluation Requests,Запросы на оценку
+Evaluation cancelled successfully,Оценка успешно отменена
+Evaluations,Оценки
+Exercise deleted successfully,Упражнение успешно удалено
+Failed to assign badge,Не удалось назначить бейдж
+Failed to refresh session,Не удалось обновить сессию
+File type of {0} is not allowed in quiz answers.,Файлы типа {0} нельзя прикреплять к ответам на тест.
+File upload failed. Please try again.,Не удалось загрузить файл. Попробуйте ещё раз.
+Frappe Learning,Frappe Learning
+Get the Payments app,Установить приложение Payments
+Google Classroom,Google Classroom
+Google Meet,Google Meet
+Google Meet Account,Аккаунт Google Meet
+Google Meet Account created successfully,Аккаунт Google Meet успешно создан
+Google Meet Account deleted successfully,Аккаунт Google Meet успешно удалён
+Google Meet Account updated successfully,Аккаунт Google Meet успешно обновлён
+Hello Learner,Здравствуйте
+Here are the details:,Вот подробности:
+Highlight on the homepage.,Показывать на главной странице.
+Highlight what makes you unique and show your skills.,"Расскажите, чем вы уникальны, и покажите свои навыки."
+How to edit a lesson,Как редактировать урок
+I am happy to announce that I earned the {0} badge on {1} at {2},"Рад сообщить, что {1} я получил бейдж {0} на платформе {2}"
+Import via Data Import Tool,Импорт через Data Import Tool
+Import via ZIP,Импорт из ZIP
+In-app,В приложении
+Include in preview,Включить в предпросмотр
+Instructor notes,Заметки инструктора
+Invalid ZIP file,Некорректный ZIP-файл
+Invalid chapter.,Некорректная глава.
+Invalid course ZIP: Missing course.json,Некорректный ZIP курса: отсутствует course.json
+Invalid course or chapter name,Некорректное название курса или главы
+Invalid document name,Некорректное имя документа
+Invalid file path in package,Некорректный путь к файлу в пакете
+Invalid role filter.,Некорректный фильтр по ролям.
+Issue a free certificate when learners complete the course.,"Выдавать бесплатный сертификат тем, кто завершил курс."
+Issue certificates to batch participants.,Выдавать сертификаты участникам потока.
+Just exploring,Просто присматриваюсь
+Kajabi,Kajabi
+LMS Google Meet Settings,Настройки Google Meet для LMS
+Launch a paid course,Запустить платный курс
+Learning,Обучение
+Lesson Completion,Прохождение уроков
+Lesson Dwell Time (seconds),Время на уроке (секунды)
+Lesson Dwell Time must be at least 1 second.,Время на уроке должно быть не меньше 1 секунды.
+Lesson Index,Порядок уроков
+Lesson Progress,Прогресс по урокам
+Lesson created,Урок создан
+Lesson title,Название урока
+Lesson updated,Урок обновлён
+Let users enroll themselves.,Разрешить пользователям записываться самостоятельно.
+Live answer checking is not enabled for this quiz.,Мгновенная проверка ответов для этого теста отключена.
+Make Announcement,Сделать объявление
+Make this certificate visible to the participant.,Показывать этот сертификат участнику.
+"Manage batches, review and grade submissions","Ведение потоков, проверка и оценка работ"
+Manage templates,Управление шаблонами
+Manual Assignment,Назначение вручную
+Mark for review,"Отметить, чтобы вернуться"
+Mark this option as a correct answer.,Отметить этот вариант как правильный ответ.
+Member added successfully,Участник успешно добавлен
+Member updated,Участник обновлён
+Meta keywords,Мета-ключевые слова
+Moodle,Moodle
+New Google Meet Account,Новый аккаунт Google Meet
+New lesson,Новый урок
+Next question,Следующий вопрос
+No LMS yet,Пока нет LMS
+No announcements have been made yet for this batch,В этом потоке пока нет объявлений
+No assessments added to this batch,В этот поток не добавлено ни одной оценки
+No calendar is configured for the conferencing provider. Please set up a calendar to create events.,"Для сервиса видеосвязи не настроен календарь. Настройте календарь, чтобы создавать события."
+No chapters yet,Глав пока нет
+No courses added to this batch,В этот поток не добавлено ни одного курса
+No other published courses available,Других опубликованных курсов нет
+No read notifications,Нет прочитанных уведомлений
+No students enrolled yet,Пока никто не записан
+No students match your search,Нет студентов по вашему запросу
+No thumbnail,Обложки нет
+No unread notifications,Нет непрочитанных уведомлений
+Non-profit or Government,НКО или госсектор
+Not yet open for enrollment.,Запись пока не открыта.
+Notification Sent,Уведомление отправлено
+Notifications you have read will appear here.,Здесь появятся прочитанные уведомления.
+Notion,Notion
+On demand course video,Видео курса в записи
+On site,В офисе
+Onboard my existing learners,Перевести своих учеников на платформу
+Only PDF files are allowed.,Можно загружать только файлы PDF.
+Only ZIP files are allowed.,Можно загружать только файлы ZIP.
+Only document file of type .doc or .docx are allowed.,Можно загружать только документы .doc или .docx.
+Only image data is allowed in quiz answers.,В ответах на тест можно использовать только изображения.
+Only show assignments from the current course,Показывать только задания текущего курса
+Only show batches that offer a certificate,Показывать только потоки с сертификатом
+Only show courses that offer a certificate,Показывать только курсы с сертификатом
+Only {0} file is allowed.,Можно загружать только файлы {0}.
+Open to Work,Ищу работу
+"Oversee all users, content, and system settings","Контроль всех пользователей, контента и настроек системы"
+Paid certificate,Платный сертификат
+Paid course,Платный курс
+Paste a YouTube link,Вставьте ссылку на YouTube
+"Paste a YouTube link, or upload a video file (MP4, WebM, or OGG) to show a preview on the course page.","Вставьте ссылку на YouTube или загрузите видеофайл (MP4, WebM или OGG), чтобы показать превью на странице курса."
+Payment gateways deleted successfully,Платёжные шлюзы успешно удалены
+Payments app required,Нужно приложение Payments
+People,Люди
+Personal Business,Личный бизнес
+Please attach a SCORM package before saving this chapter.,"Прикрепите пакет SCORM, прежде чем сохранять эту главу."
+Please enable the Google Meet account to use this feature.,"Чтобы пользоваться этой возможностью, включите аккаунт Google Meet."
+Please fill the mandatory fields: {0},Заполните обязательные поля: {0}
+Please login to view program details.,"Войдите, чтобы посмотреть сведения о программе."
+Please login to view programs.,"Войдите, чтобы посмотреть программы."
+Please provide an answer or upload a file before submitting.,Перед отправкой напишите ответ или загрузите файл.
+Please read the following instructions carefully before starting the quiz,"Пожалуйста, внимательно прочитайте инструкцию перед началом теста"
+Please select a Google Meet account for this batch.,Выберите аккаунт Google Meet для этого потока.
+Please select a Zoom account for this batch.,Выберите аккаунт Zoom для этого потока.
+Please select a conferencing provider and add an account to the batch to create live classes.,"Чтобы создавать онлайн-уроки, выберите сервис видеосвязи и добавьте аккаунт в поток."
+Please select a course to view available slots.,"Выберите курс, чтобы увидеть свободные слоты."
+Please select a payment for the purchased certificate.,Выберите платёж за приобретённый сертификат.
+Please select a student to enroll.,Выберите студента для записи.
+"Please upload an MP4, WebM, or OGG video — formats like .MOV can't be played in the browser.","Загрузите видео в формате MP4, WebM или OGG — например, .MOV браузер воспроизвести не сможет."
+Powered by Frappe Learning,Работает на Frappe Learning
+Preview video,Ознакомительное видео
+Pricing and certification,Цена и сертификация
+Programming Exercise Progress,Прогресс по упражнениям по программированию
+Progress is already recorded for this lesson.,Прогресс по этому уроку уже записан.
+Publish my first course,Опубликовать первый курс
+Question not found in this quiz.,Вопрос в этом тесте не найден.
+Questions marked for review,"Вопросы, к которым нужно вернуться"
+Quiz Progress,Прогресс по тестам
+Quiz deleted successfully,Тест успешно удалён
+Quiz topic,тест
+Quiz topics,тестов
+Randomize the order of questions for each attempt.,Перемешивать порядок вопросов при каждой попытке.
+Remove row,Удалить строку
+Remove the image to pick a color instead.,"Удалите изображение, чтобы выбрать цвет."
+Reply cannot be empty.,Ответ не может быть пустым.
+Review and update the details of this payment.,Проверьте и обновите данные этого платежа.
+Rust,Rust
+Saved — this format can't be previewed here.,Сохранено — этот формат здесь не показывается.
+School,Школа
+See less,Свернуть
+See more,Показать полностью
+Select a lesson on the right to start editing.,"Выберите урок справа, чтобы начать редактирование."
+Select a question to view the thread,"Выберите вопрос, чтобы открыть обсуждение"
+Select category,Выберите категорию
+Select evaluator,Выберите оценщика
+Select from questions you have already created,Выберите из уже созданных вопросов
+Select instructors,Выберите инструкторов
+Select related courses,Выберите связанные курсы
+Select timezone,Выберите часовой пояс
+Self enrollment,Самостоятельная запись
+Sell an evaluator-graded certificate alongside this free course.,Продавать сертификат с проверкой оценщиком вместе с этим бесплатным курсом.
+"Selling a paid course or certificate needs the Payments app. Install it from the Frappe Marketplace, then turn on pricing here.","Для продажи платного курса или сертификата нужно приложение Payments. Установите его из Frappe Marketplace, а затем включите цены здесь."
+Send Notification for Published Batches,Отправлять уведомления об опубликованных потоках
+Send Notification for Published Courses,Отправлять уведомления об опубликованных курсах
+Send Payment Reminders for Batch,Отправлять напоминания об оплате потока
+Send Payment Reminders for Course,Отправлять напоминания об оплате курса
+Session refreshed successfully,Сессия успешно обновлена
+"Set the discount, validity, and the courses or batches this coupon applies to.","Задайте скидку, срок действия и курсы или потоки, к которым применяется купон."
+Set the name of your brand. Appears in the left sidebar.,Укажите название бренда. Оно отображается в левой панели.
+Short description,Краткое описание
+Short introduction,Краткое вступление
+Skip for now,Пропустить
+Slots,Слоты
+Sort by,Сортировать по
+Spreadsheets,Таблицы
+Status/Percentage,Статус/Процент
+Student View,Режим студента
+Student enrolled successfully,Студент успешно записан
+Student is already enrolled in this course.,Студент уже записан на этот курс.
+Submissions,Отправленные работы
+TalentLMS,TalentLMS
+Taught by,Преподают
+Taught by a team of {0},Преподаёт команда из {0}
+Teachable,Teachable
+The Google Meet account does not have a Google Calendar configured. Please set up a Google Calendar first.,Для аккаунта Google Meet не настроен Google Календарь. Сначала настройте Google Календарь.
+The deadline to schedule evaluations has passed. Please contact the Instructor for assistance.,Срок записи на оценку истёк. Обратитесь за помощью к инструктору.
+The instructor has left a comment on your assignment {0},Инструктор оставил комментарий к вашему заданию {0}
+The last day to schedule your evaluation is {0}.,"Последний день, чтобы записаться на оценку, — {0}."
+The selected Google Meet account does not have a Google Calendar configured.,Для выбранного аккаунта Google Meet не настроен Google Календарь.
+The selected Google Meet account is disabled. Please enable it or select another account.,Выбранный аккаунт Google Meet отключён. Включите его или выберите другой.
+These tags help search engines describe and rank your course in results.,Эти теги помогают поисковым системам описывать и ранжировать ваш курс в результатах поиска.
+Thinkific,Thinkific
+This batch is not associated with this course.,Этот поток не связан с этим курсом.
+This course includes:,Что входит в курс:
+This permanently deletes the email account and cannot be undone.,"Почтовый аккаунт будет удалён навсегда, отменить это нельзя."
+This permanently deletes the email template and cannot be undone.,"Шаблон письма будет удалён навсегда, отменить это нельзя."
+This permanently deletes the user account and cannot be undone.,"Учётная запись пользователя будет удалена навсегда, отменить это нельзя."
+This quiz has no questions available yet.,В этом тесте пока нет вопросов.
+This user cannot be deleted.,Этого пользователя нельзя удалить.
+This video's codec can't be played in browsers (e.g. HEVC/H.265). Please upload an H.264 MP4 or a WebM.,"Кодек этого видео не воспроизводится в браузерах (например, HEVC/H.265). Загрузите MP4 с кодеком H.264 или WebM."
+Title cannot be empty.,Заголовок не может быть пустым.
+Total Questions,Всего вопросов
+Transaction created successfully,Транзакция успешно создана
+Transaction updated successfully,Транзакция успешно обновлена
+Try a different name.,Попробуйте другое имя.
+Type something,Введите текст
+Unable to add member,Не удалось добавить участника
+Unable to create category,Не удалось создать категорию
+Unable to update member,Не удалось обновить участника
+Unattempted Questions,Без ответа
+Unsafe file path detected,Обнаружен небезопасный путь к файлу
+Untitled Quiz,Тест без названия
+Untitled lesson,Урок без названия
+Update Template,Обновить шаблон
+Updated On,Обновлено
+Upload Assignment,Загрузить задание
+"Upload a 750×422 image (.jpg, .jpeg, .gif, or .png) — shown on the catalog card and lesson hero.","Загрузите изображение 750×422 (.jpg, .jpeg, .gif или .png) — оно показывается на карточке в каталоге и в шапке урока."
+Upload an image to replace the color.,Загрузите изображение вместо цвета.
+Upload failed,Не удалось загрузить
+Upload image instead,Загрузить изображение
+Upload video,Загрузить видео
+Uploaded video — students see it on the course page. Remove it to use a YouTube link instead.,"Видео загружено — студенты видят его на странице курса. Удалите его, чтобы вместо этого использовать ссылку на YouTube."
+Use HTML content for the email response,Использовать HTML в тексте письма
+User deleted,Пользователь удалён
+User does not have permission to access this user's profile details.,У пользователя нет прав на просмотр данных этого профиля.
+Video failed to load — this lesson will still be marked complete after you spend some time on it.,"Видео не загрузилось — урок всё равно будет отмечен как пройденный, когда вы проведёте на нём немного времени."
+View all reviews,Смотреть все отзывы
+Watch Time (mins),Время просмотра (мин)
+What are you using today to manage learning?,Чем вы сейчас пользуетесь для организации обучения?
+What is this badge awarded for?,За что выдаётся этот бейдж?
+What's the first milestone you'd like to achieve?,Какой первой цели вы хотите достичь?
+"When on, anyone can preview this lesson without enrolling. Otherwise it is visible only to enrolled students.","Когда включено, любой может открыть этот урок без записи на курс. Иначе он доступен только записанным студентам."
+"When you feel ready, you can schedule an evaluation to get certified.","Когда почувствуете, что готовы, запишитесь на оценку, чтобы получить сертификат."
+Where will you be using Frappe Learning?,Где вы будете использовать Frappe Learning?
+Work,Работа
+You are not authorized to view the assessments of this batch.,У вас нет прав на просмотр оценок этого потока.
+You are not authorized to view the chart data of this batch.,У вас нет прав на просмотр данных графиков этого потока.
+You are not authorized to view the details of this program.,У вас нет прав на просмотр сведений об этой программе.
+You are not authorized to view the discussion replies for this topic.,У вас нет прав на просмотр ответов в этом обсуждении.
+You are not authorized to view the discussion topics for this item.,У вас нет прав на просмотр обсуждений этого элемента.
+You are not authorized to view the students of this batch.,У вас нет прав на просмотр студентов этого потока.
+You are not authorized to view this quiz.,У вас нет прав на просмотр этого теста.
+You are not the assigned evaluator for this course and batch.,Вы не назначены оценщиком для этого курса и потока.
+You can only submit assignments for your own account.,Отправлять задания можно только от своего имени.
+You can only upload {0} files,Можно загружать только файлы {0}
+You cannot book an evaluation for another user.,Нельзя записать на оценку другого пользователя.
+You do not have permission to access announcements for this batch.,У вас нет прав на доступ к объявлениям этого потока.
+You do not have permission to access badges.,У вас нет прав на доступ к бейджам.
+You do not have permission to access heatmap data.,У вас нет прав на доступ к данным тепловой карты.
+You do not have permission to access lesson completion stats.,У вас нет прав на доступ к статистике прохождения уроков.
+You do not have permission to access this course's assessment data.,У вас нет прав на доступ к данным об оценках этого курса.
+You do not have permission to access this course's progress data.,У вас нет прав на доступ к данным о прогрессе по этому курсу.
+You do not have permission to add a lesson.,У вас нет прав на добавление урока.
+You do not have permission to cancel this evaluation.,У вас нет прав на отмену этой оценки.
+You do not have permission to create a live class.,У вас нет прав на создание онлайн-урока.
+You do not have permission to delete this batch.,У вас нет прав на удаление этого потока.
+You do not have permission to delete this chapter.,У вас нет прав на удаление этой главы.
+You do not have permission to delete this course.,У вас нет прав на удаление этого курса.
+You do not have permission to delete this lesson.,У вас нет прав на удаление этого урока.
+You do not have permission to export this course.,У вас нет прав на экспорт этого курса.
+You do not have permission to modify this chapter.,У вас нет прав на изменение этой главы.
+You do not have permission to modify this lesson.,У вас нет прав на изменение этого урока.
+You do not have permission to modify this role.,У вас нет прав на изменение этой роли.
+You do not have permission to send confirmation emails for this enrollment.,У вас нет прав на отправку писем-подтверждений по этой записи.
+You do not have permission to set up calendar events for this evaluation.,У вас нет прав на создание событий календаря для этой оценки.
+You do not have permission to update this submission.,У вас нет прав на изменение этой отправленной работы.
+You must be an Admin to assign badges to users.,Назначать бейджи пользователям может только администратор.
+You're all caught up! Check back later for updates.,Всё прочитано! Загляните позже за новостями.
+"You're enrolled and all set! The course content is ready, so you can start learning right away and go at your own pace.","Вы записаны, всё готово! Материалы курса уже доступны, поэтому вы можете начать учиться прямо сейчас и заниматься в своём темпе."
+You're enrolled in {0} – start whenever you're ready,"Вы записаны на {0} — начинайте, когда будете готовы"
+YouTube link added — students see it embedded on the course page. Clear the field to upload a file instead.,"Ссылка на YouTube добавлена — студенты видят видео на странице курса. Очистите поле, чтобы вместо этого загрузить файл."
+Your browser does not support the video tag.,Ваш браузер не поддерживает тег video.
+Your evaluation for the course {0} has been scheduled on {1} at {2} ({3} time).,Ваша оценка по курсу {0} назначена на {1} в {2} (время {3}).
+Zoom,Zoom
+Zoom account deleted successfully,Аккаунт Zoom успешно удалён
+course must be a string,course должен быть строкой
+course rating,рейтинг курса
+data must be an object,data должен быть объектом
+e.g. Course Champion,"например, Мастер курса"
+e.g. WELCOME10,"например, WELCOME10"
+file_url must be a string,file_url должен быть строкой
+name must be a string,name должен быть строкой
+sections,разделов
+service must be a string,service должен быть строкой
+that might interest you!,"и, возможно, он вас заинтересует!"
+title must be a string,title должен быть строкой
+user must be a string,user должен быть строкой
+user rating,оценка
+user ratings,оценок
+{0} has published a new batch {1},{0} опубликовал новый поток {1}
+{0} has published a new course {1},{0} опубликовал новый курс {1}
+{0} must be a string,{0} должен быть строкой
+{0} replies,{0} ответов
+{0} reply,{0} ответ
+{0}% complete,пройдено {0}%
