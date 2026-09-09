@@ -73,6 +73,15 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 		self.менеджер = создать_менеджера(f"leakmg-{суффикс}@example.com", self.организация)
+		frappe.get_doc(
+			{
+				"doctype": "Agent Course Artifact",
+				"course": self.курс,
+				"slug": "summary",
+				"title": "Резюме проекта",
+				"blocks": [{"block_key": "goal", "title": "Цель", "hint": "Одной фразой"}],
+			}
+		).insert(ignore_permissions=True)
 
 	def проверить(self, что: str, ответ) -> str:
 		"""Ответ без эталонов, внутренностей Frappe и текста пояснения.
@@ -103,6 +112,12 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		)
 		self.проверить("my_notes", student.my_notes())
 		self.проверить("forget", student.forget(key="role"))
+		self.проверить(
+			"update_artifact",
+			student.update_artifact(self.курс, "summary", "goal", "Открыть кофейню"),
+		)
+		self.проверить("artifact", student.artifact(self.курс))
+		self.проверить("artifact", student.artifact(self.курс, "summary"))
 
 		квиз = student.request_quiz(занятие)
 		выдано = self.проверить("request_quiz", квиз)

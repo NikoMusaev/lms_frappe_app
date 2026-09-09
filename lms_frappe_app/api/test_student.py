@@ -830,3 +830,147 @@ class IntegrationTestCourseOutline(IntegrationTestCase):
 
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], НЕ_ЗАЧИСЛЕН)
+
+
+class IntegrationTestArtifacts(IntegrationTestCase):
+	"""Документы курса: ученик собирает их по ходу обучения, агент помогает."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"art-{суффикс}@example.com")
+		self.урок = создать_урок(f"Урок {суффикс}")
+		self.курс = зачислить(self.ученик, self.урок)
+		self.схема(
+			blocks=[
+				{"block_key": "goal", "title": "Цель", "hint": "Одной фразой, без клише"},
+				{"block_key": "sponsor", "title": "Спонсор"},
+			]
+		)
+		frappe.set_user(self.ученик)
+
+	def схема(self, slug: str = "summary", **поля):
+		frappe.set_user("Administrator")
+		документ = frappe.get_doc(
+			{
+				"doctype": "Agent Course Artifact",
+				"course": self.курс,
+				"slug": slug,
+				"title": "Резюме проекта",
+				**поля,
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+		return документ
+
+	# --- чтение ---
+
+	def test_без_ключа_перечисляются_документы_с_заполненностью(self):
+		перечень = student.artifact(self.курс)["data"]["artifacts"]
+
+		self.assertEqual(
+			[(а["artifact"], а["blocks_total"], а["blocks_filled"]) for а in перечень],
+			[("summary", 2, 0)],
+		)
+		self.assertEqual(перечень[0]["layout"], "sections")
+
+	def test_с_ключом_приходят_блоки_с_подсказками(self):
+		student.update_artifact(self.курс, "summary", "goal", "Открыть седьмую кофейню")
+
+		документ = student.artifact(self.курс, "summary")["data"]
+
+		self.assertEqual(
+			[(б["key"], б["content"]) for б in документ["blocks"]],
+			[("goal", "Открыть седьмую кофейню"), ("sponsor", "")],
+			"порядок — из схемы; пустой блок приходит без содержимого",
+		)
+		self.assertEqual(документ["blocks"][0]["hint"], "Одной фразой, без клише")
+
+	def test_неизвестный_документ_отклоняется(self):
+		ответ = student.artifact(self.курс, "lean_canvas")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.АРТЕФАКТ_НЕ_НАЙДЕН)
+
+	def test_документы_чужого_курса_недоступны(self):
+		frappe.set_user("Administrator")
+		чужой = создать_курс(f"Чужой {frappe.generate_hash(length=6)}")
+		frappe.set_user(self.ученик)
+
+		ответ = student.artifact(чужой)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], НЕ_ЗАЧИСЛЕН)
+
+	def test_документы_идут_в_порядке_объявления(self):
+		"""Правка схемы не должна переставлять документы местами."""
+		self.схема("map", title="Карта результатов", blocks=[{"block_key": "d1", "title": "Р1"}])
+		self.схема("summary", blocks=[{"block_key": "goal", "title": "Цель"}])
+
+		перечень = student.artifact(self.курс)["data"]["artifacts"]
+
+		self.assertEqual([а["artifact"] for а in перечень], ["summary", "map"])
+
+	# --- запись ---
+
+	def test_запись_создаёт_экземпляр_и_считает_заполненность(self):
+		ответ = student.update_artifact(self.курс, "summary", "goal", "Открыть кофейню")["data"]
+
+		self.assertEqual((ответ["blocks_filled"], ответ["blocks_total"]), (1, 2))
+		self.assertTrue(
+			frappe.db.exists(
+				"Agent Student Artifact",
+				{"student": self.ученик, "course": self.курс, "artifact": "summary"},
+			)
+		)
+
+	def test_повторная_запись_замещает_блок(self):
+		student.update_artifact(self.курс, "summary", "goal", "Черновик")
+		student.update_artifact(self.курс, "summary", "Goal", "Открыть седьмую кофейню")
+
+		документ = frappe.get_doc(
+			"Agent Student Artifact",
+			{"student": self.ученик, "course": self.курс, "artifact": "summary"},
+		)
+		self.assertEqual(
+			[(б.block_key, б.content) for б in документ.blocks],
+			[("goal", "Открыть седьмую кофейню")],
+			"ключ нормализуется, строка замещается, а не удваивается",
+		)
+
+	def test_неизвестный_блок_отклоняется(self):
+		ответ = student.update_artifact(self.курс, "summary", "budget", "Миллион")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.БЛОК_НЕ_НАЙДЕН)
+
+	def test_пустой_блок_отклоняется(self):
+		ответ = student.update_artifact(self.курс, "summary", "goal", "   ")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ПУСТОЙ_БЛОК)
+
+	def test_блок_исчезнувший_из_схемы_не_теряет_содержимого(self):
+		"""Автор правит схему — труд ученика остаётся."""
+		student.update_artifact(self.курс, "summary", "sponsor", "Марина")
+		self.схема(blocks=[{"block_key": "goal", "title": "Цель"}])
+
+		без_спонсора = student.artifact(self.курс, "summary")["data"]["blocks"]
+		self.assertEqual([б["key"] for б in без_спонсора], ["goal"])
+
+		self.схема(
+			blocks=[{"block_key": "goal", "title": "Цель"}, {"block_key": "sponsor", "title": "Спонсор"}]
+		)
+		вернулся = student.artifact(self.курс, "summary")["data"]["blocks"]
+		self.assertEqual(вернулся[1]["content"], "Марина")
+
+	def test_запись_помнит_версию_схемы(self):
+		student.update_artifact(self.курс, "summary", "goal", "Цель")
+		вторая = self.схема(blocks=[{"block_key": "goal", "title": "Цель"}])
+		student.update_artifact(self.курс, "summary", "goal", "Уточнённая цель")
+
+		документ = frappe.get_doc(
+			"Agent Student Artifact",
+			{"student": self.ученик, "course": self.курс, "artifact": "summary"},
+		)
+		self.assertEqual(документ.schema_version, вторая.name)
