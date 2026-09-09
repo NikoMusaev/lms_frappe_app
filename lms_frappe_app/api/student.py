@@ -664,8 +664,10 @@ def _блок(блок, содержимое: dict[str, str]) -> dict:
 	return {
 		"key": блок.block_key,
 		"title": блок.title,
-		"hint": блок.hint,
-		"lesson": блок.lesson,
+		# Строкой, а не null: пустую подсказку агент и страница проверяют
+		# одинаково с непустой, без второй ветки на «нет значения».
+		"hint": блок.hint or "",
+		"lesson": блок.lesson or None,
 		"span": блок.span or 1,
 		"content": содержимое.get(блок.block_key, ""),
 	}

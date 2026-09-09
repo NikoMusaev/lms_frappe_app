@@ -767,9 +767,9 @@ def _действующие_артефакты(course: str) -> list[dict]:
 					{
 						"key": блок.block_key,
 						"title": блок.title,
-						"hint": блок.hint,
-						"lesson": блок.lesson,
-						"span": блок.span,
+						"hint": блок.hint or "",
+						"lesson": блок.lesson or None,
+						"span": блок.span or 1,
 					}
 					for блок in frappe.get_all(
 						"Agent Artifact Block",
