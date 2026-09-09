@@ -94,6 +94,9 @@ class IntegrationTestAuthoring(IntegrationTestCase):
 			lambda: authoring.publish_course(course=self.курс),
 			lambda: authoring.set_directive(lesson=self.уроки[0], teaching_directive="x"),
 			lambda: authoring.set_course_directive(course=self.курс, teaching_directive="x"),
+			lambda: authoring.set_course_artifact(
+				course=self.курс, artifact="summary", title="Резюме", blocks=[]
+			),
 		):
 			with self.assertRaises(frappe.PermissionError):
 				вызов()
@@ -398,3 +401,90 @@ class IntegrationTestCourseDirective(IntegrationTestCase):
 		authoring.set_course_directive(course=self.курс, teaching_directive="Наше правило")
 
 		self.assertIsNone(authoring.course_draft(course=другой)["data"]["directive"])
+
+
+class IntegrationTestCourseArtifact(IntegrationTestCase):
+	"""Схема документа курса: версионируется, видна автору, публикацию не держит."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"artifact-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Документы {суффикс}", summary="есть")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=глава, title="Урок", body="# Урок")["data"]["id"]
+		self.блоки = [
+			{"key": "goal", "title": "Цель", "hint": "Одной фразой", "lesson": self.урок},
+			{"key": "sponsor", "title": "Спонсор", "span": 2},
+		]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_схема_заводится_первой_версией(self):
+		ответ = authoring.set_course_artifact(
+			course=self.курс, artifact="Summary", title="Резюме проекта", blocks=self.блоки
+		)["data"]
+
+		self.assertEqual(ответ["version"], 1)
+		self.assertEqual(ответ["artifact"], "summary", "ключ нормализуется и зовётся как у ученика")
+		схема = frappe.get_doc("Agent Course Artifact", ответ["id"])
+		self.assertEqual(схема.slug, "summary")
+		self.assertEqual([(б.block_key, б.span) for б in схема.blocks], [("goal", 1), ("sponsor", 2)])
+		self.assertEqual(схема.blocks[0].lesson, self.урок)
+
+	def test_повторный_вызов_снимает_прежнюю_с_действия(self):
+		authoring.set_course_artifact(course=self.курс, artifact="summary", title="Резюме", blocks=self.блоки)
+		вторая = authoring.set_course_artifact(
+			course=self.курс, artifact="summary", title="Резюме проекта", blocks=self.блоки[:1]
+		)["data"]
+
+		self.assertEqual(вторая["version"], 2)
+		self.assertEqual(
+			frappe.db.count("Agent Course Artifact", {"course": self.курс, "slug": "summary", "is_active": 1}),
+			1,
+		)
+		self.assertEqual(frappe.db.count("Agent Course Artifact", {"course": self.курс, "slug": "summary"}), 2)
+
+	def test_черновик_показывает_документы_с_блоками(self):
+		authoring.set_course_artifact(
+			course=self.курс, artifact="summary", title="Резюме", blocks=self.блоки, layout="canvas"
+		)
+
+		артефакты = authoring.course_draft(course=self.курс)["data"]["artifacts"]
+
+		self.assertEqual(len(артефакты), 1)
+		self.assertEqual(артефакты[0]["artifact"], "summary")
+		self.assertEqual(артефакты[0]["layout"], "canvas")
+		self.assertEqual([б["key"] for б in артефакты[0]["blocks"]], ["goal", "sponsor"])
+		self.assertEqual(артефакты[0]["blocks"][0]["hint"], "Одной фразой")
+
+	def test_схема_без_блоков_предупреждает_но_не_блокирует(self):
+		authoring.set_course_artifact(course=self.курс, artifact="summary", title="Резюме", blocks=[])
+
+		готовность = authoring.course_draft(course=self.курс)["data"]["readiness"]
+
+		коды = [п["code"] for п in готовность["warnings"]]
+		self.assertIn("artifact_without_blocks", коды)
+		self.assertNotIn("artifact_without_blocks", [п["code"] for п in готовность["blocking"]])
+
+	def test_блок_с_несуществующим_уроком_отклоняется(self):
+		ответ = authoring.set_course_artifact(
+			course=self.курс,
+			artifact="summary",
+			title="Резюме",
+			blocks=[{"key": "goal", "title": "Цель", "lesson": "нет-такого-урока"}],
+		)
+
+		self.assertEqual(ответ["error"]["code"], "lesson_not_found")
+		self.assertFalse(frappe.db.exists("Agent Course Artifact", {"course": self.курс}))
+
+	def test_блоки_приходят_строкой_json(self):
+		"""Frappe отдаёт тело запроса как форму: список приезжает строкой."""
+		import json
+
+		ответ = authoring.set_course_artifact(
+			course=self.курс, artifact="summary", title="Резюме", blocks=json.dumps(self.блоки)
+		)["data"]
+
+		self.assertEqual(len(frappe.get_doc("Agent Course Artifact", ответ["id"]).blocks), 2)

@@ -15,6 +15,9 @@ import json
 import frappe
 
 from lms_frappe_app.agent_learning import course_builder, directives, quiz, structure
+from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
+	нормализовать_ключ,
+)
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.api import контракт, список, текущий_пользователь
 
@@ -363,6 +366,47 @@ def set_course_directive(
 
 @frappe.whitelist(methods=["POST"])
 @контракт
+def set_course_artifact(
+	course: str, artifact: str, title: str, blocks, layout: str = "sections"
+) -> dict:
+	"""Задаёт схему документа курса новой версией.
+
+	`blocks` — список `{key, title, hint, lesson, span}` в том порядке, в
+	каком документ читается. Порядок задаётся здесь и нигде больше: ученик
+	видит блоки в нём же. Подсказка `hint` адресована агенту: что должно
+	оказаться в блоке и когда считать его заполненным.
+
+	Версионируется как директива: содержимое ученика хранится по ключам
+	блоков, и правка схемы его не рушит.
+	"""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+	строки = []
+	for блок in список(blocks):
+		блок = _как_словарь(блок)
+		урок = блок.get("lesson") or None
+		if урок:
+			_должен_существовать("Course Lesson", урок, УРОК_НЕ_НАЙДЕН)
+		строки.append(
+			{
+				"block_key": блок.get("key"),
+				"title": блок.get("title"),
+				"hint": блок.get("hint"),
+				"lesson": урок,
+				"span": блок.get("span") or 1,
+			}
+		)
+	версия = directives.записать(
+		"Agent Course Artifact",
+		{"course": course, "slug": нормализовать_ключ(artifact)},
+		{"title": title, "layout": layout, "blocks": строки},
+	)
+	# Наружу ключ документа зовётся `artifact`, как в методах ученика.
+	return {"id": версия["id"], "course": course, "artifact": версия["slug"], "version": версия["version"]}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
 def add_quiz(lesson: str, questions, title: str | None = None, passing_percentage: int = 70) -> dict:
 	"""Создаёт квиз урока со всеми вопросами.
 
@@ -526,6 +570,7 @@ def course_draft(course: str) -> dict:
 			for глава in structure.главы_курса(course)
 		],
 		"directive": _действующая_директива_курса(course),
+		"artifacts": _действующие_артефакты(course),
 		"readiness": course_builder.проверить_готовность(course),
 	}
 
@@ -700,6 +745,42 @@ def _действующая_директива_курса(course: str) -> dict |
 		"glossary": запись.glossary,
 		"remember_about_student": запись.remember_about_student,
 	}
+
+
+def _действующие_артефакты(course: str) -> list[dict]:
+	"""Схемы документов курса, которые сейчас получает ученик, с версиями."""
+	собранное = []
+	for запись in frappe.get_all(
+		"Agent Course Artifact",
+		filters={"course": course, "is_active": 1},
+		fields=["name", "slug", "title", "layout", "version"],
+		order_by="creation asc",
+	):
+		собранное.append(
+			{
+				"id": запись.name,
+				"version": запись.version,
+				"artifact": запись.slug,
+				"title": запись.title,
+				"layout": запись.layout,
+				"blocks": [
+					{
+						"key": блок.block_key,
+						"title": блок.title,
+						"hint": блок.hint,
+						"lesson": блок.lesson,
+						"span": блок.span,
+					}
+					for блок in frappe.get_all(
+						"Agent Artifact Block",
+						filters={"parent": запись.name},
+						fields=["block_key", "title", "hint", "lesson", "span"],
+						order_by="idx asc",
+					)
+				],
+			}
+		)
+	return собранное
 
 
 def _следы_учеников(lesson: str) -> dict:

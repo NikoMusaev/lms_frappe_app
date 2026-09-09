@@ -113,6 +113,7 @@ def _проверить_количество(элементы: list) -> None:
 БЕЗ_ДИРЕКТИВЫ = "lesson_without_directive"
 БЕЗ_ДИРЕКТИВЫ_КУРСА = "course_without_directive"
 БЕЗ_КВИЗОВ = "course_without_quiz"
+БЕЗ_БЛОКОВ = "artifact_without_blocks"
 
 
 def проверить_готовность(курс: str) -> dict:
@@ -172,6 +173,20 @@ def проверить_готовность(курс: str) -> dict:
 		стоит_знать.append(
 			{"code": БЕЗ_КВИЗОВ, "message": "В курсе нет ни одного квиза: он зачтётся по прохождению уроков"}
 		)
+
+	# Артефакт публикацию не блокирует: курс без него — нормальный курс. Но
+	# объявленный и пустой — ошибка автора, которую ученик увидит первым.
+	for схема in frappe.get_all(
+		"Agent Course Artifact", filters={"course": курс, "is_active": 1}, fields=["name", "slug"]
+	):
+		if not frappe.db.exists("Agent Artifact Block", {"parent": схема.name}):
+			стоит_знать.append(
+				{
+					"code": БЕЗ_БЛОКОВ,
+					"artifact": схема.slug,
+					"message": "Документ объявлен без блоков: ученику нечего заполнять",
+				}
+			)
 
 	return {"blocking": мешает, "warnings": стоит_знать}
 
