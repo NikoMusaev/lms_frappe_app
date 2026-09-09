@@ -63,11 +63,11 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 			self.assertTrue(с["source_url"].startswith("https://github.com/"))
 
 	def test_пункт_сайдбара_ставится_один_раз(self):
-		from lms_frappe_app.install import обеспечить_пункт_сайдбара
+		from lms_frappe_app.install import обеспечить_пункты_сайдбара
 
 		frappe.set_user("Administrator")
-		обеспечить_пункт_сайдбара()
-		обеспечить_пункт_сайдбара()
+		обеспечить_пункты_сайдбара()
+		обеспечить_пункты_сайдбара()
 		пункты = frappe.get_all(
 			"LMS Sidebar Item",
 			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "agent-sidebar"},
