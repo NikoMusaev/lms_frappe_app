@@ -294,3 +294,24 @@ def доступна_заметка(doc, ptype: str = "read", user: str | None =
 	if not _только_чтение(ptype, user):
 		return False
 	return видит_всё(user) or doc.student == user
+
+
+def условие_артефакта(user: str | None = None) -> str:
+	"""`Agent Student Artifact`: только свои, менеджеру — ничего.
+
+	`Why:` артефакт — рабочий документ ученика, а не отчётность. Менеджеру
+	идёт покрытие целей, и артефакт в эту границу не входит: черновик резюме
+	проекта, который человек ещё уточняет, — не то, по чему его оценивают.
+	"""
+	user = user or frappe.session.user
+	if видит_всё(user):
+		return ""
+	return f"`tabAgent Student Artifact`.`student` = {frappe.db.escape(user)}"
+
+
+def доступен_артефакт(doc, ptype: str = "read", user: str | None = None) -> bool:
+	"""Права на конкретный документ ученика. Пишется только через `update_artifact`."""
+	user = user or frappe.session.user
+	if not _только_чтение(ptype, user):
+		return False
+	return видит_всё(user) or doc.student == user
