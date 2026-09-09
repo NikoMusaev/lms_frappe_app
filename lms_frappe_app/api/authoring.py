@@ -315,8 +315,7 @@ def set_directive(
 	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
 	return directives.записать(
 		"Agent Lesson Directive",
-		"lesson",
-		lesson,
+		{"lesson": lesson},
 		{
 			"objectives": objectives,
 			"teaching_directive": teaching_directive,
@@ -351,8 +350,7 @@ def set_course_directive(
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
 	return directives.записать(
 		"Agent Course Directive",
-		"course",
-		course,
+		{"course": course},
 		{
 			"objectives": objectives,
 			"teaching_directive": teaching_directive,

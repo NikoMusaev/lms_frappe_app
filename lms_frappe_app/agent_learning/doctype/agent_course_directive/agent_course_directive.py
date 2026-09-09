@@ -16,4 +16,4 @@ class AgentCourseDirective(ВерсионированнаяДиректива):
 	этому DocType никаких прав.
 	"""
 
-	ПОЛЕ_ВЛАДЕЛЬЦА = "course"
+	ПОЛЯ_ВЛАДЕЛЬЦА = ("course",)
