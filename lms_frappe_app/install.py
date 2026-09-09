@@ -68,11 +68,84 @@ def обеспечить_индекс_заметок() -> None:
 	)
 
 
+#: Ключи Google живут в конфигурации сайта, а не в коде: значения секретны, а
+#: запись провайдера — данные, которые обязаны пережить пересоздание сайта.
+КЛЮЧ_ID = "google_login_client_id"
+КЛЮЧ_СЕКРЕТ = "google_login_client_secret"
+
+
+def обеспечить_вход_через_google() -> None:
+	"""Ключ входа через Google из конфигурации сайта.
+
+	`Why:` запись `Social Login Key`, заведённая кликами в админке, живёт до
+	пересоздания сайта. Стенд поднимается `create-site`, и такая настройка
+	нигде не записана — после переезда или восстановления из бэкапа вход
+	исчезает молча, а замечает это первый ученик, который не смог войти.
+
+	Ключей в конфиге нет — не делаем ничего: локальная разработка не обязана
+	держать секреты Google, а пустая запись сломала бы кнопку на `/login`.
+	"""
+	client_id = frappe.conf.get(КЛЮЧ_ID)
+	client_secret = frappe.conf.get(КЛЮЧ_СЕКРЕТ)
+	if not client_id or not client_secret:
+		return
+
+	существует = frappe.db.exists("Social Login Key", "google")
+	ключ = (
+		frappe.get_doc("Social Login Key", "google")
+		if существует
+		else frappe.new_doc("Social Login Key")
+	)
+	if not существует:
+		# Адреса, скоупы и иконку задаёт сам Frappe: свои копии разъехались бы
+		# с ним при первом же обновлении. Метод объявлен пригодным именно для
+		# создания ключа из контроллера.
+		ключ.get_social_login_provider("Google", initialize=True)
+
+	if not _расходится(ключ, client_id, client_secret):
+		return
+
+	ключ.update(
+		{
+			"social_login_provider": "Google",
+			"client_id": client_id,
+			"client_secret": client_secret,
+			"enable_social_login": 1,
+			# Пускаем всех: платформа открыта, ограничение по доменам
+			# организаций сознательно не вводится.
+			"sign_ups": "Allow",
+		}
+	)
+	ключ.save(ignore_permissions=True)
+
+
+def _расходится(ключ, client_id: str, client_secret: str) -> bool:
+	"""Отличается ли запись от конфигурации.
+
+	`Why:` `after_migrate` зовётся на каждый старт контейнера, и безусловное
+	сохранение писало бы новую версию документа на ровном месте.
+	"""
+	from frappe.utils.password import get_decrypted_password
+
+	if ключ.is_new():
+		return True
+	if ключ.client_id != client_id or not ключ.enable_social_login:
+		return True
+	if ключ.sign_ups != "Allow":
+		return True
+	прежний = get_decrypted_password(
+		"Social Login Key", "google", "client_secret", raise_exception=False
+	)
+	return прежний != client_secret
+
+
 def after_install() -> None:
 	обеспечить_пункт_сайдбара()
 	обеспечить_индекс_заметок()
+	обеспечить_вход_через_google()
 
 
 def after_migrate() -> None:
 	обеспечить_пункт_сайдбара()
 	обеспечить_индекс_заметок()
+	обеспечить_вход_через_google()
