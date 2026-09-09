@@ -102,6 +102,24 @@ class IntegrationTestManagerAPI(IntegrationTestCase):
 		self.assertTrue(данные["sessions"])
 		self.assertNotIn("вложенные циклы", json.dumps(данные, ensure_ascii=False, default=str))
 
+	def test_подробности_показывают_покрытие_целей(self):
+		"""Руководителю нужно знать, какие темы разобраны, а какие нет.
+
+		Это тот же учебный результат, что и зачёт, просто мельче: в отличие
+		от заметок об ученике, он про результат, а не про разговор.
+		"""
+		занятие = frappe.get_doc("Agent Learning Session", создать_занятие(self.ученик_а, self.урок))
+		занятие.append("outcomes", {"objective": "Посчитать сроки", "status": "skipped"})
+		занятие.save(ignore_permissions=True)
+
+		frappe.set_user(self.менеджер)
+		данные = manager.student_detail(self.ученик_а)["data"]
+
+		self.assertEqual(
+			данные["sessions"][0]["objectives"],
+			[{"objective": "Посчитать сроки", "status": "skipped"}],
+		)
+
 
 class IntegrationTestManagerRole(IntegrationTestCase):
 	"""Роль руководителя должна работать сама по себе.

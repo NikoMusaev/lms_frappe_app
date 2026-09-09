@@ -95,6 +95,14 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 
 		занятие = урок["data"]["session"]
 		self.проверить("report_checkpoint", student.report_checkpoint(занятие, "разобрали"))
+		# Целей у директивы этого урока нет, поэтому отчёт пустой и проходит.
+		self.проверить("report_outcomes", student.report_outcomes(занятие, outcomes=[]))
+		self.проверить(
+			"remember",
+			student.remember(kind="fact", key="role", text="Руководитель отдела"),
+		)
+		self.проверить("my_notes", student.my_notes())
+		self.проверить("forget", student.forget(key="role"))
 
 		квиз = student.request_quiz(занятие)
 		выдано = self.проверить("request_quiz", квиз)
