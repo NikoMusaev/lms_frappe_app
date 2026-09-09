@@ -249,6 +249,9 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 			**_заметки(ученик, курс),
 			"carried_over": _незакрытые_цели(ученик, курс, кроме=lesson),
 		},
+		# Подсказка «сегодня собираем резюме проекта», а не ограничение:
+		# update_artifact принимает любой ключ, и ученик волен забежать вперёд.
+		"artifact_blocks": _блоки_урока(ученик, курс, lesson),
 	}
 
 
@@ -695,6 +698,21 @@ def _артефакт_целиком(ученик: str, course: str, artifact: s
 		"layout": схема.layout,
 		"blocks": [_блок(блок, содержимое) for блок in схема.blocks],
 	}
+
+
+def _блоки_урока(ученик: str, курс: str, lesson: str) -> list[dict]:
+	"""Блоки документов курса, привязанные к уроку, с содержимым ученика."""
+	блоки = []
+	for схема in _схемы_курса(курс):
+		свои = [блок for блок in схема.blocks if блок.lesson == lesson]
+		if not свои:
+			continue
+		содержимое = _содержимое(_экземпляр(ученик, курс, схема.slug))
+		for блок in свои:
+			блоки.append(
+				{"artifact": схема.slug, "artifact_title": схема.title, **_блок(блок, содержимое)}
+			)
+	return блоки
 
 
 def _текущее_занятие(ученик: str, lesson: str):

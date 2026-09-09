@@ -974,3 +974,33 @@ class IntegrationTestArtifacts(IntegrationTestCase):
 			{"student": self.ученик, "course": self.курс, "artifact": "summary"},
 		)
 		self.assertEqual(документ.schema_version, вторая.name)
+
+	# --- блоки урока ---
+
+	def test_start_lesson_приносит_блоки_своего_урока(self):
+		"""Подсказка «сегодня собираем резюме», а не ограничение."""
+		frappe.set_user("Administrator")
+		глава = frappe.db.get_value("Course Lesson", self.урок, "chapter")
+		другой = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": "Другой", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		привязать_урок(глава, другой)
+		frappe.set_user(self.ученик)
+		self.схема(
+			blocks=[
+				{"block_key": "goal", "title": "Цель", "lesson": self.урок},
+				{"block_key": "sponsor", "title": "Спонсор", "lesson": другой},
+			]
+		)
+		student.update_artifact(self.курс, "summary", "goal", "Открыть кофейню")
+
+		блоки = student.start_lesson(lesson=self.урок)["data"]["artifact_blocks"]
+
+		self.assertEqual(
+			[(б["artifact"], б["key"], б["content"]) for б in блоки],
+			[("summary", "goal", "Открыть кофейню")],
+			"блок другого урока не приходит",
+		)
+
+	def test_урок_без_блоков_отдаёт_пустой_список(self):
+		self.assertEqual(student.start_lesson(lesson=self.урок)["data"]["artifact_blocks"], [])
