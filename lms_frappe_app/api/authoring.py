@@ -347,12 +347,17 @@ def set_course_directive(
 	objectives: str | None = None,
 	student_profile: str | None = None,
 	glossary: str | None = None,
+	remember_about_student: str | None = None,
 ) -> dict:
 	"""Задаёт сквозную директиву курса новой версией.
 
 	Сюда идёт то, что одинаково на каждом уроке: роль и тон преподавателя,
 	формат занятия, кого учим, как называть вещи. Агент ученика получает её
 	вместе с директивой урока, поэтому повторять её в каждом уроке не нужно.
+
+	`remember_about_student` — что в этом курсе стоит помнить об ученике
+	между занятиями, по пункту на строку. Заметки агент ведёт сам; здесь
+	задаётся, чему в них место.
 	"""
 	_автор()
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
@@ -365,6 +370,7 @@ def set_course_directive(
 			"teaching_directive": teaching_directive,
 			"student_profile": student_profile,
 			"glossary": glossary,
+			"remember_about_student": remember_about_student,
 		},
 	)
 
@@ -685,7 +691,15 @@ def _действующая_директива_курса(course: str) -> dict |
 	записи = frappe.get_all(
 		"Agent Course Directive",
 		filters={"course": course, "is_active": 1},
-		fields=["name", "version", "objectives", "teaching_directive", "student_profile", "glossary"],
+		fields=[
+			"name",
+			"version",
+			"objectives",
+			"teaching_directive",
+			"student_profile",
+			"glossary",
+			"remember_about_student",
+		],
 		limit=1,
 	)
 	if not записи:
@@ -698,6 +712,7 @@ def _действующая_директива_курса(course: str) -> dict |
 		"teaching_directive": запись.teaching_directive,
 		"student_profile": запись.student_profile,
 		"glossary": запись.glossary,
+		"remember_about_student": запись.remember_about_student,
 	}
 
 

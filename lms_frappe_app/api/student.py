@@ -442,7 +442,13 @@ def _директива_курса(course: str) -> dict:
 	запись = frappe.get_all(
 		"Agent Course Directive",
 		filters={"course": course, "is_active": 1},
-		fields=["objectives", "teaching_directive", "student_profile", "glossary"],
+		fields=[
+			"objectives",
+			"teaching_directive",
+			"student_profile",
+			"glossary",
+			"remember_about_student",
+		],
 		limit=1,
 		ignore_permissions=True,
 	)
@@ -456,6 +462,9 @@ def _директива_курса(course: str) -> dict:
 			"teaching_directive": д.teaching_directive,
 			"student_profile": д.student_profile,
 			"glossary": _строки(д.glossary),
+			# Внутрь директивы, а не рядом: по каким признакам его оценивают,
+			# ученику знать не нужно — начнёт подстраиваться.
+			"remember_about_student": _строки(д.remember_about_student),
 		},
 	}
 
