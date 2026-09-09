@@ -4,15 +4,17 @@
 """Язык платформы.
 
 `Why:` интерфейс LMS своего переключателя не показывает — язык он спрашивает
-у сервера. Настройка живёт в базе и не переживает пересоздания сайта, поэтому
-приезжает кодом; но выбранный администратором язык трогать нельзя, иначе
-каждая выкатка откатывала бы его решение.
+у сервера, а настройка живёт в базе и не переживает пересоздания сайта.
+
+Ставится патчем, а не хуком миграции. Первая попытка была хуком с проверкой
+«поле пусто»: на стенде оно оказалось не пустым — Frappe при установке пишет
+туда `en`, — и язык не менялся три выкатки подряд, молча.
 """
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from lms_frappe_app.install import ЯЗЫК, обеспечить_язык_платформы
+from lms_frappe_app.patches.v0_1.russian_language import ЯЗЫК, execute
 
 
 class IntegrationTestLanguage(IntegrationTestCase):
@@ -28,22 +30,24 @@ class IntegrationTestLanguage(IntegrationTestCase):
 		frappe.db.set_single_value("System Settings", "language", значение)
 		frappe.clear_document_cache("System Settings", "System Settings")
 
-	def test_пустой_язык_становится_русским(self):
-		self._задать("")
+	def test_патч_ставит_русский_поверх_умолчания(self):
+		"""Frappe пишет в это поле `en` при установке — именно это и меняем."""
+		self._задать("en")
 
-		обеспечить_язык_платформы()
+		execute()
 
 		self.assertEqual(
 			frappe.db.get_single_value("System Settings", "language"), ЯЗЫК
 		)
 
-	def test_выбранный_язык_не_трогаем(self):
-		"""Настойчивость откатывала бы решение администратора каждой выкаткой."""
-		self._задать("de")
+	def test_патч_ставит_русский_и_на_пустом(self):
+		self._задать("")
 
-		обеспечить_язык_платформы()
+		execute()
 
-		self.assertEqual(frappe.db.get_single_value("System Settings", "language"), "de")
+		self.assertEqual(
+			frappe.db.get_single_value("System Settings", "language"), ЯЗЫК
+		)
 
 	def test_русский_известен_платформе(self):
 		"""`sync_languages` заводит запись на каждой миграции — без неё
