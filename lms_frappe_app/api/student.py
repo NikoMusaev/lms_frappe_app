@@ -14,6 +14,7 @@ from frappe.utils import now_datetime
 from lms_frappe_app.agent_learning import quiz
 from lms_frappe_app.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
+	организация_приостановлена,
 	доступен_курс,
 	ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА,
 	каталог_для,
@@ -332,6 +333,43 @@ def forget(key: str, course: str | None = None) -> dict:
 		raise Отказ(ЗАМЕТКА_НЕ_НАЙДЕНА, "Такой заметки нет", key=key)
 	frappe.delete_doc("Agent Student Note", имя, ignore_permissions=True)
 	return {"key": key}
+
+
+@frappe.whitelist()
+@контракт
+def whoami() -> dict:
+	"""Под какой учётной записью вошёл ученик и в каких он организациях.
+
+	`Why:` пустой список курсов сам по себе ничего не объясняет — вошли не
+	тем аккаунтом или тем, но без зачислений, выглядит одинаково. Наружу идут
+	только собственные данные ученика: своё имя он и так знает. Ролей Frappe
+	здесь нет — это устройство платформы, а не сведения о человеке.
+	"""
+	ученик = текущий_пользователь()
+	организации = []
+	for членство in frappe.get_all(
+		"Organization Membership",
+		filters={"user": ученик},
+		fields=["organization", "role"],
+		ignore_permissions=True,
+	):
+		организации.append(
+			{
+				"id": членство.organization,
+				"title": frappe.db.get_value(
+					"Learning Organization", членство.organization, "organization_name"
+				),
+				"role": членство.role,
+				# Приостановленная организация закрывает доступ к своим курсам,
+				# и без этого признака пустой каталог необъясним.
+				"suspended": организация_приостановлена(членство.organization),
+			}
+		)
+	return {
+		"login": ученик,
+		"full_name": frappe.db.get_value("User", ученик, "full_name"),
+		"organizations": организации,
+	}
 
 
 @frappe.whitelist()

@@ -224,6 +224,26 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 			)
 		)
 
+	# --- кто вошёл ---
+
+	def test_whoami_называет_учётную_запись_и_организацию(self):
+		"""Без этого «вошёл не тем аккаунтом» неотличимо от «нет курсов»."""
+		данные = student.whoami()["data"]
+
+		self.assertEqual(данные["login"], self.ученик)
+		self.assertEqual(
+			[(о["id"], о["role"]) for о in данные["organizations"]],
+			[(self.организация, "Member")],
+		)
+		self.assertFalse(данные["organizations"][0]["suspended"])
+
+	def test_whoami_не_несёт_ролей_frappe(self):
+		# Роли — внутреннее устройство платформы, агенту они ни к чему.
+		выдано = json.dumps(student.whoami(), ensure_ascii=False, default=str)
+
+		for поле in ("roles", "LMS Student", "System Manager", "doctype"):
+			self.assertNotIn(поле, выдано)
+
 	# --- контекст ученика ---
 
 	def test_start_lesson_отдаёт_заметки_об_ученике(self):
