@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "ACA-.#####",
+ "creation": "2026-09-10 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "course",
+  "slug",
+  "title",
+  "layout",
+  "version",
+  "is_active",
+  "sb_blocks",
+  "blocks"
+ ],
+ "fields": [
+  {
+   "fieldname": "course",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Курс",
+   "options": "LMS Course",
+   "reqd": 1
+  },
+  {
+   "description": "Ключ документа в курсе: project_summary, lean_canvas. Действующая схема одна на пару «курс + ключ»",
+   "fieldname": "slug",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ключ",
+   "reqd": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Название",
+   "reqd": 1
+  },
+  {
+   "default": "sections",
+   "description": "sections — блоки столбцом, canvas — сеткой по ширине блоков",
+   "fieldname": "layout",
+   "fieldtype": "Select",
+   "label": "Раскладка",
+   "options": "sections\ncanvas"
+  },
+  {
+   "description": "Проставляется автоматически: следующий номер для этого курса и ключа",
+   "fieldname": "version",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Версия",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Действующая"
+  },
+  {
+   "fieldname": "sb_blocks",
+   "fieldtype": "Section Break",
+   "label": "Блоки"
+  },
+  {
+   "description": "В том порядке, в каком документ читается",
+   "fieldname": "blocks",
+   "fieldtype": "Table",
+   "label": "Блоки",
+   "options": "Agent Artifact Block"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-10 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Agent Learning",
+ "name": "Agent Course Artifact",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Course Creator",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Moderator",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}
