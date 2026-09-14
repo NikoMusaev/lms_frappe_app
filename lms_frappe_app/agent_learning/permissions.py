@@ -315,3 +315,18 @@ def доступен_артефакт(doc, ptype: str = "read", user: str | None
 	if not _только_чтение(ptype, user):
 		return False
 	return видит_всё(user) or doc.student == user
+
+
+def доступен_desk(user: str | None = None) -> bool:
+	"""Показывать ли приложение на стартовом экране desk.
+
+	`Why:` хук `add_to_apps_screen` зовёт эту функцию для каждого вошедшего;
+	без неё плитка приложения появлялась бы и у ученика, которому desk
+	закрыт — ссылка вела бы в 403. Сотрудник платформы — тот, у кого есть
+	административная роль; сама по себе роль `Organization Manager` desk не
+	открывает, менеджер работает через агента.
+	"""
+	user = user or frappe.session.user
+	if user == "Administrator":
+		return True
+	return bool(set(frappe.get_roles(user)) & АДМИНИСТРАТИВНЫЕ_РОЛИ)

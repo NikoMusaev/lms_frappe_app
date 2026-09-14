@@ -13,16 +13,19 @@ app_license = "agpl-3.0"
 # LMS Course Progress и LMS Quiz Submission.
 required_apps = ["frappe/lms"]
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "lms_frappe_app",
-# 		"logo": "/assets/lms_frappe_app/logo.png",
-# 		"title": "Agent Learning",
-# 		"route": "/lms_frappe_app",
-# 		"has_permission": "lms_frappe_app.api.permission.has_app_permission"
-# 	}
-# ]
+# Плитка приложения на стартовом экране desk. `Why:` Frappe 16 строит
+# навигацию из постоянного сайдбара и стартового экрана; без этого хука
+# разделы приложения открывались только по прямой ссылке (#51). Маршрут —
+# workspace модуля: сайдбар подхватывается от него.
+add_to_apps_screen = [
+	{
+		"name": "lms_frappe_app",
+		"logo": "/assets/lms_frappe_app/images/agent-learning.svg",
+		"title": "Agent Learning",
+		"route": "/desk/agent-learning",
+		"has_permission": "lms_frappe_app.agent_learning.permissions.доступен_desk",
+	}
+]
 
 # Includes in <head>
 # ------------------
