@@ -268,7 +268,8 @@ doc_events = {
 # Testing
 # -------
 
-# before_tests = "lms_frappe_app.install.before_tests"
+# Индексация поиска Learning на время тестов выключается — см. testing.py.
+before_tests = "lms_frappe_app.testing.before_tests"
 
 # Extend DocType Class
 # ------------------------------
