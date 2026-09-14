@@ -1,0 +1,21 @@
+{
+ "app": "lms_frappe_app",
+ "bg_color": "blue",
+ "creation": "2026-09-14 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "bot",
+ "icon_type": "Link",
+ "idx": 0,
+ "label": "Agent Learning",
+ "link_to": "Agent Learning",
+ "link_type": "Workspace Sidebar",
+ "modified": "2026-09-14 12:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "Agent Learning",
+ "owner": "Administrator",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}

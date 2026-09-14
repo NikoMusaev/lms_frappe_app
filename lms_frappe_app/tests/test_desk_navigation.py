@@ -75,3 +75,15 @@ class IntegrationTestDeskNavigation(IntegrationTestCase):
 		self.assertTrue(доступен_desk())
 		frappe.set_user(ученик)
 		self.assertFalse(доступен_desk())
+
+	def test_плитка_на_стартовом_экране_ведёт_в_сайдбар_модуля(self):
+		"""`Why:` плитки стартового экрана — записи Desktop Icon, и
+		автогенерация из add_to_apps_screen для нового приложения при
+		миграции не сработала: на проде стартовый экран показывал только
+		Framework и Frappe Learning. Плитка типа Link не требует файла
+		логотипа, а видна тем, кому доступен хоть один пункт сайдбара."""
+		плитка = frappe.get_doc("Desktop Icon", WORKSPACE)
+
+		self.assertTrue(плитка.standard)
+		self.assertFalse(плитка.hidden)
+		self.assertEqual((плитка.link_type, плитка.link_to), ("Workspace Sidebar", WORKSPACE))
