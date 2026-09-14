@@ -18,22 +18,12 @@ required_apps = ["frappe/lms"]
 # разделы приложения открывались только по прямой ссылке (#51). Маршрут —
 # workspace модуля: сайдбар подхватывается от него.
 #
-# Логотип — data-URI из файла, а не путь в /assets. `Why:` код приложения на
-# стенде обновляется через том (пуш в ветку deploy), а ссылка
-# sites/assets/<app> заводится только при сборке образа: новый каталог
-# public/ до неё не доезжает, и /assets/lms_frappe_app/... отвечал 404
-# (проверено 14 сентября 2026). Файл остаётся источником правды.
-import base64 as _base64
-from pathlib import Path as _Path
-
-_логотип = "data:image/svg+xml;base64," + _base64.b64encode(
-	(_Path(__file__).parent / "public" / "images" / "agent-learning.svg").read_bytes()
-).decode()
-
+# Логотип отдаёт whitelisted-метод, а не /assets: файлы public/ до стенда не
+# доезжают — см. agent_learning/branding.py.
 add_to_apps_screen = [
 	{
 		"name": "lms_frappe_app",
-		"logo": _логотип,
+		"logo": "/api/method/lms_frappe_app.agent_learning.branding.logo",
 		"title": "Agent Learning",
 		"route": "/desk/agent-learning",
 		"has_permission": "lms_frappe_app.agent_learning.permissions.доступен_desk",

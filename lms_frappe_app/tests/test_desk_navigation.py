@@ -87,3 +87,19 @@ class IntegrationTestDeskNavigation(IntegrationTestCase):
 		self.assertTrue(плитка.standard)
 		self.assertFalse(плитка.hidden)
 		self.assertEqual((плитка.link_type, плитка.link_to), ("Workspace Sidebar", WORKSPACE))
+
+	def test_логотип_отдаётся_методом_с_типом_svg(self):
+		"""`Why:` /assets приложения до стенда не доезжают, а logo_url —
+		короткое поле: единственный путь для картинки — метод с готовым
+		Response, который Frappe отдаёт без JSON-обёртки."""
+		from lms_frappe_app.agent_learning.branding import АДРЕС, logo
+
+		ответ = logo()
+
+		self.assertEqual(ответ.mimetype, "image/svg+xml")
+		self.assertIn(b"<svg", ответ.get_data())
+		self.assertEqual(frappe.get_doc("Desktop Icon", WORKSPACE).logo_url, АДРЕС)
+		self.assertEqual(
+			next(п for п in frappe.get_hooks("add_to_apps_screen") if п["name"] == "lms_frappe_app")["logo"],
+			АДРЕС,
+		)
