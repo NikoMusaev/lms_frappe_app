@@ -9,6 +9,8 @@
 import frappe
 from frappe.utils import get_url
 
+from lms_frappe_app.api.student import ПРОБНЫХ_УРОКОВ
+
 no_cache = 1
 
 ИСХОДНИКИ = "https://github.com/NikoMusaev/lms_frappe_app"
@@ -54,6 +56,13 @@ def сведения(пользователь: str) -> dict:
 		"login_url": "/login?redirect-to=/agent",
 		"registration_limit": ЛИМИТ_РЕГИСТРАЦИЙ,
 		"source_url": ИСХОДНИКИ,
+		# Путь без своего агента: пробные уроки в веб-чате. Число — из той же
+		# настройки, которой лимит проверяет `start_lesson`.
+		"chat_url": f"{сайт}/chat",
+		"web_demo_lessons": frappe.get_cached_value(
+			"Agent Learning Settings", "Agent Learning Settings", "web_demo_lessons"
+		)
+		or ПРОБНЫХ_УРОКОВ,
 	}
 
 
