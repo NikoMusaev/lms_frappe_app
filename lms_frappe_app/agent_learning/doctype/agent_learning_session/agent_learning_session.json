@@ -18,6 +18,7 @@
   "finished_at",
   "sb_client",
   "via_trusted_service",
+  "web_chat",
   "sb_outcomes",
   "outcomes"
  ],
@@ -94,6 +95,14 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Хоть один вызов занятия пришёл из веб-чата. Урок с таким занятием входит в счёт пробных уроков",
+   "fieldname": "web_chat",
+   "fieldtype": "Check",
+   "label": "Шло в веб-чате",
+   "read_only": 1
+  },
+  {
    "fieldname": "sb_outcomes",
    "fieldtype": "Section Break",
    "label": "Покрытие целей"
@@ -110,7 +119,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-01 22:07:33.714518",
+ "modified": "2026-09-15 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Learning Session",
