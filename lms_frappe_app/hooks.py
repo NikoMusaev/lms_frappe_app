@@ -95,10 +95,12 @@ get_website_user_home_page = "lms_frappe_app.www.home.домашняя_стра�
 # website_generators = ["Web Page"]
 
 # Пункт сайдбара Frappe Learning ведёт по маршруту своей Web Page (fetch_from),
-# а страницы «Подключить агента» и «Мои документы» живут в коде. Редирект
-# отрабатывает до выбора страницы, поэтому заглушки публиковать не нужно.
+# а страницы «Подключить агента» и «Мои документы» живут в коде, веб-чат — в
+# MCP-сервисе на том же домене. Редирект отрабатывает до выбора страницы,
+# поэтому заглушки публиковать не нужно.
 website_redirects = [
 	{"source": "/agent-sidebar", "target": "/agent"},
+	{"source": "/chat-sidebar", "target": "/chat"},
 	{"source": "/artifacts-sidebar", "target": "/artifacts"},
 ]
 

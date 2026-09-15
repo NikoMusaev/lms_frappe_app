@@ -84,3 +84,48 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 		# сайдбар привёл бы на неопубликованную заглушку и 404.
 		редиректы = {п["source"]: п["target"] for п in frappe.get_hooks("website_redirects")}
 		self.assertEqual(редиректы.get("/agent-sidebar"), "/agent")
+
+	# --- веб-чат (lms-platform#141) ---
+
+	def test_состав_пунктов_сайдбара(self):
+		# Пин на состав: пункт, добавленный или убранный мимо ревью, виден здесь.
+		from lms_frappe_app.install import ПУНКТЫ_САЙДБАРА
+
+		self.assertEqual(
+			[п["route"] for п in ПУНКТЫ_САЙДБАРА],
+			["agent-sidebar", "chat-sidebar", "artifacts-sidebar"],
+		)
+
+	def test_пункт_браузера_ставится_один_раз(self):
+		from lms_frappe_app.install import обеспечить_пункты_сайдбара
+
+		frappe.set_user("Administrator")
+		обеспечить_пункты_сайдбара()
+		обеспечить_пункты_сайдбара()
+		пункты = frappe.get_all(
+			"LMS Sidebar Item",
+			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "chat-sidebar"},
+			["title", "web_page"],
+		)
+		self.assertEqual(len(пункты), 1)
+		self.assertEqual(пункты[0].title, "Заниматься в браузере")
+		self.assertFalse(frappe.db.get_value("Web Page", пункты[0].web_page, "published"))
+
+	def test_маршрут_пункта_браузера_ведёт_в_чат(self):
+		# Чат живёт в MCP-сервисе на том же домене, что и сайт, — как `/mcp`.
+		редиректы = {п["source"]: п["target"] for п in frappe.get_hooks("website_redirects")}
+		self.assertEqual(редиректы.get("/chat-sidebar"), "/chat")
+
+	def test_страница_зовёт_в_браузер_с_числом_пробных_уроков(self):
+		from lms_frappe_app.agent_learning.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		frappe.set_user("Administrator")
+		frappe.db.set_single_value("Agent Learning Settings", "web_demo_lessons", 3)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
+		ученик = создать_ученика(f"web-{frappe.generate_hash(length=6)}@example.com")
+
+		с = self.сведения_для(ученик)
+
+		self.assertEqual(с["chat_url"], f"{с['site_url']}/chat")
+		self.assertEqual(с["web_demo_lessons"], 3)

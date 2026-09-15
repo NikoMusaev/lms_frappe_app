@@ -10,6 +10,8 @@ import frappe
 #: `website_redirects` в hooks.
 ПУНКТЫ_САЙДБАРА = (
 	{"title": "Подключить агента", "route": "agent-sidebar", "icon": "bot", "page": "/agent"},
+	# Веб-чат живёт в MCP-сервисе на том же домене, что и сайт.
+	{"title": "Заниматься в браузере", "route": "chat-sidebar", "icon": "message-circle", "page": "/chat"},
 	{"title": "Мои документы", "route": "artifacts-sidebar", "icon": "file-text", "page": "/artifacts"},
 )
 
