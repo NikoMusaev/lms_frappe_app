@@ -164,11 +164,64 @@ def _расходится(ключ, client_id: str, client_secret: str) -> bool:
 	return прежний != client_secret
 
 
+#: OAuth-клиент веб-чата тоже приезжает из конфигурации сайта: те же id и
+#: секрет знает MCP-сервис, а оболочки контейнера на стенде нет.
+КЛЮЧ_ЧАТА_ID = "web_chat_oauth_client_id"
+КЛЮЧ_ЧАТА_СЕКРЕТ = "web_chat_oauth_client_secret"
+КЛЮЧ_ЧАТА_ВОЗВРАТ = "web_chat_redirect_uri"
+ИМЯ_КЛИЕНТА_ЧАТА = "MCP-LMS Web Chat"
+
+
+def обеспечить_клиента_веб_чата() -> None:
+	"""OAuth-клиент веб-чата MCP-сервиса из конфигурации сайта.
+
+	`Why:` та же причина, что у ключа Google: клиент, заведённый в desk, не
+	переживает пересоздания сайта, а завести его скриптом на стенде нечем.
+	Флаги — часть договора с учеником: без Skip Authorization он видит экран
+	согласия, без Client Secret Post сервис не обменяет код на токен (заголовок
+	Basic Frappe принимает за вход пользователя). Ручная правка флагов
+	возвращается на следующей миграции.
+
+	Ключи заданы не все — не делаем ничего: клиент без секрета или адреса
+	возврата — вход, который молча не работает.
+	"""
+	client_id = frappe.conf.get(КЛЮЧ_ЧАТА_ID)
+	client_secret = frappe.conf.get(КЛЮЧ_ЧАТА_СЕКРЕТ)
+	возврат = frappe.conf.get(КЛЮЧ_ЧАТА_ВОЗВРАТ)
+	if not (client_id and client_secret and возврат):
+		return
+
+	нужные = {
+		"app_name": ИМЯ_КЛИЕНТА_ЧАТА,
+		"client_secret": client_secret,
+		"redirect_uris": возврат,
+		"default_redirect_uri": возврат,
+		"scopes": "all",
+		"grant_type": "Authorization Code",
+		"response_type": "Code",
+		"skip_authorization": 1,
+		"token_endpoint_auth_method": "Client Secret Post",
+	}
+	if frappe.db.exists("OAuth Client", client_id):
+		клиент = frappe.get_doc("OAuth Client", client_id)
+		# Безусловное сохранение писало бы версию на каждый старт контейнера.
+		if all(клиент.get(поле) == значение for поле, значение in нужные.items()):
+			return
+		клиент.update(нужные)
+		клиент.save(ignore_permissions=True)
+		return
+	# Имя записи = id из конфигурации: `client_id` Frappe выводит из имени.
+	frappe.get_doc({"doctype": "OAuth Client", **нужные}).insert(
+		ignore_permissions=True, set_name=client_id
+	)
+
+
 def after_install() -> None:
 	обеспечить_пункты_сайдбара()
 	обеспечить_индекс_заметок()
 	обеспечить_индекс_артефактов()
 	обеспечить_вход_через_google()
+	обеспечить_клиента_веб_чата()
 
 
 def after_migrate() -> None:
@@ -176,3 +229,4 @@ def after_migrate() -> None:
 	обеспечить_индекс_заметок()
 	обеспечить_индекс_артефактов()
 	обеспечить_вход_через_google()
+	обеспечить_клиента_веб_чата()
