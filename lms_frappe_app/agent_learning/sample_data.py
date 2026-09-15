@@ -253,6 +253,7 @@ def политика_по_умолчанию() -> None:
 			"max_attempts": 3,
 			"retry_delay_hours": 1,
 			"session_timeout_hours": 6,
+			"web_demo_lessons": 2,
 		}
 	)
 	настройки.save(ignore_permissions=True)
