@@ -8,6 +8,8 @@
 сценарии в обход педагогики и прав.
 """
 
+import json
+
 import frappe
 from frappe.utils import now_datetime
 
@@ -37,6 +39,7 @@ from lms_frappe_app.api import контракт, список, текущий_п
 НУЖЕН_КВИЗ = "quiz_required"
 УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ЧУЖОЕ_ЗАНЯТИЕ = "not_your_session"
+НЕВЕРНОЕ_СОСТОЯНИЕ = "invalid_chat_state"
 ДЕМО_ИСЧЕРПАНО = "web_demo_exhausted"
 НЕИЗВЕСТНЫЙ_КАНАЛ = "unknown_channel"
 
@@ -574,6 +577,57 @@ def submit_answer(attempt: str, question: str, answer: str) -> dict:
 		# ему попытку или провалит квиз за него.
 		raise Отказ(ЧУЖОЕ_ЗАНЯТИЕ, "Это чужая попытка", attempt=attempt)
 	return quiz.принять_ответ(attempt, question, answer)
+
+
+@frappe.whitelist()
+@контракт
+def chat_state(session: str) -> dict:
+	"""Сохранённое состояние разговора веб-чата по своему занятию.
+
+	Записи `Agent Chat State` ролью ученика не читаются: формат внутренний,
+	и отдаётся он только этим методом, только владельцу занятия.
+	"""
+	занятие = _своё_занятие(session)
+	запись = frappe.db.get_value(
+		"Agent Chat State", занятие.name, ["state", "state_version"], as_dict=True
+	)
+	return {
+		"session": занятие.name,
+		"state": запись.state if запись else None,
+		"version": запись.state_version if запись else None,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def save_chat_state(session: str, state: str, version: str) -> dict:
+	"""Замещает состояние разговора веб-чата по своему занятию.
+
+	Статус занятия не проверяется: квиз закрывает занятие посреди хода, а
+	состояние пишется после хода — отказ терял бы последний ответ наставника.
+	"""
+	занятие = _своё_занятие(session)
+	try:
+		json.loads(state)
+	except (TypeError, ValueError) as сбой:
+		raise Отказ(
+			НЕВЕРНОЕ_СОСТОЯНИЕ, "Состояние разговора — строка JSON", session=session
+		) from сбой
+
+	if frappe.db.exists("Agent Chat State", занятие.name):
+		frappe.db.set_value(
+			"Agent Chat State", занятие.name, {"state": state, "state_version": version}
+		)
+	else:
+		frappe.get_doc(
+			{
+				"doctype": "Agent Chat State",
+				"session": занятие.name,
+				"state": state,
+				"state_version": version,
+			}
+		).insert(ignore_permissions=True)
+	return {"session": занятие.name, "version": version}
 
 
 @frappe.whitelist()

@@ -118,6 +118,11 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		)
 		self.проверить("artifact", student.artifact(self.курс))
 		self.проверить("artifact", student.artifact(self.курс, "summary"))
+		self.проверить(
+			"save_chat_state",
+			student.save_chat_state(занятие, json.dumps({"messages": []}), "1"),
+		)
+		self.проверить("chat_state", student.chat_state(занятие))
 
 		квиз = student.request_quiz(занятие)
 		выдано = self.проверить("request_quiz", квиз)

@@ -1,0 +1,76 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:session",
+ "creation": "2026-09-15 17:00:00.000000",
+ "description": "Состояние разговора веб-чата по занятию. Формат внутренний для MCP-сервиса; ученик и руководитель записи не читают",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "session",
+  "student",
+  "state_version",
+  "state"
+ ],
+ "fields": [
+  {
+   "fieldname": "session",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Занятие",
+   "options": "Agent Learning Session",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fetch_from": "session.student",
+   "fieldname": "student",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Ученик",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Версия формата состояния. Сменилась — сервис отбрасывает запись и начинает разговор заново",
+   "fieldname": "state_version",
+   "fieldtype": "Data",
+   "label": "Версия формата",
+   "read_only": 1
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Long Text",
+   "label": "Состояние",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-09-15 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Agent Learning",
+ "name": "Agent Chat State",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "session"
+}
