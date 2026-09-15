@@ -100,7 +100,7 @@ get_website_user_home_page = "lms_frappe_app.www.home.домашняя_стра�
 # поэтому заглушки публиковать не нужно.
 website_redirects = [
 	{"source": "/agent-sidebar", "target": "/agent"},
-	{"source": "/chat-sidebar", "target": "/chat"},
+	{"source": "/study-in-browser", "target": "/chat"},
 	{"source": "/artifacts-sidebar", "target": "/artifacts"},
 ]
 
