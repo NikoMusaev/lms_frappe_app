@@ -37,6 +37,15 @@ from lms_frappe_app.api import контракт, список, текущий_п
 НУЖЕН_КВИЗ = "quiz_required"
 УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ЧУЖОЕ_ЗАНЯТИЕ = "not_your_session"
+ДЕМО_ИСЧЕРПАНО = "web_demo_exhausted"
+НЕИЗВЕСТНЫЙ_КАНАЛ = "unknown_channel"
+
+#: Откуда пришёл вызов: свой агент ученика или веб-чат платформы. Канал `web`
+#: только ограничивает передавшего — подделывать его незачем.
+КАНАЛЫ = ("agent", "web")
+
+#: Запасной порог пробных уроков, если настройки почему-то недоступны.
+ПРОБНЫХ_УРОКОВ = 2
 
 #: Как прошла цель на занятии. Промежуточного «почти разобрали» нет намеренно:
 #: шкала из трёх делений заполняется одинаково разными агентами, из пяти —
@@ -172,14 +181,19 @@ def course_outline(course: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @контракт
-def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
+def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "agent") -> dict:
 	"""Начинает занятие: создаёт сессию и отдаёт всё нужное для урока.
 
 	`segment` — часть длинного урока, считая с единицы. Без него агент видел
 	бы только начало: материал режется по заголовкам, а способа попросить
 	продолжение не было вовсе.
+
+	`channel` — `web`, когда урок идёт в веб-чате платформы: там модель
+	оплачивает платформа, и число уроков ограничено настройкой.
 	"""
 	ученик = текущий_пользователь()
+	if channel not in КАНАЛЫ:
+		raise Отказ(НЕИЗВЕСТНЫЙ_КАНАЛ, "Канал занятия — agent или web", channel=channel)
 	lesson = lesson or _выбрать_урок(ученик)
 
 	курс = _курс_урока(lesson)
@@ -194,6 +208,9 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 		)
 		raise Отказ(причина, "Этот курс сейчас недоступен", course=курс)
 
+	if channel == "web":
+		_проверить_пробные_уроки(ученик, lesson)
+
 	# Продолжение урока не заводит второе занятие: иначе на один урок копились
 	# бы незакрытые сессии, которые потом закрывает фоновая задача.
 	занятие = _текущее_занятие(ученик, lesson) or frappe.get_doc(
@@ -205,6 +222,10 @@ def start_lesson(lesson: str | None = None, segment: int = 1) -> dict:
 			"via_trusted_service": 1,
 		}
 	).insert(ignore_permissions=True)
+	# Отметка при любом веб-вызове, а не только при создании: иначе урок,
+	# начатый своим агентом, продолжался бы в веб-чате вне счёта.
+	if channel == "web" and not занятие.web_chat:
+		занятие.db_set("web_chat", 1)
 
 	материал = нормализовать_урок(lesson)
 	segment = max(1, int(segment or 1))
@@ -731,6 +752,36 @@ def _текущее_занятие(ученик: str, lesson: str):
 		limit=1,
 	)
 	return frappe.get_doc("Agent Learning Session", открытые[0]) if открытые else None
+
+
+def _проверить_пробные_уроки(ученик: str, lesson: str) -> None:
+	"""Отказывает, если пробные уроки веб-чата кончились, а этот не из их числа.
+
+	Счёт по урокам, а не по занятиям: занятие закрывается по бездействию, и
+	возврат в тот же урок на следующий день не должен тратить второй пробный.
+	"""
+	уроки = set(
+		frappe.get_all(
+			"Agent Learning Session",
+			filters={"student": ученик, "web_chat": 1},
+			pluck="lesson",
+		)
+	)
+	if lesson in уроки:
+		return
+	порог = (
+		frappe.get_cached_value(
+			"Agent Learning Settings", "Agent Learning Settings", "web_demo_lessons"
+		)
+		or ПРОБНЫХ_УРОКОВ
+	)
+	if len(уроки) >= порог:
+		raise Отказ(
+			ДЕМО_ИСЧЕРПАНО,
+			"Пробные уроки в веб-чате пройдены — продолжить можно через своего агента",
+			lessons_used=len(уроки),
+			lessons_limit=порог,
+		)
 
 
 def _своё_занятие(session: str):
