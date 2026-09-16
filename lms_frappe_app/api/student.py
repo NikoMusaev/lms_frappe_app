@@ -581,6 +581,45 @@ def submit_answer(attempt: str, question: str, answer: str) -> dict:
 
 @frappe.whitelist()
 @контракт
+def lesson_session(lesson: str) -> dict:
+	"""Последнее занятие ученика по уроку — чтобы вернуть его в разговор.
+
+	`Why:` `start_lesson` переиспользует только незакрытое занятие, а
+	закрытое квизом заводит заново — ученик, вернувшийся к пройденному уроку,
+	видел его с первого вопроса (lms-platform#151). По этому методу сервис
+	узнаёт, есть ли по уроку разговор и пройден ли урок, и решает: показать
+	историю или начинать занятие.
+
+	Метод только читает: занятий не заводит и событий в журнал не пишет —
+	иначе каждый возврат на страницу оставлял бы след, которого не было.
+	"""
+	ученик = текущий_пользователь()
+	курс = _курс_урока(lesson)
+	_требовать_доступ_к_курсу(ученик, курс)
+
+	последние = frappe.get_all(
+		"Agent Learning Session",
+		filters={"student": ученик, "lesson": lesson},
+		fields=["name", "status"],
+		order_by="creation desc",
+		limit=1,
+	)
+	занятие = последние[0] if последние else None
+	return {
+		"lesson": lesson,
+		"title": frappe.db.get_value("Course Lesson", lesson, "title"),
+		"session": занятие["name"] if занятие else None,
+		"status": занятие["status"] if занятие else None,
+		"has_chat_state": bool(
+			занятие and frappe.db.exists("Agent Chat State", занятие["name"])
+		),
+		"completed": lesson in _пройденные(ученик, курс),
+		"next_lesson": _следующий_урок(ученик, курс),
+	}
+
+
+@frappe.whitelist()
+@контракт
 def chat_state(session: str) -> dict:
 	"""Сохранённое состояние разговора веб-чата по своему занятию.
 
