@@ -1,0 +1,145 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-17 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "session",
+  "course",
+  "lesson",
+  "lesson_directive",
+  "kind",
+  "question",
+  "objective",
+  "text",
+  "status",
+  "resolution",
+  "duplicate_of"
+ ],
+ "fields": [
+  {
+   "fieldname": "session",
+   "fieldtype": "Link",
+   "label": "Занятие",
+   "options": "Agent Learning Session",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "course",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Курс",
+   "options": "LMS Course",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "lesson",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Урок",
+   "options": "Course Lesson",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "Редакция указаний, действовавшая в момент репорта",
+   "fieldname": "lesson_directive",
+   "fieldtype": "Link",
+   "label": "Указания урока",
+   "options": "Agent Lesson Directive",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Вид",
+   "options": "Stuck\nMisconception\nMaterial Issue\nQuiz Question Issue\nDirective Mismatch\nOut Of Scope",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "question",
+   "fieldtype": "Link",
+   "label": "Вопрос квиза",
+   "options": "LMS Question",
+   "read_only": 1
+  },
+  {
+   "fieldname": "objective",
+   "fieldtype": "Data",
+   "label": "Цель урока",
+   "read_only": 1
+  },
+  {
+   "fieldname": "text",
+   "fieldtype": "Small Text",
+   "label": "Что не так",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "New",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Статус",
+   "options": "New\nIn Progress\nFixed\nRejected\nDuplicate",
+   "reqd": 1
+  },
+  {
+   "fieldname": "resolution",
+   "fieldtype": "Small Text",
+   "label": "Что сделали"
+  },
+  {
+   "fieldname": "duplicate_of",
+   "fieldtype": "Link",
+   "label": "Дубль",
+   "options": "Agent Course Report"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-17 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Agent Learning",
+ "name": "Agent Course Report",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Moderator",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Course Creator",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "kind",
+ "track_changes": 1
+}
