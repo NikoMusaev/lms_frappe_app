@@ -10,6 +10,8 @@
 нашли на проде.
 """
 
+import json
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -56,6 +58,19 @@ class IntegrationTestDeskNavigation(IntegrationTestCase):
 
 		self.assertEqual(карточки, ["Курс", "Ученики", "Организации"])
 		self.assertIn("Agent Student Artifact", ссылки)
+		self.assertIn("Agent Course Report", ссылки)
+
+	def test_на_обзоре_виден_счёт_неразобранных_репортов(self):
+		"""`Why:` репорт разбирают, только если видят, что он пришёл. Ссылка
+		в карточке ведёт в список, но молчит о том, есть ли там новое, а
+		ярлык со `stats_filter` Frappe считает сам — своего виджета не нужно.
+		"""
+		ярлыки = {я.link_to: я for я in frappe.get_doc("Workspace", WORKSPACE).shortcuts}
+
+		self.assertIn("Agent Course Report", ярлыки)
+		self.assertEqual(
+			json.loads(ярлыки["Agent Course Report"].stats_filter), {"status": ["=", "New"]}
+		)
 
 	def test_приложение_объявлено_для_стартового_экрана(self):
 		приложения = {п["name"]: п for п in frappe.get_hooks("add_to_apps_screen")}
