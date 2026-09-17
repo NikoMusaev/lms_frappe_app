@@ -4,6 +4,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from lms_frappe_app.agent_learning.directives import действующая
 from lms_frappe_app.agent_learning.sample_data import создать_ученика, создать_урок
 
 DOCTYPE = "Agent Lesson Directive"
@@ -53,6 +54,19 @@ class IntegrationTestAgentLessonDirective(IntegrationTestCase):
 		self.assertEqual(вторая.version, 2)
 		self.assertTrue(вторая.is_active)
 		self.assertFalse(первая.is_active)
+
+	def test_при_двух_действующих_версиях_берётся_свежая(self):
+		"""`Why:` инвариант держит контроллер, но `is_active` правят и мимо
+		него — прямой записью в базу, импортом, чужой миграцией. Разъехавшись,
+		версии дают агенту произвольную из двух, и порядок «сначала старая»
+		означает занятие по переписанному тексту — ровно то, от чего уходили
+		новой редакцией.
+		"""
+		старая = self.директива()
+		свежая = self.директива()
+		frappe.db.set_value(DOCTYPE, старая.name, "is_active", 1, update_modified=False)
+
+		self.assertEqual(действующая(DOCTYPE, {"lesson": self.lesson}), свежая.name)
 
 	def test_директива_другого_урока_не_деактивируется(self):
 		чужой_урок = создать_урок("Другой урок")

@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from lms_frappe_app.agent_learning import quiz
 from lms_frappe_app.agent_learning.sample_data import (
 	привязать_урок,
 	создать_курс,
@@ -214,6 +215,168 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 				"Agent Session Event", {"session": занятие, "kind": "Checkpoint Reported"}
 			)
 		)
+
+	# --- репорты о курсе ---
+
+	def test_репорт_привязан_сервером_к_курсу_уроку_и_редакции_указаний(self):
+		"""Why: привязку от агента можно указать на чужой урок, и вторая копия
+		разъедется с занятием. Сервер берёт её из занятия.
+
+		Редакция указаний берётся действующая, а не любая: репорт отвечает на
+		вопрос «это ещё актуально или указание с тех пор переписали», и ссылка
+		на снятую с действия версию отвечала бы на него неверно."""
+		frappe.set_user("Administrator")
+		переписанная = frappe.get_doc(
+			{
+				"doctype": "Agent Lesson Directive",
+				"lesson": self.урок,
+				"objectives": "Понимать цикл\nУметь читать код",
+				"teaching_directive": "Переписанные указания",
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_issue(
+			session=занятие, kind="material_issue", text="В примере перепутаны роли"
+		)
+
+		self.assertTrue(ответ["ok"])
+		репорт = frappe.get_doc("Agent Course Report", ответ["data"]["report"])
+		self.assertEqual(репорт.kind, "Material Issue")
+		self.assertEqual(репорт.course, self.курс)
+		self.assertEqual(репорт.lesson, self.урок)
+		self.assertEqual(репорт.status, "New")
+		self.assertEqual(репорт.lesson_directive, переписанная.name)
+		self.assertNotEqual(переписанная.name, self.директива.name)
+
+	def test_цель_репорта_сохраняется_и_не_ломает_запись_длиной(self):
+		"""Why: `objective` в схеме — `Data`, то есть varchar(140), а цели
+		приходят из `objectives` директивы, где длина ничем не ограничена.
+		Длинная цель уезжала бы агенту ошибкой базы мимо контракта, да ещё с
+		присланным текстом в сообщении."""
+		занятие = student.start_lesson()["data"]["session"]
+		длинная = "Понимать цикл и всё, что с ним связано, " * 10
+
+		своя = student.report_issue(
+			session=занятие, kind="stuck", text="Встал на этой цели", objective="Понимать цикл"
+		)
+		длинноватая = student.report_issue(
+			session=занятие, kind="stuck", text="Встал на этой цели", objective=длинная
+		)
+
+		self.assertEqual(
+			frappe.db.get_value("Agent Course Report", своя["data"]["report"], "objective"),
+			"Понимать цикл",
+		)
+		self.assertTrue(длинноватая["ok"])
+		сохранено = frappe.db.get_value(
+			"Agent Course Report", длинноватая["data"]["report"], "objective"
+		)
+		self.assertEqual(сохранено, длинная.strip()[: student.ДЛИНА_ЦЕЛИ])
+		# Пин на тип поля: `Data` длиннее 140 символов не принимает.
+		self.assertLessEqual(len(сохранено), 140)
+
+	def test_длинное_описание_обрезается_а_репорт_доходит(self):
+		"""Why: описание пишет агент, и предела у него нет — зациклившийся
+		высыпет в репорт весь разговор, а читает список человек. Обрезка, а не
+		отказ: сигнал нужнее хвоста текста. Предел молчаливый, и без пина он
+		уедет незамеченным вместе с концом описания."""
+		занятие = student.start_lesson()["data"]["session"]
+		длинное = "Материал противоречит сам себе. " * 200
+
+		ответ = student.report_issue(session=занятие, kind="material_issue", text=длинное)
+
+		self.assertTrue(ответ["ok"])
+		сохранено = frappe.db.get_value(
+			"Agent Course Report", ответ["data"]["report"], "text"
+		)
+		self.assertEqual(сохранено, длинное.strip()[: student.ДЛИНА_ОПИСАНИЯ])
+		self.assertLess(len(сохранено), len(длинное.strip()))
+
+	def test_виды_репорта_совпадают_со_схемой(self):
+		"""Why: словарь метода и options поля живут врозь, а сверяет их только
+		база — уже на вставке. Переименуют значение в схеме, и метод сложит
+		репорт с несуществующим видом: `ValidationError` мимо контракта,
+		агенту 500 вместо машинного кода. В обе стороны: вид, заведённый в
+		схеме и не выставленный наружу, недостижим и потому тоже расхождение."""
+		опции = frappe.get_meta("Agent Course Report").get_field("kind").options.split("\n")
+
+		self.assertEqual(set(student.ВИДЫ_РЕПОРТОВ.values()), set(опции))
+
+	def test_неизвестный_вид_репорта_отклоняется(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_issue(session=занятие, kind="нытьё", text="всё плохо")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА)
+
+	def test_репорт_без_описания_отклоняется(self):
+		"""Why: без машинного кода пустой текст упирается в обязательное поле
+		схемы и уезжает агенту ошибкой сервера, а не отказом, который он умеет
+		разобрать."""
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_issue(session=занятие, kind="stuck", text="   ")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ПУСТОЙ_РЕПОРТ)
+
+	def test_в_репорт_идёт_любой_вопрос_своего_урока_и_не_идёт_чужой(self):
+		"""Why: иначе репорт о своём уроке указывает на вопрос чужого курса, и
+		автор правит не то место.
+
+		«Свой» — принадлежность квизу урока, а не пригодность к проверке:
+		вопрос, у которого не отмечен ни один верный вариант, сервер проверять
+		не берётся, и это ровно тот случай, ради которого репорт и заведён."""
+		frappe.set_user("Administrator")
+		свой_вопрос = создать_вопрос("Свой вопрос", варианты=[("2", True), ("3", False)])
+		непроверяемый_вопрос = создать_вопрос(
+			"Вопрос без эталона", варианты=[("2", True), ("3", False)]
+		)
+		создать_квиз(self.урок, [свой_вопрос, непроверяемый_вопрос])
+		# Через документ такой вопрос не завести: LMS Question требует хотя бы
+		# один верный вариант. В базу он попадает импортом или прямой правкой —
+		# на это и рассчитана отбраковка непроверяемых вопросов в quiz.py.
+		frappe.db.set_value("LMS Question", непроверяемый_вопрос, "is_correct_1", 0)
+		чужой_урок = создать_урок(f"Чужой {frappe.generate_hash(length=6)}")
+		чужой_вопрос = создать_вопрос("Чужой вопрос", варианты=[("1", True), ("2", False)])
+		создать_квиз(чужой_урок, [чужой_вопрос])
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson()["data"]["session"]
+
+		свой = student.report_issue(
+			session=занятие,
+			kind="quiz_question_issue",
+			text="Вопрос двусмысленный",
+			question=свой_вопрос,
+		)
+		непроверяемый = student.report_issue(
+			session=занятие,
+			kind="quiz_question_issue",
+			text="Вопрос сформулирован двусмысленно",
+			question=непроверяемый_вопрос,
+		)
+		чужой = student.report_issue(
+			session=занятие,
+			kind="quiz_question_issue",
+			text="Вопрос двусмысленный",
+			question=чужой_вопрос,
+		)
+
+		self.assertTrue(свой["ok"])
+		self.assertEqual(
+			frappe.db.get_value("Agent Course Report", свой["data"]["report"], "question"),
+			свой_вопрос,
+		)
+		self.assertTrue(непроверяемый["ok"])
+		self.assertEqual(
+			frappe.db.get_value("Agent Course Report", непроверяемый["data"]["report"], "question"),
+			непроверяемый_вопрос,
+		)
+		self.assertFalse(чужой["ok"])
+		self.assertEqual(чужой["error"]["code"], quiz.ЧУЖОЙ_ВОПРОС)
 
 	# --- кто вошёл ---
 
