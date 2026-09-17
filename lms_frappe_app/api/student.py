@@ -567,6 +567,14 @@ def report_issue(
 	if not описание:
 		raise Отказ(ПУСТОЙ_РЕПОРТ, "Опишите, что не так", kind=kind)
 
+	if question:
+		квиз = quiz._квиз_урока(занятие.lesson)
+		вопросы = {в["question"] for в in quiz._вопросы_квиза(квиз)} if квиз else set()
+		if question not in вопросы:
+			raise Отказ(
+				quiz.ЧУЖОЙ_ВОПРОС, "Вопрос не из квиза этого урока", question=question
+			)
+
 	# `ignore_permissions` здесь — то же, что у прочих записей ученика:
 	# владение уже проверено `_своё_занятие`, а прав на создание у
 	# `LMS Student` нет намеренно, чтобы прямой REST не заводил репорты мимо

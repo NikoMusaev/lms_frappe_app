@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from lms_frappe_app.agent_learning import quiz
 from lms_frappe_app.agent_learning.sample_data import (
 	привязать_урок,
 	создать_курс,
@@ -252,6 +253,39 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.ПУСТОЙ_РЕПОРТ)
+
+	def test_в_репорт_идёт_вопрос_своего_урока_и_не_идёт_чужой(self):
+		"""Why: иначе репорт о своём уроке указывает на вопрос чужого курса, и
+		автор правит не то место."""
+		frappe.set_user("Administrator")
+		свой_вопрос = создать_вопрос("Свой вопрос", варианты=[("2", True), ("3", False)])
+		создать_квиз(self.урок, [свой_вопрос])
+		чужой_урок = создать_урок(f"Чужой {frappe.generate_hash(length=6)}")
+		чужой_вопрос = создать_вопрос("Чужой вопрос", варианты=[("1", True), ("2", False)])
+		создать_квиз(чужой_урок, [чужой_вопрос])
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson()["data"]["session"]
+
+		свой = student.report_issue(
+			session=занятие,
+			kind="quiz_question_issue",
+			text="Вопрос двусмысленный",
+			question=свой_вопрос,
+		)
+		чужой = student.report_issue(
+			session=занятие,
+			kind="quiz_question_issue",
+			text="Вопрос двусмысленный",
+			question=чужой_вопрос,
+		)
+
+		self.assertTrue(свой["ok"])
+		self.assertEqual(
+			frappe.db.get_value("Agent Course Report", свой["data"]["report"], "question"),
+			свой_вопрос,
+		)
+		self.assertFalse(чужой["ok"])
+		self.assertEqual(чужой["error"]["code"], quiz.ЧУЖОЙ_ВОПРОС)
 
 	# --- кто вошёл ---
 
