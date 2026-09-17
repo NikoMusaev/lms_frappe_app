@@ -56,14 +56,10 @@ class IntegrationTestOrganizationIsolation(IntegrationTestCase):
 
 	# --- занятия ---
 
-	def test_менеджер_видит_занятия_своей_компании(self):
-		frappe.set_user(self.менеджер_а)
-		видимые = frappe.get_list("Agent Learning Session", pluck="name")
-		self.assertIn(self.занятие_а.name, видимые)
-
 	def test_менеджер_не_видит_занятий_чужой_компании_в_списке(self):
 		frappe.set_user(self.менеджер_а)
 		видимые = frappe.get_list("Agent Learning Session", pluck="name")
+		self.assertIn(self.занятие_а.name, видимые)
 		self.assertNotIn(self.занятие_б.name, видимые)
 
 	def test_чужое_занятие_недоступно_по_прямому_обращению(self):

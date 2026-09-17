@@ -54,12 +54,9 @@ class IntegrationTestManagerAPI(IntegrationTestCase):
 		frappe.set_user(self.менеджер)
 		return manager.org_report(**аргументы)["data"]["rows"]
 
-	def test_отчёт_показывает_учеников_своей_организации(self):
-		строки = self.отчёт()
-		self.assertIn(self.ученик_а, {с["user"] for с in строки})
-
 	def test_ученики_чужой_организации_в_отчёт_не_попадают(self):
 		строки = self.отчёт()
+		self.assertIn(self.ученик_а, {с["user"] for с in строки})
 		self.assertNotIn(self.ученик_б, {с["user"] for с in строки})
 
 	def test_отчёт_несёт_дедлайн_статус_и_долю_пройденного(self):
@@ -173,7 +170,7 @@ class IntegrationTestManagerRole(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-	def test_руководитель_без_роли_ученика_видит_отчёт(self):
+	def test_руководитель_без_роли_ученика_видит_отчёт_и_подробности(self):
 		frappe.set_user(self.руководитель)
 		self.assertNotIn("LMS Student", frappe.get_roles(self.руководитель))
 
@@ -181,8 +178,6 @@ class IntegrationTestManagerRole(IntegrationTestCase):
 
 		self.assertIn(self.ученик, {строка["user"] for строка in строки})
 
-	def test_руководитель_без_роли_ученика_видит_подробности(self):
-		frappe.set_user(self.руководитель)
 		ответ = manager.student_detail(self.ученик)
 
 		self.assertTrue(ответ["ok"], ответ)

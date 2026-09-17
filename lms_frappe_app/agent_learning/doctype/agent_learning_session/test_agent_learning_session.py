@@ -44,15 +44,12 @@ class IntegrationTestAgentLearningSession(IntegrationTestCase):
 	def test_чужое_занятие_недоступно_по_прямому_обращению(self):
 		"""Фильтр списка сам по себе не защищает: чужую запись попробуют
 		открыть по имени, а не искать в списке."""
+		своё = self.занятие(student=ПЕРВЫЙ)
 		чужое = self.занятие(student=ВТОРОЙ)
 
 		frappe.set_user(ПЕРВЫЙ)
-		self.assertFalse(frappe.has_permission(DOCTYPE, "read", doc=чужое.name))
-
-	def test_своё_занятие_доступно(self):
-		своё = self.занятие(student=ПЕРВЫЙ)
-		frappe.set_user(ПЕРВЫЙ)
 		self.assertTrue(frappe.has_permission(DOCTYPE, "read", doc=своё.name))
+		self.assertFalse(frappe.has_permission(DOCTYPE, "read", doc=чужое.name))
 
 	# --- переходы ---
 

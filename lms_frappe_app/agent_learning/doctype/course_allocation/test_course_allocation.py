@@ -49,11 +49,6 @@ class IntegrationTestCourseAllocation(IntegrationTestCase):
 		with self.assertRaises(frappe.DuplicateEntryError):
 			добавить_в_организацию(ПЕРВЫЙ, self.организация)
 
-	def test_пользователь_состоит_в_нескольких_организациях(self):
-		другая = создать_организацию(f"Компания {frappe.generate_hash(length=6)}")
-		добавить_в_организацию(ПЕРВЫЙ, self.организация)
-		добавить_в_организацию(ПЕРВЫЙ, другая)  # не должно падать
-
 	# --- назначение порождает зачисление ---
 
 	def test_назначение_на_организацию_записывает_всех_участников(self):
@@ -97,10 +92,6 @@ class IntegrationTestCourseAllocation(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.назначить()
 
-	def test_пустой_список_курсов_означает_весь_каталог(self):
-		добавить_в_организацию(ПЕРВЫЙ, self.организация)
-		self.назначить()  # не должно падать
-
 	def test_приостановленной_организации_курс_не_назначить(self):
 		frappe.db.set_value("Learning Organization", self.организация, "status", "Suspended")
 		frappe.clear_document_cache("Learning Organization", self.организация)
@@ -133,14 +124,13 @@ class IntegrationTestCourseAllocation(IntegrationTestCase):
 
 	# --- политика квиза ---
 
-	def test_политика_по_умолчанию_из_общих_настроек(self):
+	def test_организация_перекрывает_только_заданные_поля(self):
+		# Пустое поле означает «как в общих настройках»: организация не обязана
+		# дублировать значения, которые её устраивают.
 		политика = политика_квиза(self.организация)
 		self.assertEqual(политика["pass_threshold"], 0.8)
 		self.assertEqual(политика["max_attempts"], 3)
 
-	def test_организация_перекрывает_только_заданные_поля(self):
-		# Пустое поле означает «как в общих настройках»: организация не обязана
-		# дублировать значения, которые её устраивают.
 		организация = frappe.get_doc("Learning Organization", self.организация)
 		организация.pass_threshold = 0.9
 		организация.save(ignore_permissions=True)

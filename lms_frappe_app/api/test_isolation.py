@@ -68,25 +68,22 @@ class IntegrationTestApiIsolation(IntegrationTestCase):
 		)
 		frappe.set_user(менеджер)
 
+		своё = manager.student_detail(self.ученик)
+		self.assertTrue(своё["ok"])
+		self.assertEqual(своё["data"]["user"], self.ученик)
+
 		ответ = manager.student_detail(self.чужой)
 
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], manager.ЧУЖОЙ_УЧЕНИК)
 
-	def test_менеджер_получает_своего_ученика(self):
-		менеджер = создать_менеджера(
-			f"i-m2-{frappe.generate_hash(length=6)}@example.com", self.компания_а
-		)
-		frappe.set_user(менеджер)
-
-		ответ = manager.student_detail(self.ученик)
-
-		self.assertTrue(ответ["ok"])
-		self.assertEqual(ответ["data"]["user"], self.ученик)
-
 	# --- чужое занятие и чужая попытка ---
 
 	def test_чекпоинт_в_чужое_занятие_отклоняется(self):
+		# Отказ, а не исключение прав: агенту нужен код, по которому он
+		# объяснит ученику происходящее. Проверка идёт по принадлежности
+		# занятия, а не по праву чтения — читать чужое занятие вправе ещё и
+		# руководитель, но действовать в нём он не должен.
 		frappe.set_user(self.ученик)
 		ответ = student.report_checkpoint(self.чужое_занятие, "не моё занятие")
 
@@ -101,29 +98,34 @@ class IntegrationTestApiIsolation(IntegrationTestCase):
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
 
-	def test_ответ_в_чужую_попытку_отклоняется(self):
+	def test_чужая_попытка_недоступна(self):
+		"""Открытую методом попытку не правит напрямую даже хозяин, а чужой
+		не читает и не отвечает в неё.
+
+		Проверки не мешают друг другу: права только читаются, а ответ в чужую
+		попытку отклоняется раньше, чем что-либо запишется.
+		"""
 		frappe.set_user(self.чужой)
-		чужая_попытка = student.request_quiz(self.чужое_занятие)["data"]["attempt"]
+		попытка = student.request_quiz(self.чужое_занятие)["data"]["attempt"]
+
+		# Хозяин не правит свою попытку напрямую. Главное: иначе зачёт ставится
+		# без единого ответа. Проверено эксплуатацией до починки — PUT со
+		# `score` проходил.
+		self.assertFalse(
+			frappe.has_permission("Agent Quiz Attempt", "write", doc=попытка, user=self.чужой)
+		)
 
 		frappe.set_user(self.ученик)
-		ответ = student.submit_answer(чужая_попытка, self.вопрос, "1")
+
+		# Чужая попытка не читается даже по имени.
+		self.assertFalse(frappe.has_permission("Agent Quiz Attempt", "read", doc=попытка))
+
+		ответ = student.submit_answer(попытка, self.вопрос, "1")
 
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
 
 	# --- прямая запись мимо методов ---
-
-	def test_ученик_не_может_править_свою_попытку_напрямую(self):
-		"""Главное: иначе зачёт ставится без единого ответа.
-
-		Проверено эксплуатацией до починки — PUT со `score` проходил.
-		"""
-		frappe.set_user(self.чужой)
-		попытка = student.request_quiz(self.чужое_занятие)["data"]["attempt"]
-
-		self.assertFalse(
-			frappe.has_permission("Agent Quiz Attempt", "write", doc=попытка, user=self.чужой)
-		)
 
 	def test_ученик_не_может_создать_себе_членство(self):
 		# Иначе он вписывается в любую компанию и получает её курсы.
@@ -151,13 +153,6 @@ class IntegrationTestApiIsolation(IntegrationTestCase):
 		self.assertFalse(
 			frappe.has_permission("Agent Learning Session", "write", doc=своё)
 		)
-
-	def test_чужая_попытка_не_читается_даже_по_имени(self):
-		frappe.set_user(self.чужой)
-		чужая = student.request_quiz(self.чужое_занятие)["data"]["attempt"]
-
-		frappe.set_user(self.ученик)
-		self.assertFalse(frappe.has_permission("Agent Quiz Attempt", "read", doc=чужая))
 
 	def test_чтение_остаётся_доступным(self):
 		# Урезание прав не должно сломать обычную работу.

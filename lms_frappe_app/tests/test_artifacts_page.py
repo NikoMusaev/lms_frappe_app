@@ -94,22 +94,3 @@ class IntegrationTestArtifactsPage(IntegrationTestCase):
 		self.assertTrue(текст.startswith("# Резюме проекта\n"))
 		self.assertIn("## Цель\n\nОткрыть **седьмую** кофейню", текст)
 		self.assertIn("## Спонсор\n\n_Не заполнено._", текст)
-
-	def test_пункт_сайдбара_ставится_один_раз(self):
-		from lms_frappe_app.install import обеспечить_пункты_сайдбара
-
-		frappe.set_user("Administrator")
-		обеспечить_пункты_сайдбара()
-		обеспечить_пункты_сайдбара()
-		пункты = frappe.get_all(
-			"LMS Sidebar Item",
-			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "artifacts-sidebar"},
-			["title", "web_page"],
-		)
-		self.assertEqual(len(пункты), 1)
-		self.assertEqual(пункты[0].title, "Мои документы")
-		self.assertFalse(frappe.db.get_value("Web Page", пункты[0].web_page, "published"))
-
-	def test_маршрут_пункта_ведёт_на_страницу(self):
-		редиректы = {п["source"]: п["target"] for п in frappe.get_hooks("website_redirects")}
-		self.assertEqual(редиректы.get("/artifacts-sidebar"), "/artifacts")

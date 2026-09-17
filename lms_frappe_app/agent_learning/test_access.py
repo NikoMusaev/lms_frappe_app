@@ -119,18 +119,6 @@ class IntegrationTestAccess(IntegrationTestCase):
 	# --- 3. приостановка ---
 
 	def test_курс_приостановленной_организации_скрывается(self):
-		организация = self.организация()
-		добавить_в_организацию(self.ученик, организация)
-		self.назначить(организация)
-		frappe.db.set_value("Learning Organization", организация, "status", "Suspended")
-
-		self.assertIsNone(self.мой_курс())
-
-		можно, причина = доступен_курс(self.ученик, self.курс)
-		self.assertFalse(можно)
-		self.assertEqual(причина, ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА)
-
-	def test_доступ_возвращается_вместе_со_статусом_организации(self):
 		"""Зачисление переживает приостановку — иначе потеряется прогресс.
 
 		Прежняя редакция проверяла только наличие записи, которую ни одна
@@ -139,9 +127,13 @@ class IntegrationTestAccess(IntegrationTestCase):
 		организация = self.организация()
 		добавить_в_организацию(self.ученик, организация)
 		self.назначить(организация)
-
 		frappe.db.set_value("Learning Organization", организация, "status", "Suspended")
+
 		self.assertIsNone(self.мой_курс(), "курс приостановленной организации виден")
+
+		можно, причина = доступен_курс(self.ученик, self.курс)
+		self.assertFalse(можно)
+		self.assertEqual(причина, ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА)
 
 		frappe.db.set_value("Learning Organization", организация, "status", "Active")
 		self.assertIsNotNone(self.мой_курс(), "доступ не вернулся после возобновления")
