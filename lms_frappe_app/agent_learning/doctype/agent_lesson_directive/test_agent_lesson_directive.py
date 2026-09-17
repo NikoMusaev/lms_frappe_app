@@ -42,19 +42,15 @@ class IntegrationTestAgentLessonDirective(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_версия_проставляется_сама(self):
-		первая = self.директива()
-		вторая = self.директива()
-		self.assertEqual(первая.version, 1)
-		self.assertEqual(вторая.version, 2)
-
 	def test_на_урок_остаётся_одна_действующая_директива(self):
 		первая = self.директива()
+		self.assertEqual(первая.version, 1)
 		self.assertTrue(первая.is_active)
 
 		вторая = self.директива()
 		первая.reload()
 
+		self.assertEqual(вторая.version, 2)
 		self.assertTrue(вторая.is_active)
 		self.assertFalse(первая.is_active)
 
