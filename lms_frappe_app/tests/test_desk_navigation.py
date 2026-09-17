@@ -68,9 +68,12 @@ class IntegrationTestDeskNavigation(IntegrationTestCase):
 		ярлыки = {я.link_to: я for я in frappe.get_doc("Workspace", WORKSPACE).shortcuts}
 
 		self.assertIn("Agent Course Report", ярлыки)
-		self.assertEqual(
-			json.loads(ярлыки["Agent Course Report"].stats_filter), {"status": ["=", "New"]}
-		)
+		фильтр = json.loads(ярлыки["Agent Course Report"].stats_filter)
+		self.assertEqual(фильтр, {"status": ["=", "New"]})
+		# Статус сверяется со схемой, а не с копией себя: переименованный в
+		# доктайпе, он оставит ярлык навсегда на «0 новых», и молча.
+		статусы = frappe.get_meta("Agent Course Report").get_field("status").options.split("\n")
+		self.assertIn(фильтр["status"][1], статусы)
 
 	def test_приложение_объявлено_для_стартового_экрана(self):
 		приложения = {п["name"]: п for п in frappe.get_hooks("add_to_apps_screen")}
