@@ -7,6 +7,8 @@ from frappe.tests import IntegrationTestCase
 from lms_frappe_app.agent_learning.sample_data import (
 	зачислить,
 	создать_занятие,
+	создать_менеджера,
+	создать_организацию,
 	создать_ученика,
 	создать_урок,
 )
@@ -38,3 +40,18 @@ class IntegrationTestAgentCourseReport(IntegrationTestCase):
 		).insert()
 
 		self.assertEqual(репорт.status, "New")
+
+	def test_репорты_не_читают_ни_ученик_ни_руководитель(self):
+		"""Why: репорт о курсе — не отчётность по людям. Граница проходит по
+		сущности: прав на доктайп у роли нет вовсе, и обойти это новым методом
+		или фильтром полей нельзя. Дописанный в схему блок прав иначе не
+		заметит никто."""
+		суффикс = frappe.generate_hash(length=6)
+		организация = создать_организацию(f"Компания {суффикс}")
+		руководитель = создать_менеджера(f"rep-m-{суффикс}@example.com", организация)
+
+		frappe.set_user(self.ученик)
+		self.assertFalse(frappe.has_permission("Agent Course Report", "read"))
+
+		frappe.set_user(руководитель)
+		self.assertFalse(frappe.has_permission("Agent Course Report", "read"))
