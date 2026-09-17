@@ -66,6 +66,18 @@
    "type": "Link"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Репорты о курсе",
+   "link_to": "Agent Course Report",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "users",
@@ -231,7 +243,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-15 17:00:00.000000",
+ "modified": "2026-09-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Learning",
