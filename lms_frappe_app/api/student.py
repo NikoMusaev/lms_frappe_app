@@ -67,6 +67,21 @@ from lms_frappe_app.api import контракт, список, текущий_п
 #: него агент разрешает сам — заменой записи по существующему ключу.
 ЛИМИТ_ЗАМЕТОК = 20
 
+НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА = "unknown_report_kind"
+ПУСТОЙ_РЕПОРТ = "report_text_required"
+
+#: Вид репорта наружу — snake_case, внутри — значение Select. Наружу уходит
+#: имя, а не внутренняя формулировка: переименование в схеме не должно ломать
+#: агентов.
+ВИДЫ_РЕПОРТОВ = {
+	"stuck": "Stuck",
+	"misconception": "Misconception",
+	"material_issue": "Material Issue",
+	"quiz_question_issue": "Quiz Question Issue",
+	"directive_mismatch": "Directive Mismatch",
+	"out_of_scope": "Out Of Scope",
+}
+
 АРТЕФАКТ_НЕ_НАЙДЕН = "artifact_not_found"
 БЛОК_НЕ_НАЙДЕН = "artifact_block_not_found"
 ПУСТОЙ_БЛОК = "artifact_content_required"
@@ -523,6 +538,56 @@ def report_checkpoint(session: str, note: str) -> dict:
 	занятие = _своё_занятие(session)
 	занятие.записать_событие("Checkpoint Reported", note)
 	return {"recorded_at": now_datetime().isoformat()}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def report_issue(
+	session: str,
+	kind: str,
+	text: str,
+	question: str | None = None,
+	objective: str | None = None,
+) -> dict:
+	"""Репорт агента о том, что мешает курсу работать.
+
+	Курс, урок и действующую редакцию указаний берёт сервер из занятия:
+	привязка от агента указала бы на чужой урок.
+	"""
+	занятие = _своё_занятие(session)
+	вид = ВИДЫ_РЕПОРТОВ.get((kind or "").strip().lower())
+	if not вид:
+		raise Отказ(
+			НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА,
+			"Вид репорта: " + ", ".join(ВИДЫ_РЕПОРТОВ),
+			kind=kind,
+		)
+
+	описание = (text or "").strip()
+	if not описание:
+		raise Отказ(ПУСТОЙ_РЕПОРТ, "Опишите, что не так", kind=kind)
+
+	# `ignore_permissions` здесь — то же, что у прочих записей ученика:
+	# владение уже проверено `_своё_занятие`, а прав на создание у
+	# `LMS Student` нет намеренно, чтобы прямой REST не заводил репорты мимо
+	# метода.
+	репорт = frappe.get_doc(
+		{
+			"doctype": "Agent Course Report",
+			"session": занятие.name,
+			"course": занятие.course,
+			"lesson": занятие.lesson,
+			"lesson_directive": frappe.db.get_value(
+				"Agent Lesson Directive", {"lesson": занятие.lesson, "is_active": 1}
+			),
+			"kind": вид,
+			"question": question,
+			"objective": (objective or "").strip(),
+			"text": описание[:2000],
+		}
+	).insert(ignore_permissions=True)
+
+	return {"report": репорт.name, "kind": kind.strip().lower()}
 
 
 @frappe.whitelist(methods=["POST"])

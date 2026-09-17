@@ -215,6 +215,44 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 			)
 		)
 
+	# --- репорты о курсе ---
+
+	def test_репорт_привязан_сервером_к_курсу_уроку_и_редакции_указаний(self):
+		"""Why: привязку от агента можно указать на чужой урок, и вторая копия
+		разъедется с занятием. Сервер берёт её из занятия."""
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_issue(
+			session=занятие, kind="material_issue", text="В примере перепутаны роли"
+		)
+
+		self.assertTrue(ответ["ok"])
+		репорт = frappe.get_doc("Agent Course Report", ответ["data"]["report"])
+		self.assertEqual(репорт.kind, "Material Issue")
+		self.assertEqual(репорт.course, self.курс)
+		self.assertEqual(репорт.lesson, self.урок)
+		self.assertEqual(репорт.status, "New")
+		self.assertEqual(репорт.lesson_directive, self.директива.name)
+
+	def test_неизвестный_вид_репорта_отклоняется(self):
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_issue(session=занятие, kind="нытьё", text="всё плохо")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА)
+
+	def test_репорт_без_описания_отклоняется(self):
+		"""Why: без машинного кода пустой текст упирается в обязательное поле
+		схемы и уезжает агенту ошибкой сервера, а не отказом, который он умеет
+		разобрать."""
+		занятие = student.start_lesson()["data"]["session"]
+
+		ответ = student.report_issue(session=занятие, kind="stuck", text="   ")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ПУСТОЙ_РЕПОРТ)
+
 	# --- кто вошёл ---
 
 	def test_whoami_называет_учётную_запись_и_организацию(self):
