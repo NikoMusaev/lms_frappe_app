@@ -30,13 +30,11 @@ class IntegrationTestHomePage(IntegrationTestCase):
 	def test_ученик_попадает_в_lms(self):
 		frappe.set_user(self.ученик)
 
-		self.assertEqual(get_home_page(), ДОМАШНЯЯ)
-
-	def test_страница_настроек_больше_не_домашняя(self):
-		"""Именно её видел первый вошедший через Google."""
-		frappe.set_user(self.ученик)
-
-		self.assertNotEqual(get_home_page(), "me")
+		self.assertEqual(
+			get_home_page(),
+			ДОМАШНЯЯ,
+			"домашней не должна быть страница настроек `me` — именно её видел первый вошедший через Google",
+		)
 
 	def test_сотрудника_платформы_не_уводим_из_desk(self):
 		"""`Why:` хук вызывается для всех подряд, и строковый вариант уводил

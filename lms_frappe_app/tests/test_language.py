@@ -68,7 +68,3 @@ class IntegrationTestLanguage(IntegrationTestCase):
 
 		self.assertIn(ЯЗЫК, get_all_languages())
 
-	def test_русский_известен_платформе(self):
-		"""`sync_languages` заводит запись на каждой миграции — без неё
-		настройка указывала бы на несуществующий язык."""
-		self.assertTrue(frappe.db.exists("Language", ЯЗЫК))

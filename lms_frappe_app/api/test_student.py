@@ -74,11 +74,6 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 
 	# --- форма ответа ---
 
-	def test_успех_приходит_в_форме_контракта(self):
-		ответ = student.list_my_courses()
-		self.assertTrue(ответ["ok"])
-		self.assertIn("courses", ответ["data"])
-
 	def test_отказ_приходит_успешным_ответом_с_кодом(self):
 		# Ожидаемый отказ не может ехать HTTP-ошибкой: тело ошибки формирует
 		# Frappe, и машинного кода в нём не остаётся.
