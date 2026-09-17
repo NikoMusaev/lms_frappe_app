@@ -62,13 +62,7 @@ class IntegrationTestGoogleLogin(IntegrationTestCase):
 			ключ.redirect_url,
 			"/api/method/frappe.integrations.oauth2_logins.login_via_google",
 		)
-
-	def test_секрет_доступен_для_кнопки_входа(self):
-		"""`/login` рисует кнопку, только если секрет лежит в самой записи."""
-		self._задать("id-1", "secret-1")
-
-		обеспечить_вход_через_google()
-
+		# `/login` рисует кнопку, только если секрет лежит в самой записи.
 		self.assertEqual(
 			get_decrypted_password(*ЗАПИСЬ, "client_secret"),
 			"secret-1",

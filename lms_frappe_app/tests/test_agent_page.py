@@ -5,6 +5,14 @@ from frappe.tests import IntegrationTestCase
 
 from lms_frappe_app.agent_learning.sample_data import создать_куратора, создать_ученика
 
+# (route пункта, заголовок, куда уводит редирект)
+ПУНКТЫ = (
+	("agent-sidebar", "Подключить агента", "/agent"),
+	# Чат живёт в MCP-сервисе на том же домене, что и сайт, — как `/mcp`.
+	("study-in-browser", "Заниматься в браузере", "/chat"),
+	("artifacts-sidebar", "Мои документы", "/artifacts"),
+)
+
 
 class IntegrationTestAgentPage(IntegrationTestCase):
 	"""Страница «Подключить агента»: кто и какие адреса на ней видит."""
@@ -47,11 +55,7 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 		# выводит порядок работы из описаний инструментов.
 		авторинг = next(п for п in с["connections"] if п["url"].endswith("/authoring"))
 		self.assertIn("authoring_guide", авторинг["first_step"])
-
-	def test_адреса_строятся_от_адреса_сайта(self):
 		# Хардкод домена сломал бы локальный стенд и любой другой хост.
-		куратор = создать_куратора(f"kur-{frappe.generate_hash(length=6)}@example.com")
-		с = self.сведения_для(куратор)
 		for п in с["connections"]:
 			self.assertTrue(п["url"].startswith(с["site_url"]))
 
@@ -62,28 +66,32 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 			с = self.сведения_для(пользователь)
 			self.assertTrue(с["source_url"].startswith("https://github.com/"))
 
-	def test_пункт_сайдбара_ставится_один_раз(self):
+	def test_пункты_сайдбара_ставятся_один_раз(self):
 		from lms_frappe_app.install import обеспечить_пункты_сайдбара
 
 		frappe.set_user("Administrator")
 		обеспечить_пункты_сайдбара()
 		обеспечить_пункты_сайдбара()
-		пункты = frappe.get_all(
-			"LMS Sidebar Item",
-			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "agent-sidebar"},
-			["title", "web_page"],
-		)
-		self.assertEqual(len(пункты), 1)
-		self.assertEqual(пункты[0].title, "Подключить агента")
-		# Web Page у пункта обязателен, но это заглушка: сайдбар ведёт по её
-		# route, а на настоящую страницу уводит редирект. Публиковать нельзя.
-		self.assertFalse(frappe.db.get_value("Web Page", пункты[0].web_page, "published"))
+		for route, заголовок, _ in ПУНКТЫ:
+			with self.subTest(route=route):
+				пункты = frappe.get_all(
+					"LMS Sidebar Item",
+					{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": route},
+					["title", "web_page"],
+				)
+				self.assertEqual(len(пункты), 1)
+				self.assertEqual(пункты[0].title, заголовок)
+				# Web Page у пункта обязателен, но это заглушка: сайдбар ведёт по её
+				# route, а на настоящую страницу уводит редирект. Публиковать нельзя.
+				self.assertFalse(frappe.db.get_value("Web Page", пункты[0].web_page, "published"))
 
-	def test_маршрут_пункта_ведёт_на_страницу(self):
+	def test_маршруты_пунктов_ведут_на_страницы(self):
 		# `route` пункта — это route его Web Page (fetch_from); без редиректа
 		# сайдбар привёл бы на неопубликованную заглушку и 404.
 		редиректы = {п["source"]: п["target"] for п in frappe.get_hooks("website_redirects")}
-		self.assertEqual(редиректы.get("/agent-sidebar"), "/agent")
+		for route, _, куда in ПУНКТЫ:
+			with self.subTest(route=route):
+				self.assertEqual(редиректы.get(f"/{route}"), куда)
 
 	# --- веб-чат (lms-platform#141) ---
 
@@ -107,26 +115,6 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 		пути_mcp = ("mcp", "authoring", "chat", ".well-known")
 		for пункт in ПУНКТЫ_САЙДБАРА:
 			self.assertFalse(пункт["route"].startswith(пути_mcp), пункт["route"])
-
-	def test_пункт_браузера_ставится_один_раз(self):
-		from lms_frappe_app.install import обеспечить_пункты_сайдбара
-
-		frappe.set_user("Administrator")
-		обеспечить_пункты_сайдбара()
-		обеспечить_пункты_сайдбара()
-		пункты = frappe.get_all(
-			"LMS Sidebar Item",
-			{"parenttype": "LMS Settings", "parentfield": "sidebar_items", "route": "study-in-browser"},
-			["title", "web_page"],
-		)
-		self.assertEqual(len(пункты), 1)
-		self.assertEqual(пункты[0].title, "Заниматься в браузере")
-		self.assertFalse(frappe.db.get_value("Web Page", пункты[0].web_page, "published"))
-
-	def test_маршрут_пункта_браузера_ведёт_в_чат(self):
-		# Чат живёт в MCP-сервисе на том же домене, что и сайт, — как `/mcp`.
-		редиректы = {п["source"]: п["target"] for п in frappe.get_hooks("website_redirects")}
-		self.assertEqual(редиректы.get("/study-in-browser"), "/chat")
 
 	def test_патч_убирает_заглушку_под_путём_чата(self):
 		from lms_frappe_app.install import обеспечить_пункты_сайдбара
