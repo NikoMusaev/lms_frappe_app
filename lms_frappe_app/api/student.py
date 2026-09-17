@@ -27,6 +27,7 @@ from lms_frappe_app.agent_learning.access import (
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
+from lms_frappe_app.agent_learning.directives import действующая
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
 from lms_frappe_app.agent_learning.structure import главы_курса, уроки_курса
@@ -81,6 +82,14 @@ from lms_frappe_app.api import контракт, список, текущий_п
 	"directive_mismatch": "Directive Mismatch",
 	"out_of_scope": "Out Of Scope",
 }
+
+#: Сколько влезает в репорт. `Why:` `objective` в схеме — `Data`, то есть
+#: varchar(140), а цели приходят из директивы, где длина ничем не ограничена:
+#: длинная цель уезжала агенту ошибкой базы мимо контракта, да ещё с
+#: присланным текстом в сообщении. Обрезка, а не отказ: и цель, и описание —
+#: слова агента о проблеме, и терять сам сигнал из-за длины незачем.
+ДЛИНА_ЦЕЛИ = 140
+ДЛИНА_ОПИСАНИЯ = 2000
 
 АРТЕФАКТ_НЕ_НАЙДЕН = "artifact_not_found"
 БЛОК_НЕ_НАЙДЕН = "artifact_block_not_found"
@@ -555,7 +564,8 @@ def report_issue(
 	привязка от агента указала бы на чужой урок.
 	"""
 	занятие = _своё_занятие(session)
-	вид = ВИДЫ_РЕПОРТОВ.get((kind or "").strip().lower())
+	имя_вида = (kind or "").strip().lower()
+	вид = ВИДЫ_РЕПОРТОВ.get(имя_вида)
 	if not вид:
 		raise Отказ(
 			НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА,
@@ -567,13 +577,8 @@ def report_issue(
 	if not описание:
 		raise Отказ(ПУСТОЙ_РЕПОРТ, "Опишите, что не так", kind=kind)
 
-	if question:
-		квиз = quiz._квиз_урока(занятие.lesson)
-		вопросы = {в["question"] for в in quiz._вопросы_квиза(квиз)} if квиз else set()
-		if question not in вопросы:
-			raise Отказ(
-				quiz.ЧУЖОЙ_ВОПРОС, "Вопрос не из квиза этого урока", question=question
-			)
+	if question and question not in quiz.вопросы_урока(занятие.lesson):
+		raise Отказ(quiz.ЧУЖОЙ_ВОПРОС, "Вопрос не из квиза этого урока", question=question)
 
 	# `ignore_permissions` здесь — то же, что у прочих записей ученика:
 	# владение уже проверено `_своё_занятие`, а прав на создание у
@@ -585,17 +590,17 @@ def report_issue(
 			"session": занятие.name,
 			"course": занятие.course,
 			"lesson": занятие.lesson,
-			"lesson_directive": frappe.db.get_value(
-				"Agent Lesson Directive", {"lesson": занятие.lesson, "is_active": 1}
+			"lesson_directive": действующая(
+				"Agent Lesson Directive", {"lesson": занятие.lesson}
 			),
 			"kind": вид,
 			"question": question,
-			"objective": (objective or "").strip(),
-			"text": описание[:2000],
+			"objective": (objective or "").strip()[:ДЛИНА_ЦЕЛИ],
+			"text": описание[:ДЛИНА_ОПИСАНИЯ],
 		}
 	).insert(ignore_permissions=True)
 
-	return {"report": репорт.name, "kind": kind.strip().lower()}
+	return {"report": репорт.name, "kind": имя_вида}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -1141,22 +1146,21 @@ def _директива(lesson: str) -> dict:
 	`audience: teacher_only`. Это одна из трёх митигаций против пересказа
 	директивы ученику; гарантий она не даёт — гарантию даёт серверный квиз.
 	"""
-	запись = frappe.get_all(
+	имя = действующая("Agent Lesson Directive", {"lesson": lesson})
+	if not имя:
+		return {}
+	д = frappe.db.get_value(
 		"Agent Lesson Directive",
-		filters={"lesson": lesson, "is_active": 1},
-		fields=[
+		имя,
+		[
 			"objectives",
 			"teaching_directive",
 			"probing_questions",
 			"common_misconceptions",
 			"success_criteria",
 		],
-		limit=1,
-		ignore_permissions=True,
+		as_dict=True,
 	)
-	if not запись:
-		return {}
-	д = запись[0]
 	return {
 		"objectives": _строки(д.objectives),
 		"directive": {

@@ -9,6 +9,8 @@
 
 import frappe
 
+from lms_frappe_app.agent_learning.directives import действующая
+
 
 def создать_урок(название: str = "Урок") -> str:
 	"""Минимальная цепочка курс → глава → урок, возвращает имя урока."""
@@ -213,7 +215,7 @@ def сдать_отчёт(session: str) -> dict:
 	занятие = frappe.get_doc("Agent Learning Session", session)
 	цели = frappe.db.get_value(
 		"Agent Lesson Directive",
-		{"lesson": занятие.lesson, "is_active": 1},
+		действующая("Agent Lesson Directive", {"lesson": занятие.lesson}),
 		"objectives",
 	)
 	строки = [с.strip() for с in (цели or "").splitlines() if с.strip()]

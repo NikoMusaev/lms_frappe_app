@@ -220,7 +220,21 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 
 	def test_репорт_привязан_сервером_к_курсу_уроку_и_редакции_указаний(self):
 		"""Why: привязку от агента можно указать на чужой урок, и вторая копия
-		разъедется с занятием. Сервер берёт её из занятия."""
+		разъедется с занятием. Сервер берёт её из занятия.
+
+		Редакция указаний берётся действующая, а не любая: репорт отвечает на
+		вопрос «это ещё актуально или указание с тех пор переписали», и ссылка
+		на снятую с действия версию отвечала бы на него неверно."""
+		frappe.set_user("Administrator")
+		переписанная = frappe.get_doc(
+			{
+				"doctype": "Agent Lesson Directive",
+				"lesson": self.урок,
+				"objectives": "Понимать цикл\nУметь читать код",
+				"teaching_directive": "Переписанные указания",
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
 		занятие = student.start_lesson()["data"]["session"]
 
 		ответ = student.report_issue(
@@ -233,7 +247,35 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertEqual(репорт.course, self.курс)
 		self.assertEqual(репорт.lesson, self.урок)
 		self.assertEqual(репорт.status, "New")
-		self.assertEqual(репорт.lesson_directive, self.директива.name)
+		self.assertEqual(репорт.lesson_directive, переписанная.name)
+		self.assertNotEqual(переписанная.name, self.директива.name)
+
+	def test_цель_репорта_сохраняется_и_не_ломает_запись_длиной(self):
+		"""Why: `objective` в схеме — `Data`, то есть varchar(140), а цели
+		приходят из `objectives` директивы, где длина ничем не ограничена.
+		Длинная цель уезжала бы агенту ошибкой базы мимо контракта, да ещё с
+		присланным текстом в сообщении."""
+		занятие = student.start_lesson()["data"]["session"]
+		длинная = "Понимать цикл и всё, что с ним связано, " * 10
+
+		своя = student.report_issue(
+			session=занятие, kind="stuck", text="Встал на этой цели", objective="Понимать цикл"
+		)
+		длинноватая = student.report_issue(
+			session=занятие, kind="stuck", text="Встал на этой цели", objective=длинная
+		)
+
+		self.assertEqual(
+			frappe.db.get_value("Agent Course Report", своя["data"]["report"], "objective"),
+			"Понимать цикл",
+		)
+		self.assertTrue(длинноватая["ok"])
+		сохранено = frappe.db.get_value(
+			"Agent Course Report", длинноватая["data"]["report"], "objective"
+		)
+		self.assertEqual(сохранено, длинная.strip()[: student.ДЛИНА_ЦЕЛИ])
+		# Пин на тип поля: `Data` длиннее 140 символов не принимает.
+		self.assertLessEqual(len(сохранено), 140)
 
 	def test_неизвестный_вид_репорта_отклоняется(self):
 		занятие = student.start_lesson()["data"]["session"]
@@ -254,12 +296,23 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.ПУСТОЙ_РЕПОРТ)
 
-	def test_в_репорт_идёт_вопрос_своего_урока_и_не_идёт_чужой(self):
+	def test_в_репорт_идёт_любой_вопрос_своего_урока_и_не_идёт_чужой(self):
 		"""Why: иначе репорт о своём уроке указывает на вопрос чужого курса, и
-		автор правит не то место."""
+		автор правит не то место.
+
+		«Свой» — принадлежность квизу урока, а не пригодность к проверке:
+		вопрос, у которого не отмечен ни один верный вариант, сервер проверять
+		не берётся, и это ровно тот случай, ради которого репорт и заведён."""
 		frappe.set_user("Administrator")
 		свой_вопрос = создать_вопрос("Свой вопрос", варианты=[("2", True), ("3", False)])
-		создать_квиз(self.урок, [свой_вопрос])
+		непроверяемый_вопрос = создать_вопрос(
+			"Вопрос без эталона", варианты=[("2", True), ("3", False)]
+		)
+		создать_квиз(self.урок, [свой_вопрос, непроверяемый_вопрос])
+		# Через документ такой вопрос не завести: LMS Question требует хотя бы
+		# один верный вариант. В базу он попадает импортом или прямой правкой —
+		# на это и рассчитана отбраковка непроверяемых вопросов в quiz.py.
+		frappe.db.set_value("LMS Question", непроверяемый_вопрос, "is_correct_1", 0)
 		чужой_урок = создать_урок(f"Чужой {frappe.generate_hash(length=6)}")
 		чужой_вопрос = создать_вопрос("Чужой вопрос", варианты=[("1", True), ("2", False)])
 		создать_квиз(чужой_урок, [чужой_вопрос])
@@ -272,6 +325,12 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 			text="Вопрос двусмысленный",
 			question=свой_вопрос,
 		)
+		непроверяемый = student.report_issue(
+			session=занятие,
+			kind="quiz_question_issue",
+			text="Вопрос сформулирован двусмысленно",
+			question=непроверяемый_вопрос,
+		)
 		чужой = student.report_issue(
 			session=занятие,
 			kind="quiz_question_issue",
@@ -283,6 +342,11 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertEqual(
 			frappe.db.get_value("Agent Course Report", свой["data"]["report"], "question"),
 			свой_вопрос,
+		)
+		self.assertTrue(непроверяемый["ok"])
+		self.assertEqual(
+			frappe.db.get_value("Agent Course Report", непроверяемый["data"]["report"], "question"),
+			непроверяемый_вопрос,
 		)
 		self.assertFalse(чужой["ok"])
 		self.assertEqual(чужой["error"]["code"], quiz.ЧУЖОЙ_ВОПРОС)
