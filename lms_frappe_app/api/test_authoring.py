@@ -90,6 +90,7 @@ class IntegrationTestAuthoring(IntegrationTestCase):
 
 		for вызов in (
 			lambda: authoring.course_draft(course=self.курс),
+			lambda: authoring.get_lesson(lesson=self.уроки[0]),
 			lambda: authoring.add_lesson(chapter=self.глава, title="Свой урок", body="x"),
 			lambda: authoring.publish_course(course=self.курс),
 			lambda: authoring.set_directive(lesson=self.уроки[0], teaching_directive="x"),
@@ -319,13 +320,6 @@ class IntegrationTestAuthoringReadBack(IntegrationTestCase):
 		self.assertIsNone(урок["directive"])
 		self.assertIsNone(урок["quiz"])
 
-	def test_ученик_не_читает_урок_авторским_методом(self):
-		ученик = создать_ученика(f"pupil-{frappe.generate_hash(length=6)}@example.com")
-		frappe.set_user(ученик)
-
-		with self.assertRaises(frappe.PermissionError):
-			authoring.get_lesson(lesson=self.урок)
-
 
 class IntegrationTestCourseDirective(IntegrationTestCase):
 	"""Сквозная директива курса: одна на курс, версионируется, видна автору."""
@@ -342,6 +336,8 @@ class IntegrationTestCourseDirective(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def test_новая_редакция_вытесняет_прежнюю(self):
+		"""Прежняя редакция остаётся в истории. `Why:` занятие, идущее сейчас,
+		уже получило свою директиву."""
 		authoring.set_course_directive(course=self.курс, teaching_directive="Первая редакция")
 		вторая = authoring.set_course_directive(
 			course=self.курс,
@@ -358,6 +354,7 @@ class IntegrationTestCourseDirective(IntegrationTestCase):
 			1,
 			"действующих директив курса должно оставаться ровно одна",
 		)
+		self.assertEqual(frappe.db.count("Agent Course Directive", {"course": self.курс}), 2)
 
 	def test_директива_курса_хранит_что_запоминать(self):
 		"""Автор задаёт, чему место в заметках агента об ученике."""
@@ -372,13 +369,6 @@ class IntegrationTestCourseDirective(IntegrationTestCase):
 		self.assertEqual(
 			директива["remember_about_student"], "роль и отрасль\nтекущий проект"
 		)
-
-	def test_прежняя_редакция_остаётся_в_истории(self):
-		"""`Why:` занятие, идущее сейчас, уже получило свою директиву."""
-		authoring.set_course_directive(course=self.курс, teaching_directive="Первая редакция")
-		authoring.set_course_directive(course=self.курс, teaching_directive="Вторая редакция")
-
-		self.assertEqual(frappe.db.count("Agent Course Directive", {"course": self.курс}), 2)
 
 	def test_урок_показывает_директиву_курса(self):
 		"""Автор правит урок, видя сказанное на уровне курса, и не дублирует."""
@@ -433,8 +423,7 @@ class IntegrationTestCourseArtifact(IntegrationTestCase):
 		self.assertEqual([(б.block_key, б.span) for б in схема.blocks], [("goal", 1), ("sponsor", 2)])
 		self.assertEqual(схема.blocks[0].lesson, self.урок)
 
-	def test_повторный_вызов_снимает_прежнюю_с_действия(self):
-		authoring.set_course_artifact(course=self.курс, artifact="summary", title="Резюме", blocks=self.блоки)
+		# Повторный вызов снимает прежнюю с действия.
 		вторая = authoring.set_course_artifact(
 			course=self.курс, artifact="summary", title="Резюме проекта", blocks=self.блоки[:1]
 		)["data"]

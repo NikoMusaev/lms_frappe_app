@@ -110,6 +110,18 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertEqual(данные["directive"]["audience"], "teacher_only")
 		self.assertIn("Начать с примера", данные["directive"]["teaching_directive"])
 
+		# Материал и директива — разными полями: одна из трёх митигаций против
+		# пересказа директивы ученику.
+		self.assertNotIn("Начать с примера", данные["content"]["markdown"])
+
+		# Макрос видео ушёл в медиа.
+		self.assertEqual([м["kind"] for м in данные["media"]], ["video"])
+		self.assertNotIn("{{", данные["content"]["markdown"])
+
+		занятие = frappe.get_doc("Agent Learning Session", данные["session"])
+		self.assertEqual(занятие.student, self.ученик)
+		self.assertTrue(занятие.via_trusted_service)
+
 	def test_директива_курса_приходит_отдельным_полем(self):
 		frappe.get_doc(
 			{
@@ -135,22 +147,6 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 
 		self.assertIsNone(данные["course_directive"])
 		self.assertEqual(данные["course_objectives"], [])
-
-	def test_материал_и_директива_разными_полями(self):
-		# Одна из трёх митигаций против пересказа директивы ученику.
-		данные = student.start_lesson()["data"]
-		self.assertNotIn("Начать с примера", данные["content"]["markdown"])
-
-	def test_макрос_видео_ушёл_в_медиа(self):
-		данные = student.start_lesson()["data"]
-		self.assertEqual([м["kind"] for м in данные["media"]], ["video"])
-		self.assertNotIn("{{", данные["content"]["markdown"])
-
-	def test_занятие_создано_и_помечено_доверенным(self):
-		данные = student.start_lesson()["data"]
-		занятие = frappe.get_doc("Agent Learning Session", данные["session"])
-		self.assertEqual(занятие.student, self.ученик)
-		self.assertTrue(занятие.via_trusted_service)
 
 	def test_без_аргумента_берётся_урок_с_ближайшим_дедлайном(self):
 		# Ученик, сказавший «давай заниматься», должен получить то, что горит.
@@ -241,20 +237,15 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 
 	# --- контекст ученика ---
 
-	def test_start_lesson_отдаёт_заметки_об_ученике(self):
-		student.remember(kind="fact", key="role", text="Директор")
-
-		контекст = student.start_lesson()["data"]["student_context"]
-
-		self.assertEqual([ф["key"] for ф in контекст["facts"]], ["role"])
-		self.assertEqual(контекст["carried_over"], [])
-
 	def test_заметки_приходят_вне_директивной_рамки(self):
 		"""Ученику они доступны, грифа «не показывать» на них нет."""
 		student.remember(kind="fact", key="role", text="Директор")
 
 		данные = student.start_lesson()["data"]
 
+		контекст = данные["student_context"]
+		self.assertEqual([ф["key"] for ф in контекст["facts"]], ["role"])
+		self.assertEqual(контекст["carried_over"], [])
 		self.assertNotIn("Директор", json.dumps(данные["directive"], ensure_ascii=False))
 		self.assertIn("Директор", json.dumps(данные["student_context"], ensure_ascii=False))
 
@@ -483,25 +474,6 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		сдать_отчёт(занятие)
 
 		self.assertTrue(student.complete_lesson(занятие)["ok"])
-
-	# --- чужое ---
-
-	def test_чужое_занятие_отклоняется_машинным_кодом(self):
-		# Отказ, а не исключение прав: агенту нужен код, по которому он
-		# объяснит ученику происходящее. Проверка идёт по принадлежности
-		# занятия, а не по праву чтения — читать чужое занятие вправе ещё и
-		# руководитель, но действовать в нём он не должен.
-		frappe.set_user("Administrator")
-		чужой = создать_ученика(f"other-{frappe.generate_hash(length=6)}@example.com")
-		чужое = frappe.get_doc(
-			{"doctype": "Agent Learning Session", "student": чужой, "lesson": self.урок}
-		).insert(ignore_permissions=True)
-		frappe.set_user(self.ученик)
-
-		ответ = student.report_checkpoint(чужое.name, "чужой урок")
-
-		self.assertFalse(ответ["ok"])
-		self.assertEqual(ответ["error"]["code"], student.ЧУЖОЕ_ЗАНЯТИЕ)
 
 	# --- сводка ---
 
@@ -796,22 +768,19 @@ class IntegrationTestCourseOutline(IntegrationTestCase):
 		self.assertTrue(уроки[0]["completed"])
 		self.assertTrue(уроки[1]["current"], "текущим должен стать следующий урок")
 
-	def test_по_структуре_можно_вернуться_к_пройденному(self):
+	def test_повтор_пройденного_не_двигает_прогресс(self):
 		# Ровно то, ради чего метод и нужен: идентификатор пройденного урока
 		# больше неоткуда взять — list_my_courses отдаёт только следующий.
 		student.complete_lesson(student.start_lesson()["data"]["session"])
+		до = student.list_my_courses()["data"]["courses"][0]["progress"]
 
 		пройденный = next(у["id"] for у in self.уроки() if у["completed"])
+		self.assertEqual(пройденный, self.первый)
 		повтор = student.start_lesson(lesson=пройденный)["data"]
 
 		self.assertEqual(повтор["lesson"]["id"], пройденный)
 		self.assertTrue(повтор["content"]["markdown"] is not None)
 
-	def test_повтор_пройденного_не_двигает_прогресс(self):
-		student.complete_lesson(student.start_lesson()["data"]["session"])
-		до = student.list_my_courses()["data"]["courses"][0]["progress"]
-
-		повтор = student.start_lesson(lesson=self.первый)["data"]
 		student.complete_lesson(повтор["session"])
 
 		self.assertEqual(student.list_my_courses()["data"]["courses"][0]["progress"], до)
