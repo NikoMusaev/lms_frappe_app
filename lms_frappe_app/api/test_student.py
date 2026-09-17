@@ -277,6 +277,16 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		# Пин на тип поля: `Data` длиннее 140 символов не принимает.
 		self.assertLessEqual(len(сохранено), 140)
 
+	def test_виды_репорта_совпадают_со_схемой(self):
+		"""Why: словарь метода и options поля живут врозь, а сверяет их только
+		база — уже на вставке. Переименуют значение в схеме, и метод сложит
+		репорт с несуществующим видом: `ValidationError` мимо контракта,
+		агенту 500 вместо машинного кода. В обе стороны: вид, заведённый в
+		схеме и не выставленный наружу, недостижим и потому тоже расхождение."""
+		опции = frappe.get_meta("Agent Course Report").get_field("kind").options.split("\n")
+
+		self.assertEqual(set(student.ВИДЫ_РЕПОРТОВ.values()), set(опции))
+
 	def test_неизвестный_вид_репорта_отклоняется(self):
 		занятие = student.start_lesson()["data"]["session"]
 
