@@ -64,9 +64,9 @@ class TestNormalizer(UnitTestCase):
 		)
 		self.assertEqual([м.kind for м in урок.media], ["video", "image"])
 
-	def test_блок_квиза_становится_пометкой_без_вопросов(self):
+	def test_блок_квиза_становится_маркером_без_вопросов(self):
 		урок = self.нормализовать_блоки({"type": "quiz", "data": {"quiz": "quiz-1"}})
-		self.assertIn("проверка знаний", урок.сегмент(1))
+		self.assertEqual(урок.сегмент(1), "[[lms:quiz]]")
 		self.assertNotIn("quiz-1", урок.сегмент(1))
 
 	def test_незнакомый_блок_пропускается_молча(self):
@@ -88,6 +88,23 @@ class TestNormalizer(UnitTestCase):
 		урок = нормализовать(title="Урок", body="Смотрим: {{ YouTubeVideo(abc123) }}")
 		self.assertEqual(урок.media[0].url, "https://www.youtube.com/watch?v=abc123")
 		self.assertNotIn("{{", урок.сегмент(1))
+
+	def test_макросы_квиза_и_упражнения_становятся_маркерами(self):
+		урок = нормализовать(
+			title="Урок", body="{{ Quiz(q1) }}\n\n{{ Exercise(Свой цикл) }}"
+		)
+		self.assertEqual(урок.сегмент(1), "[[lms:quiz]]\n\n[[lms:exercise:Свой цикл]]")
+
+	def test_маркер_не_несёт_прозы_для_агента(self):
+		# Приложение отмечает место и вид; текст по маркеру складывает
+		# потребитель контракта — см. CONTRIBUTING.md.
+		урок = нормализовать(title="Урок", body="{{ Quiz() }} {{ Exercise(x) }}")
+		for слово in ("сервер", "проверка", "браузер", "выполняется"):
+			self.assertNotIn(слово, урок.сегмент(1))
+
+	def test_скобки_в_названии_упражнения_не_рвут_маркер(self):
+		урок = нормализовать(title="Урок", body="{{ Exercise(Цикл [1]) }}")
+		self.assertEqual(урок.сегмент(1), "[[lms:exercise:Цикл  1]]")
 
 	def test_неизвестный_макрос_вырезается(self):
 		# Иначе агент зачитает ученику «{{ Something(x) }}» как часть урока.
