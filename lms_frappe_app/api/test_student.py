@@ -24,6 +24,7 @@ from lms_frappe_app.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
 	КУРС_НЕ_ОПУБЛИКОВАН,
 	КУРС_НЕ_ОТКРЫТ,
+	ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА,
 	УЖЕ_ЗАПИСАН,
 )
 from lms_frappe_app.api import student
@@ -189,6 +190,31 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertTrue(итог["verdict"]["correct"])
 		self.assertTrue(итог["result"]["passed"])
 		self.assertEqual(итог["result"]["session_status"], "Completed")
+
+	def test_ответ_не_принимается_после_отзыва_доступа(self):
+		"""Доступ, отозванный посреди квиза, обязан останавливать и ответы.
+
+		Иначе попытка, начатая при живом доступе, доходит до зачёта по курсу,
+		которого у ученика уже нет: `request_quiz` доступ перепроверяет, а
+		`submit_answer` — нет (lms-platform#195).
+		"""
+		frappe.set_user("Administrator")
+		вопрос = создать_вопрос("Два плюс два?", варианты=[("4", True), ("5", False)])
+		создать_квиз(self.урок, [вопрос])
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson()["data"]["session"]
+		сдать_отчёт(занятие)
+		начало = student.request_quiz(занятие)["data"]
+		frappe.db.set_value("Learning Organization", self.организация, "status", "Suspended")
+
+		ответ = student.submit_answer(начало["attempt"], вопрос, "1")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА)
+		self.assertFalse(
+			frappe.db.exists("Agent Quiz Answer", {"attempt": начало["attempt"]}),
+			"ответ по отозванному курсу не должен попадать в попытку",
+		)
 
 	def test_в_вопросе_квиза_нет_полей_эталона(self):
 		frappe.set_user("Administrator")
@@ -770,6 +796,36 @@ class IntegrationTestCompleteLesson(IntegrationTestCase):
 		self.assertEqual(курс["progress"]["lessons_completed"], 2)
 		self.assertEqual(курс["progress"]["lessons_total"], 2)
 		self.assertIsNone(курс["next_lesson"])
+
+	def test_брошенное_занятие_урок_не_закрывает(self):
+		"""Иначе прогресс и журнал разъезжаются.
+
+		До правки урок отмечался пройденным, событие писалось, а занятие
+		оставалось брошенным — и отчёт руководителя показывал пройденный урок
+		при брошенном занятии (lms-platform#195).
+
+		Статус ставится прямо: в жизни его ставит фоновая задача по
+		бездействию, ждать её в тесте нечем.
+		"""
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+		frappe.db.set_value("Agent Learning Session", занятие, "status", "Abandoned")
+
+		ответ = student.complete_lesson(занятие)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЗАНЯТИЕ_ЗАКРЫТО)
+		self.assertFalse(
+			frappe.db.exists(
+				"LMS Course Progress", {"member": self.ученик, "lesson": self.теория}
+			),
+			"прогресс по брошенному занятию не пишется",
+		)
+		self.assertFalse(
+			frappe.db.exists(
+				"Agent Session Event", {"session": занятие, "kind": "Verdict Returned"}
+			),
+			"вердикта по брошенному занятию в журнале быть не должно",
+		)
 
 	def test_чужое_занятие_закрыть_нельзя(self):
 		frappe.set_user("Administrator")
