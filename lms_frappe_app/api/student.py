@@ -33,7 +33,7 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_session.agent_learning
 from lms_frappe_app.agent_learning.directives import действующая
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
-from lms_frappe_app.agent_learning.structure import главы_курса, уроки_курса
+from lms_frappe_app.agent_learning.structure import уроки_курса, уроки_по_главам
 from lms_frappe_app.api import контракт, список, текущий_пользователь
 
 НЕЧЕГО_УЧИТЬ = "nothing_to_study"
@@ -180,24 +180,17 @@ def course_outline(course: str) -> dict:
 	_требовать_доступ_к_курсу(ученик, course)
 
 	пройдены = _пройденные(ученик, course)
-	следующий = _следующий_урок(ученик, course)
 	# Порядок берётся тот же, что у остального кода: через ссылки глав и
 	# уроков, иначе структура разойдётся с тем, что считает «следующим уроком».
-	порядок = уроки_курса(course)
-	названия = {
-		урок.name: урок.title
-		for урок in frappe.get_all(
-			"Course Lesson", filters={"name": ("in", порядок)}, fields=["name", "title"]
-		)
-	} if порядок else {}
+	# Принадлежность урока главе известна из этого же обхода: раньше её
+	# выясняли запросом на каждую пару «глава × урок».
+	структура = уроки_по_главам(course)
+	порядок = [урок for глава in структура for урок in глава["lessons"]]
+	названия = _названия_уроков(порядок)
+	следующий = _первый_непройденный(порядок, пройдены, названия)
 
 	главы = []
-	for глава in главы_курса(course):
-		уроки_главы = [
-			урок
-			for урок in порядок
-			if frappe.db.get_value("Course Lesson", урок, "chapter") == глава["name"]
-		]
+	for глава in структура:
 		главы.append(
 			{
 				"title": глава["title"],
@@ -208,7 +201,7 @@ def course_outline(course: str) -> dict:
 						"completed": урок in пройдены,
 						"current": bool(следующий and следующий["id"] == урок),
 					}
-					for урок in уроки_главы
+					for урок in глава["lessons"]
 				],
 			}
 		)
@@ -920,12 +913,17 @@ def _артефакт_целиком(ученик: str, course: str, artifact: s
 
 def _блоки_урока(ученик: str, курс: str, lesson: str) -> list[dict]:
 	"""Блоки документов курса, привязанные к уроку, с содержимым ученика."""
+	по_схемам = [
+		(схема, [блок for блок in схема.blocks if блок.lesson == lesson])
+		for схема in _схемы_курса(курс)
+	]
+	# Содержимое читается, только если уроку вообще принадлежит хоть один блок.
+	по_документам = (
+		_содержимое_курса(ученик, курс) if any(свои for _, свои in по_схемам) else {}
+	)
 	блоки = []
-	for схема in _схемы_курса(курс):
-		свои = [блок for блок in схема.blocks if блок.lesson == lesson]
-		if not свои:
-			continue
-		содержимое = _содержимое(_экземпляр(ученик, курс, схема.slug))
+	for схема, свои in по_схемам:
+		содержимое = по_документам.get(схема.slug, {})
 		for блок in свои:
 			блоки.append(
 				{"artifact": схема.slug, "artifact_title": схема.title, **_блок(блок, содержимое)}
