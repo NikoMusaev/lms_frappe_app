@@ -44,7 +44,8 @@ def начать_попытку(session: str) -> dict:
 	if not квиз:
 		raise Отказ(КВИЗА_НЕТ, "У этого урока нет квиза")
 
-	if not _вопросы_квиза(квиз):
+	вопросы = _вопросы_квиза(квиз)
+	if not вопросы:
 		# Frappe Learning не даёт смешивать Open Ended с другими типами:
 		# «make sure each question in the quiz is of open ended type». Значит
 		# квиз либо весь открытый — и проверить его сервер не может, — либо
@@ -71,7 +72,7 @@ def начать_попытку(session: str) -> dict:
 		# По занятию, а не по квизу: один квиз может быть привязан к двум
 		# урокам, и попытка чужого занятия закрыла бы не тот урок.
 		занятие.записать_событие("Quiz Started", "продолжение попытки")
-		return {"attempt": открытая, "question": следующий_вопрос(открытая)}
+		return {"attempt": открытая, "question": следующий_вопрос(открытая, вопросы)}
 
 	_проверить_право_на_попытку(занятие, квиз, политика)
 
@@ -94,7 +95,7 @@ def начать_попытку(session: str) -> dict:
 		занятие.save(ignore_permissions=True)
 	занятие.записать_событие("Quiz Started", f"попытка {попытка.attempt_number}")
 
-	return {"attempt": попытка.name, "question": следующий_вопрос(попытка.name)}
+	return {"attempt": попытка.name, "question": следующий_вопрос(попытка.name, вопросы)}
 
 
 def _проверить_право_на_попытку(занятие, квиз: str, политика: dict) -> None:
@@ -251,10 +252,15 @@ def _вопросы_с_эталоном(вопросы: list[str], типы: dic
 	return годные
 
 
-def следующий_вопрос(attempt: str) -> dict | None:
-	"""Первый неотвеченный вопрос попытки — без единого поля эталона."""
-	попытка = frappe.get_doc("Agent Quiz Attempt", attempt)
-	вопросы = _вопросы_квиза(попытка.quiz)
+def следующий_вопрос(attempt: str, вопросы: list[dict] | None = None) -> dict | None:
+	"""Первый неотвеченный вопрос попытки — без единого поля эталона.
+
+	Состав квиза принимается готовым: вызывающий его уже собрал, а сборка
+	стоит трёх запросов плюс чтение попытки ради одного поля `quiz`. На приёме
+	ответа это повторялось дважды за вызов.
+	"""
+	if вопросы is None:
+		вопросы = _вопросы_квиза(frappe.db.get_value("Agent Quiz Attempt", attempt, "quiz"))
 	отвеченные = set(
 		frappe.get_all("Agent Quiz Answer", filters={"attempt": attempt}, pluck="question")
 	)
@@ -305,7 +311,8 @@ def принять_ответ(attempt: str, question: str, answer: str) -> dict:
 	if попытка.status != "In Progress":
 		raise Отказ(ПОПЫТКА_ЗАВЕРШЕНА, "Эта попытка уже завершена")
 
-	вопросы = {в["question"]: в for в in _вопросы_квиза(попытка.quiz)}
+	состав = _вопросы_квиза(попытка.quiz)
+	вопросы = {в["question"]: в for в in состав}
 	if question not in вопросы:
 		raise Отказ(ЧУЖОЙ_ВОПРОС, "Вопрос не из этой попытки")
 	if frappe.db.exists("Agent Quiz Answer", {"attempt": attempt, "question": question}):
@@ -337,7 +344,7 @@ def принять_ответ(attempt: str, question: str, answer: str) -> dict:
 		# заблуждения из директивы урока.
 		вердикт["explanation"] = пояснение
 
-	следующий = следующий_вопрос(attempt)
+	следующий = следующий_вопрос(attempt, состав)
 	ответ = {
 		"verdict": вердикт,
 		"next_question": следующий,
