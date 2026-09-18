@@ -44,10 +44,10 @@ from lms_frappe_app.testing import сколько_запросов
 #: Сколько обращений к базе делает метод на данных этого модуля. Меняется
 #: вместе с кодом и только осознанно — см. пояснение модуля.
 БЮДЖЕТ = {
-	"course_outline": 14,
-	"start_lesson": 28,
-	"submit_answer": 16,
-	"student_detail": 13,
+	"course_outline": 13,
+	"start_lesson": 27,
+	"submit_answer": 15,
+	"student_detail": 12,
 }
 
 
