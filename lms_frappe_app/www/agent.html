@@ -9,22 +9,26 @@
 	он подключается к сайту по протоколу MCP и входит той же учётной записью,
 	что и вы.</p>
 
+	{% if chat_url %}
 	{# Число — настройка платформы, поэтому без согласования «урок/урока/уроков». #}
 	<p>Своего агента пока нет? Пробные уроки можно пройти
 	<a href="{{ chat_url }}">в браузере</a> — с нашим наставником, по тому же
 	маршруту и с тем же зачётом (пробных уроков: {{ web_demo_lessons }}, по всем
 	курсам вместе). Дальше занятия продолжаются через вашего агента, прогресс
 	сохраняется.</p>
+	{% endif %}
 
 	{% if is_guest %}
+	{% if service_url %}
 	<p>Чтобы увидеть адреса подключения, <a href="{{ login_url }}">войдите</a>.</p>
-	{% else %}
+	{% endif %}
+	{% elif connections %}
 	<h2>Куда подключаться</h2>
 	{% for c in connections %}
 	<section style="margin: 1.5rem 0; padding: 1rem 1.25rem; border: 1px solid #e2e6ea; border-radius: 8px;">
 		<h3 style="margin-top: 0;">{{ c.title }}</h3>
 		<p><strong>Адрес:</strong> <code>{{ c.url }}</code></p>
-		<p>{{ c.first_step }}</p>
+		{% if c.first_step %}<p>{{ c.first_step }}</p>{% endif %}
 	</section>
 	{% endfor %}
 
