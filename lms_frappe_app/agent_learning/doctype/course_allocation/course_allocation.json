@@ -23,7 +23,8 @@
    "in_list_view": 1,
    "label": "Организация",
    "options": "Learning Organization",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "course",
@@ -31,7 +32,8 @@
    "in_list_view": 1,
    "label": "Курс",
    "options": "LMS Course",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "default": "Whole Organization",
@@ -69,7 +71,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-01 22:33:25.176936",
+ "modified": "2026-09-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Course Allocation",

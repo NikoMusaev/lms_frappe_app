@@ -70,16 +70,22 @@ class CourseAllocation(Document):
 			)
 			if уже_записан:
 				continue
-			frappe.get_doc(
-				{
-					"doctype": "LMS Enrollment",
-					"member": участник,
-					"course": self.course,
-					"member_type": "Student",
-				}
-			).insert(ignore_permissions=True)
+			записать_зачисление(участник, self.course)
 			создано += 1
 		return создано
+
+
+def записать_зачисление(участник: str, course: str) -> None:
+	"""Зачисление — единственное основание доступа к курсу, и заводится оно
+	одним способом, из какого бы места ни пришёл повод."""
+	frappe.get_doc(
+		{
+			"doctype": "LMS Enrollment",
+			"member": участник,
+			"course": course,
+			"member_type": "Student",
+		}
+	).insert(ignore_permissions=True)
 
 
 def адресаты_назначения(name: str, organization: str, audience: str) -> list[str]:
@@ -88,15 +94,49 @@ def адресаты_назначения(name: str, organization: str, audience
 	`Why:` правило должно быть одно, но отчёту незачем поднимать документ с
 	дочерними таблицами на каждое назначение: он и так ходит по списку.
 	"""
-	if audience == "Selected Members":
-		return frappe.get_all(
-			"Course Allocation Member", filters={"parent": name}, pluck="user"
+	назначение = frappe._dict(name=name, organization=organization, audience=audience)
+	return адресаты_назначений([назначение])[name]
+
+
+def адресаты_назначений(назначения: list) -> dict[str, list[str]]:
+	"""То же правило сразу для списка назначений — двумя запросами на весь список.
+
+	`Why:` суточная сверка спрашивала адресатов у каждого назначения
+	отдельно, а состав организации — по разу на каждое её назначение.
+	Правило при этом одно: одиночный случай ходит сюда же.
+	"""
+	поимённые = [н.name for н in назначения if н.audience == "Selected Members"]
+	организации = list({н.organization for н in назначения if н.audience != "Selected Members"})
+
+	по_назначениям: dict[str, list[str]] = {}
+	if поимённые:
+		строки = frappe.get_all(
+			"Course Allocation Member",
+			filters={"parent": ("in", поимённые), "parenttype": "Course Allocation"},
+			fields=["parent", "user"],
+			order_by="idx asc",
 		)
-	return frappe.get_all(
-		"Organization Membership",
-		filters={"organization": organization, "role": ("in", ВСЕ_РОЛИ_УЧАСТНИКОВ)},
-		pluck="user",
-	)
+		for строка in строки:
+			по_назначениям.setdefault(строка.parent, []).append(строка.user)
+
+	состав: dict[str, list[str]] = {}
+	if организации:
+		строки = frappe.get_all(
+			"Organization Membership",
+			filters={"organization": ("in", организации), "role": ("in", ВСЕ_РОЛИ_УЧАСТНИКОВ)},
+			fields=["organization", "user"],
+		)
+		for строка in строки:
+			состав.setdefault(строка.organization, []).append(строка.user)
+
+	return {
+		н.name: (
+			по_назначениям.get(н.name, [])
+			if н.audience == "Selected Members"
+			else состав.get(н.organization, [])
+		)
+		for н in назначения
+	}
 
 
 def досрочные_назначения_организации(organization: str) -> list[str]:
@@ -120,6 +160,13 @@ def сверить_зачисления() -> int:
 	обнаруживается это в день дедлайна.
 
 	Приостановленные организации пропускаются: их доступ отозван осознанно.
+
+	Задача суточная и ходит по всей платформе, поэтому база опрашивается
+	списками: адресаты всех назначений — двумя запросами, уже выданные
+	зачисления — одним на все затронутые курсы. Прежняя редакция поднимала
+	документ на каждое назначение и спрашивала базу про каждую пару
+	«человек × курс» — тысяча сотрудников с десятью курсами давала
+	десятки тысяч обходов за ночь.
 	"""
 	действующие = frappe.get_all(
 		"Learning Organization", filters={"status": "Active"}, pluck="name"
@@ -127,12 +174,32 @@ def сверить_зачисления() -> int:
 	if not действующие:
 		return 0
 
-	создано = 0
 	назначения = frappe.get_all(
-		"Course Allocation", filters={"organization": ("in", действующие)}, pluck="name"
+		"Course Allocation",
+		filters={"organization": ("in", действующие)},
+		fields=["name", "organization", "course", "audience"],
 	)
-	for имя in назначения:
-		создано += frappe.get_doc("Course Allocation", имя).выдать_зачисления()
+	if not назначения:
+		return 0
+
+	адресаты = адресаты_назначений(назначения)
+	записаны = {
+		(строка.member, строка.course)
+		for строка in frappe.get_all(
+			"LMS Enrollment",
+			filters={"course": ("in", list({н.course for н in назначения}))},
+			fields=["member", "course"],
+		)
+	}
+
+	создано = 0
+	for назначение in назначения:
+		for участник in адресаты[назначение.name]:
+			if (участник, назначение.course) in записаны:
+				continue
+			записать_зачисление(участник, назначение.course)
+			записаны.add((участник, назначение.course))
+			создано += 1
 	return создано
 
 

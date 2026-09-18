@@ -30,7 +30,8 @@
    "label": "Ученик",
    "options": "User",
    "read_only": 1,
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "lesson",
@@ -39,14 +40,16 @@
    "label": "Урок",
    "options": "Course Lesson",
    "read_only": 1,
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "course",
    "fieldtype": "Link",
    "label": "Курс",
    "options": "LMS Course",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "default": "In Progress",
@@ -55,7 +58,8 @@
    "in_list_view": 1,
    "label": "Статус",
    "options": "In Progress\nAwaiting Quiz\nCompleted\nAbandoned",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "sb_time",
@@ -73,7 +77,8 @@
    "fieldname": "last_activity_at",
    "fieldtype": "Datetime",
    "label": "Последняя активность",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "finished_at",
@@ -119,7 +124,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-15 16:00:00.000000",
+ "modified": "2026-09-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Learning Session",

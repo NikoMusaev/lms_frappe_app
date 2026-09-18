@@ -96,6 +96,9 @@ def list_courses(published: bool | None = None) -> dict:
 		fields=["name", "title", "short_introduction", "published", "modified"],
 		order_by="modified desc",
 	)
+	# Число уроков — одним обходом на весь список: порядок глав и уроков,
+	# собираемый на каждый курс отдельно, давал по пять запросов на строку.
+	уроков = structure.уроков_в_курсах([курс.name for курс in курсы])
 	return {
 		"courses": [
 			{
@@ -103,7 +106,7 @@ def list_courses(published: bool | None = None) -> dict:
 				"title": курс.title,
 				"summary": курс.short_introduction,
 				"published": bool(курс.published),
-				"lessons_total": len(structure.уроки_курса(курс.name)),
+				"lessons_total": уроков.get(курс.name, 0),
 				"updated_at": курс.modified.isoformat() if курс.modified else None,
 			}
 			for курс in курсы
