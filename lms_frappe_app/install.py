@@ -3,6 +3,7 @@
 """Настройка при установке и миграции."""
 
 import frappe
+from frappe.utils import get_url
 
 from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
 	НАСТРОЙКИ,
@@ -243,6 +244,9 @@ def обеспечить_значения_настроек() -> None:
 		for поле in frappe.get_meta(НАСТРОЙКИ).fields
 		if поле.default
 	}
+	# Адрес сервиса агента в схеме пустой: он зависит от сайта, а не от кода.
+	умолчания.setdefault("agent_service_url", get_url().rstrip("/"))
+
 	новые = {
 		поле: значение
 		for поле, значение in умолчания.items()

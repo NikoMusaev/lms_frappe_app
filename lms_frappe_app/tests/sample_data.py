@@ -10,6 +10,7 @@
 """
 
 import frappe
+from frappe.utils import get_url
 
 from lms_frappe_app.agent_learning.directives import действующая
 
@@ -261,6 +262,8 @@ def политика_по_умолчанию() -> None:
 			"student_notes_limit": 20,
 			"lesson_segment_limit": 6000,
 			"web_demo_lessons": 2,
+			"agent_service_url": get_url().rstrip("/"),
+			"authoring_guide_tool": "authoring_guide",
 		}
 	)
 	настройки.save(ignore_permissions=True)

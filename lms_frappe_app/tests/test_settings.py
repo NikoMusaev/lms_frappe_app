@@ -9,6 +9,7 @@
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import get_url
 
 from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
 	НАСТРОЙКИ,
@@ -24,6 +25,7 @@ from lms_frappe_app.api.student import (
 )
 from lms_frappe_app.install import обеспечить_значения_настроек
 from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+from lms_frappe_app.www.agent import адрес_сервиса
 
 #: Числовой параметр методики: поле настроек, читалка, запасное значение.
 ПАРАМЕТРЫ = (
@@ -70,14 +72,25 @@ class IntegrationTestSettings(IntegrationTestCase):
 		значения = frappe.db.get_singles_dict(НАСТРОЙКИ)
 		self.assertEqual(значения["carry_over_depth"], str(ГЛУБИНА_ПЕРЕНОСА))
 
+	def test_адрес_сервиса_по_умолчанию_ведёт_на_этот_сайт(self):
+		"""Адрес зависит от сайта, поэтому в схеме его нет, а умолчание есть."""
+		frappe.db.delete("Singles", {"doctype": НАСТРОЙКИ, "field": "agent_service_url"})
+		frappe.clear_document_cache(НАСТРОЙКИ, НАСТРОЙКИ)
+
+		обеспечить_значения_настроек()
+
+		self.assertEqual(адрес_сервиса(), get_url().rstrip("/"))
+
 	def test_заполненное_значение_не_переписывается(self):
 		"""`after_migrate` идёт на каждый старт контейнера — правка админа живёт."""
 		self.задать("carry_over_depth", ГЛУБИНА_ПЕРЕНОСА + 2)
+		self.задать("agent_service_url", "https://agent.example.com")
 
 		обеспечить_значения_настроек()
 		обеспечить_значения_настроек()
 
 		self.assertEqual(глубина_переноса(), ГЛУБИНА_ПЕРЕНОСА + 2)
+		self.assertEqual(адрес_сервиса(), "https://agent.example.com")
 
 	def test_очищенное_поле_остаётся_пустым(self):
 		"""Пустое значение — решение админа, а не недосмотр установки."""

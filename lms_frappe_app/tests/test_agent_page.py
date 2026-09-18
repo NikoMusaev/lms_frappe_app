@@ -55,9 +55,9 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 		# выводит порядок работы из описаний инструментов.
 		авторинг = next(п for п in с["connections"] if п["url"].endswith("/authoring"))
 		self.assertIn("authoring_guide", авторинг["first_step"])
-		# Хардкод домена сломал бы локальный стенд и любой другой хост.
+		# База адреса — настройка: сервис агента может стоять на другом хосте.
 		for п in с["connections"]:
-			self.assertTrue(п["url"].startswith(с["site_url"]))
+			self.assertTrue(п["url"].startswith(с["service_url"]))
 
 	def test_ссылка_на_исходники_есть_всегда(self):
 		# Обязательство AGPL ст. 13: пользователь сетевого сервиса видит,
@@ -159,5 +159,55 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 
 		с = self.сведения_для(ученик)
 
-		self.assertEqual(с["chat_url"], f"{с['site_url']}/chat")
+		self.assertEqual(с["chat_url"], f"{с['service_url']}/chat")
 		self.assertEqual(с["web_demo_lessons"], 3)
+
+	# --- адреса сервиса агента (lms-platform#198) ---
+
+	def test_адреса_строятся_от_настроенного_сервиса(self):
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		frappe.set_user("Administrator")
+		self.задать("agent_service_url", "https://agent.example.com/")
+		куратор = создать_куратора(f"adr-{frappe.generate_hash(length=6)}@example.com")
+
+		с = self.сведения_для(куратор)
+
+		self.assertEqual(
+			sorted(п["url"] for п in с["connections"]),
+			["https://agent.example.com/authoring", "https://agent.example.com/mcp"],
+		)
+		self.assertEqual(с["chat_url"], "https://agent.example.com/chat")
+
+	def test_без_адреса_сервиса_подключаться_некуда(self):
+		"""Платформа без своего сервиса агента не зовёт туда, где не ответят."""
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		frappe.set_user("Administrator")
+		self.задать("agent_service_url", "")
+		куратор = создать_куратора(f"pusto-{frappe.generate_hash(length=6)}@example.com")
+
+		с = self.сведения_для(куратор)
+
+		self.assertEqual(с["connections"], [])
+		self.assertEqual(с["chat_url"], "")
+
+	def test_без_имени_инструмента_подсказки_куратору_нет(self):
+		"""Имя инструмента — контракт сервиса агента, а не платформы."""
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		frappe.set_user("Administrator")
+		self.задать("authoring_guide_tool", "")
+		куратор = создать_куратора(f"guide-{frappe.generate_hash(length=6)}@example.com")
+
+		с = self.сведения_для(куратор)
+
+		авторинг = next(п for п in с["connections"] if п["role"] == "curator")
+		self.assertEqual(авторинг["first_step"], "")
+
+	def задать(self, поле: str, значение) -> None:
+		frappe.db.set_single_value("Agent Learning Settings", поле, значение)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
