@@ -818,12 +818,18 @@ def _схемы_курса(course: str) -> list:
 	`Why:` порядок по дате действующей версии менялся бы при каждой правке
 	схемы: поправленный документ уезжал бы в конец. Порядок по ключу — в
 	алфавитном, а не в смысловом. Первая версия у документа одна и навсегда.
+
+	Блоки подтягиваются списком, а не документом на схему: курс с пятью
+	документами стоил десяти обходов базы на каждом начале урока.
 	"""
 	действующие = frappe.get_all(
 		"Agent Course Artifact",
 		filters={"course": course, "is_active": 1},
-		fields=["name", "slug"],
+		fields=["name", "slug", "title", "layout"],
 	)
+	if not действующие:
+		return []
+
 	первые = {
 		запись.slug: запись.creation
 		for запись in frappe.get_all(
@@ -833,7 +839,24 @@ def _схемы_курса(course: str) -> list:
 		)
 	}
 	действующие.sort(key=lambda з: (первые.get(з.slug) is None, первые.get(з.slug) or "", з.slug))
-	return [frappe.get_doc("Agent Course Artifact", з.name) for з in действующие]
+
+	блоки = _блоки_схем([з.name for з in действующие])
+	for схема in действующие:
+		схема.blocks = блоки.get(схема.name, [])
+	return действующие
+
+
+def _блоки_схем(схемы: list[str]) -> dict[str, list]:
+	"""Блоки всех перечисленных схем одним запросом, по схемам и в порядке автора."""
+	по_схемам: dict[str, list] = {}
+	for строка in frappe.get_all(
+		"Agent Artifact Block",
+		filters={"parent": ("in", схемы), "parenttype": "Agent Course Artifact"},
+		fields=["parent", "block_key", "title", "hint", "lesson", "span"],
+		order_by="parent asc, idx asc",
+	):
+		по_схемам.setdefault(строка.parent, []).append(строка)
+	return по_схемам
 
 
 def _действующая_схема(course: str, artifact: str):
@@ -882,10 +905,40 @@ def _блок(блок, содержимое: dict[str, str]) -> dict:
 	}
 
 
+def _содержимое_курса(ученик: str, course: str) -> dict[str, dict[str, str]]:
+	"""Содержимое всех документов ученика по курсу — по ключу документа.
+
+	`Why:` перечень и блоки урока спрашивали документ ученика отдельно на
+	каждую схему, а каждый такой вопрос стоил трёх обходов базы.
+	"""
+	экземпляры = {
+		запись.name: запись.artifact
+		for запись in frappe.get_all(
+			"Agent Student Artifact",
+			filters={"student": ученик, "course": course},
+			fields=["name", "artifact"],
+		)
+	}
+	if not экземпляры:
+		return {}
+
+	содержимое: dict[str, dict[str, str]] = {}
+	for строка in frappe.get_all(
+		"Agent Artifact Content",
+		filters={"parent": ("in", list(экземпляры)), "parenttype": "Agent Student Artifact"},
+		fields=["parent", "block_key", "content"],
+	):
+		содержимое.setdefault(экземпляры[строка.parent], {})[строка.block_key] = (
+			строка.content or ""
+		)
+	return содержимое
+
+
 def _перечень_артефактов(ученик: str, course: str) -> list[dict]:
+	по_документам = _содержимое_курса(ученик, course)
 	перечень = []
 	for схема in _схемы_курса(course):
-		содержимое = _содержимое(_экземпляр(ученик, course, схема.slug))
+		содержимое = по_документам.get(схема.slug, {})
 		перечень.append(
 			{
 				"artifact": схема.slug,
@@ -1150,10 +1203,34 @@ def _доля_пройденного(ученик: str, курс: str) -> float:
 	return round(len([урок for урок in уроки if урок in пройдены]) / len(уроки), 2)
 
 
-def _первый_непройденный(уроки: list[str], пройдены: set[str]) -> dict | None:
+def _названия_уроков(уроки: list[str]) -> dict[str, str]:
+	"""Названия списка уроков одним запросом."""
+	if not уроки:
+		return {}
+	return {
+		урок.name: урок.title
+		for урок in frappe.get_all(
+			"Course Lesson", filters={"name": ("in", уроки)}, fields=["name", "title"]
+		)
+	}
+
+
+def _первый_непройденный(
+	уроки: list[str], пройдены: set[str], названия: dict[str, str] | None = None
+) -> dict | None:
+	"""Первый урок, до которого ученик ещё не дошёл.
+
+	Названия можно передать готовыми: кто уже вычитал их списком, второй раз
+	за одним названием в базу не ходит.
+	"""
 	for урок in уроки:
 		if урок not in пройдены:
-			return {"id": урок, "title": frappe.db.get_value("Course Lesson", урок, "title")}
+			название = (
+				названия[урок]
+				if названия is not None
+				else frappe.db.get_value("Course Lesson", урок, "title")
+			)
+			return {"id": урок, "title": название}
 	return None
 
 
