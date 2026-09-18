@@ -39,6 +39,9 @@ from lms_frappe_app.agent_learning.constants import (
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
+from lms_frappe_app.agent_learning.doctype.agent_learning_session.agent_learning_session import (
+	курс_урока,
+)
 from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
 	пробных_уроков,
 )
@@ -1159,8 +1162,8 @@ def _требовать_покрытие(занятие) -> None:
 
 
 def _курс_урока(lesson: str) -> str:
-	глава = frappe.db.get_value("Course Lesson", lesson, "chapter")
-	курс = frappe.db.get_value("Course Chapter", глава, "course") if глава else None
+	"""Курс урока — или отказ агенту: без курса занятию неоткуда взяться."""
+	курс = курс_урока(lesson)
 	if not курс:
 		raise Отказ(УРОК_НЕ_НАЙДЕН, "Такого урока нет", lesson=lesson)
 	return курс

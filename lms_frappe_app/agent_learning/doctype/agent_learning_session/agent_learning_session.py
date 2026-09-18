@@ -42,7 +42,7 @@ class AgentLearningSession(Document):
 		self.started_at = self.started_at or сейчас
 		self.last_activity_at = self.last_activity_at or сейчас
 		if not self.course:
-			self.course = _курс_урока(self.lesson)
+			self.course = курс_урока(self.lesson)
 
 	def validate(self):
 		self._проверить_переход()
@@ -83,8 +83,13 @@ class AgentLearningSession(Document):
 		return событие
 
 
-def _курс_урока(lesson: str | None) -> str | None:
-	"""Курс, которому принадлежит урок, — через главу."""
+def курс_урока(lesson: str | None) -> str | None:
+	"""Курс, которому принадлежит урок, — через главу.
+
+	`None` вместо отказа: занятие, заведённое по уроку без главы, оставляет
+	поле курса пустым, а учебный поток на том же `None` отказывает агенту
+	своим кодом. Правило «через главу» при этом одно — реализаций было две.
+	"""
 	if not lesson:
 		return None
 	chapter = frappe.db.get_value("Course Lesson", lesson, "chapter")
