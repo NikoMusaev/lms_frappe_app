@@ -27,6 +27,9 @@ from lms_frappe_app.agent_learning.access import (
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
+from lms_frappe_app.agent_learning.doctype.agent_learning_session.agent_learning_session import (
+	ЗАВЕРШЁННЫЕ,
+)
 from lms_frappe_app.agent_learning.directives import действующая
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
@@ -40,6 +43,7 @@ from lms_frappe_app.api import контракт, список, текущий_п
 НУЖЕН_КВИЗ = "quiz_required"
 УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ЧУЖОЕ_ЗАНЯТИЕ = "not_your_session"
+ЗАНЯТИЕ_ЗАКРЫТО = "session_closed"
 НЕВЕРНОЕ_СОСТОЯНИЕ = "invalid_chat_state"
 ДЕМО_ИСЧЕРПАНО = "web_demo_exhausted"
 НЕИЗВЕСТНЫЙ_КАНАЛ = "unknown_channel"
@@ -618,6 +622,18 @@ def complete_lesson(session: str) -> dict:
 	вызовом нельзя.
 	"""
 	занятие = _своё_занятие(session)
+	# Закрытое занятие не закрывает урок. `Why:` прежде прогресс писался при
+	# любом статусе, а в `Completed` переводилось только незакрытое: занятие,
+	# брошенное по бездействию, оставалось брошенным, а урок числился
+	# пройденным — прогресс и журнал разъезжались, и отчёт руководителя
+	# показывал пройденный урок при брошенном занятии (lms-platform#195).
+	if занятие.status in ЗАВЕРШЁННЫЕ:
+		raise Отказ(
+			ЗАНЯТИЕ_ЗАКРЫТО,
+			"Это занятие уже закрыто — начните урок заново: start_lesson",
+			session=session,
+			status=занятие.status,
+		)
 	_требовать_отчёт(занятие)
 	if quiz.требуется_квиз(занятие.lesson, занятие.student, занятие.course):
 		raise Отказ(
@@ -627,9 +643,8 @@ def complete_lesson(session: str) -> dict:
 		)
 
 	quiz.отметить_урок_пройденным(занятие)
-	if занятие.status in ("In Progress", "Awaiting Quiz"):
-		занятие.status = "Completed"
-		занятие.save(ignore_permissions=True)
+	занятие.status = "Completed"
+	занятие.save(ignore_permissions=True)
 	занятие.записать_событие("Verdict Returned", "урок закрыт без квиза")
 
 	return {

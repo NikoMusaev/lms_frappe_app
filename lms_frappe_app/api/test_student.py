@@ -771,6 +771,36 @@ class IntegrationTestCompleteLesson(IntegrationTestCase):
 		self.assertEqual(курс["progress"]["lessons_total"], 2)
 		self.assertIsNone(курс["next_lesson"])
 
+	def test_брошенное_занятие_урок_не_закрывает(self):
+		"""Иначе прогресс и журнал разъезжаются.
+
+		До правки урок отмечался пройденным, событие писалось, а занятие
+		оставалось брошенным — и отчёт руководителя показывал пройденный урок
+		при брошенном занятии (lms-platform#195).
+
+		Статус ставится прямо: в жизни его ставит фоновая задача по
+		бездействию, ждать её в тесте нечем.
+		"""
+		занятие = student.start_lesson(lesson=self.теория)["data"]["session"]
+		frappe.db.set_value("Agent Learning Session", занятие, "status", "Abandoned")
+
+		ответ = student.complete_lesson(занятие)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ЗАНЯТИЕ_ЗАКРЫТО)
+		self.assertFalse(
+			frappe.db.exists(
+				"LMS Course Progress", {"member": self.ученик, "lesson": self.теория}
+			),
+			"прогресс по брошенному занятию не пишется",
+		)
+		self.assertFalse(
+			frappe.db.exists(
+				"Agent Session Event", {"session": занятие, "kind": "Verdict Returned"}
+			),
+			"вердикта по брошенному занятию в журнале быть не должно",
+		)
+
 	def test_чужое_занятие_закрыть_нельзя(self):
 		frappe.set_user("Administrator")
 		чужой = создать_ученика(f"cl-other-{frappe.generate_hash(length=6)}@example.com")
