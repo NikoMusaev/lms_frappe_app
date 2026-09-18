@@ -7,7 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
-from lms_frappe_app.tests.sample_data import создать_урок
+from lms_frappe_app.tests.sample_data import политика_по_умолчанию, создать_урок
 
 
 class IntegrationTestNormalizer(IntegrationTestCase):
@@ -39,6 +39,20 @@ class IntegrationTestNormalizer(IntegrationTestCase):
 		self.assertIn("## Что такое цикл", урок.сегмент(1))
 		self.assertIn("Повторяет действие.", урок.сегмент(1))
 		self.assertEqual([м.kind for м in урок.media], ["video"])
+
+	def test_размер_сегмента_читается_из_настроек(self):
+		"""Один и тот же урок режется по настройке, а не по константе."""
+		self.addCleanup(политика_по_умолчанию)
+		lesson = создать_урок("Урок из нескольких абзацев")
+		frappe.db.set_value(
+			"Course Lesson", lesson, "body", "\n\n".join(["текст. " * 30] * 6)
+		)
+		self.assertEqual(нормализовать_урок(lesson).total_segments, 1)
+
+		frappe.db.set_single_value("Agent Learning Settings", "lesson_segment_limit", 300)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
+
+		self.assertGreater(нормализовать_урок(lesson).total_segments, 1)
 
 	def test_несуществующий_урок_отклоняется(self):
 		with self.assertRaises(frappe.DoesNotExistError):

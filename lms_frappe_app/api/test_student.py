@@ -487,6 +487,19 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.ПЕРЕПОЛНЕНО)
 
+	def test_предел_заметок_читается_из_настроек(self):
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		frappe.db.set_single_value("Agent Learning Settings", "student_notes_limit", 1)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
+		student.remember(kind="fact", key="role", text="Директор")
+
+		ответ = student.remember(kind="fact", key="ещё один", text="да")
+
+		self.assertEqual(ответ["error"]["code"], student.ПЕРЕПОЛНЕНО)
+		self.assertEqual(ответ["error"]["limit"], 1)
+
 	def test_замена_по_ключу_проходит_и_на_пределе(self):
 		"""Иначе упор в лимит становится тупиком: заменить тоже нельзя."""
 		for номер in range(student.ЛИМИТ_ЗАМЕТОК):
@@ -967,6 +980,36 @@ class IntegrationTestCourseOutline(IntegrationTestCase):
 			"разобранная цель переноситься не должна",
 		)
 		self.assertEqual(перенос[0]["lesson"], self.первый)
+
+	def test_глубина_переноса_читается_из_настроек(self):
+		"""С глубиной в один урок цель позапрошлого занятия уже не переносится."""
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		frappe.set_user("Administrator")
+		глава = frappe.db.get_value("Course Lesson", self.первый, "chapter")
+		третий = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": "Третий", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		привязать_урок(глава, третий)
+		занятия = ((self.первый, "Цель первого"), (self.второй, "Цель второго"))
+		for урок, цель in занятия:
+			frappe.get_doc(
+				{"doctype": "Agent Lesson Directive", "lesson": урок, "objectives": цель}
+			).insert(ignore_permissions=True)
+		frappe.db.set_single_value("Agent Learning Settings", "carry_over_depth", 1)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
+		frappe.set_user(self.ученик)
+		for урок, цель in занятия:
+			занятие = student.start_lesson(lesson=урок)["data"]["session"]
+			student.report_outcomes(занятие, outcomes=[{"objective": цель, "status": "skipped"}])
+			student.complete_lesson(занятие)
+
+		перенос = student.start_lesson(lesson=третий)["data"]["student_context"][
+			"carried_over"
+		]
+
+		self.assertEqual([п["objective"] for п in перенос], ["Цель второго"])
 
 	def уроки(self):
 		структура = student.course_outline(self.курс)["data"]

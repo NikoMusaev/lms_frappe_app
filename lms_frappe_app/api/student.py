@@ -44,6 +44,7 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_session.agent_learning
 	курс_урока,
 )
 from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
+	настройка,
 	пробных_уроков,
 )
 from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
@@ -79,6 +80,12 @@ from lms_frappe_app.api import контракт, список, текущий_п
 #: уборки: он держит профиль читаемым без второй движущейся части, а упор в
 #: него агент разрешает сам — заменой записи по существующему ключу.
 ЛИМИТ_ЗАМЕТОК = 20
+
+
+def лимит_заметок() -> int:
+	"""Предел заметок из настроек платформы; при пустой настройке — запасной."""
+	return настройка("student_notes_limit", ЛИМИТ_ЗАМЕТОК)
+
 
 НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА = "unknown_report_kind"
 ПУСТОЙ_РЕПОРТ = "report_text_required"
@@ -356,11 +363,12 @@ def remember(kind: str, key: str, text: str, session: str | None = None) -> dict
 		сколько = frappe.db.count(
 			"Agent Student Note", {"student": ученик, "course": курс, "kind": вид}
 		)
-		if сколько >= ЛИМИТ_ЗАМЕТОК:
+		предел = лимит_заметок()
+		if сколько >= предел:
 			raise Отказ(
 				ПЕРЕПОЛНЕНО,
 				"Заметок уже предельно много: замените запись по существующему ключу",
-				limit=ЛИМИТ_ЗАМЕТОК,
+				limit=предел,
 			)
 
 	значения = {
@@ -1084,6 +1092,11 @@ def _заметки(ученик: str, course: str | None) -> dict:
 ГЛУБИНА_ПЕРЕНОСА = 3
 
 
+def глубина_переноса() -> int:
+	"""Глубина переноса из настроек платформы; при пустой настройке — запасная."""
+	return настройка("carry_over_depth", ГЛУБИНА_ПЕРЕНОСА)
+
+
 def _незакрытые_цели(ученик: str, курс: str, кроме: str) -> list[dict]:
 	"""Цели прошлых уроков курса, до которых не дошли или дошли вскользь."""
 	занятия = frappe.get_all(
@@ -1095,12 +1108,13 @@ def _незакрытые_цели(ученик: str, курс: str, кроме:
 	)
 	перенос = []
 	увиденные = set()
+	глубина = глубина_переноса()
 	for занятие in занятия:
 		# Урок мог проходиться дважды: значим последний отчёт по нему.
 		if занятие.lesson == кроме or занятие.lesson in увиденные:
 			continue
 		увиденные.add(занятие.lesson)
-		if len(увиденные) > ГЛУБИНА_ПЕРЕНОСА:
+		if len(увиденные) > глубина:
 			break
 		for строка in frappe.get_all(
 			"Agent Objective Outcome",

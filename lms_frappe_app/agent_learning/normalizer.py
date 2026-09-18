@@ -58,7 +58,20 @@ class НормализованныйУрок:
 		return self.segments[индекс - 1]
 
 
-def нормализовать_урок(lesson: str, предел: int = ПРЕДЕЛ_СЕГМЕНТА) -> НормализованныйУрок:
+def предел_сегмента() -> int:
+	"""Размер сегмента из настроек платформы; при пустой настройке — запасной.
+
+	Настройки читаются отложенным импортом: разбор материала от Frappe не
+	зависит, и модуль остаётся пригодным к чтению без базы.
+	"""
+	from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
+		настройка,
+	)
+
+	return настройка("lesson_segment_limit", ПРЕДЕЛ_СЕГМЕНТА)
+
+
+def нормализовать_урок(lesson: str) -> НормализованныйУрок:
 	"""Читает урок из базы и приводит его к виду для агента."""
 	import frappe
 
@@ -68,7 +81,10 @@ def нормализовать_урок(lesson: str, предел: int = ПРЕ�
 	if not запись:
 		frappe.throw(frappe._("Урок не найден"), frappe.DoesNotExistError)
 	return нормализовать(
-		title=запись.title, content=запись.content, body=запись.body, предел=предел
+		title=запись.title,
+		content=запись.content,
+		body=запись.body,
+		предел=предел_сегмента(),
 	)
 
 

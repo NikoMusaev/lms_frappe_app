@@ -257,6 +257,9 @@ def политика_по_умолчанию() -> None:
 			"max_attempts": 3,
 			"retry_delay_hours": 1,
 			"session_timeout_hours": 6,
+			"carry_over_depth": 3,
+			"student_notes_limit": 20,
+			"lesson_segment_limit": 6000,
 			"web_demo_lessons": 2,
 		}
 	)
