@@ -45,7 +45,7 @@ from lms_frappe_app.testing import сколько_запросов
 #: вместе с кодом и только осознанно — см. пояснение модуля.
 БЮДЖЕТ = {
 	"course_outline": 14,
-	"start_lesson": 29,
+	"start_lesson": 28,
 	"submit_answer": 16,
 	"student_detail": 13,
 }

@@ -13,7 +13,7 @@ import json
 import frappe
 from frappe.utils import now_datetime
 
-from lms_frappe_app.agent_learning import quiz
+from lms_frappe_app.agent_learning import directives, quiz
 from lms_frappe_app.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
 	организация_приостановлена,
@@ -39,7 +39,6 @@ from lms_frappe_app.agent_learning.constants import (
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
-from lms_frappe_app.agent_learning.directives import действующая
 from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
 from lms_frappe_app.agent_learning.structure import уроки_курса, уроки_по_главам
@@ -597,7 +596,7 @@ def report_issue(
 			"session": занятие.name,
 			"course": занятие.course,
 			"lesson": занятие.lesson,
-			"lesson_directive": действующая(
+			"lesson_directive": directives.действующая(
 				"Agent Lesson Directive", {"lesson": занятие.lesson}
 			),
 			"kind": вид,
@@ -1250,21 +1249,19 @@ def _директива(lesson: str) -> dict:
 	`audience: teacher_only`. Это одна из трёх митигаций против пересказа
 	директивы ученику; гарантий она не даёт — гарантию даёт серверный квиз.
 	"""
-	имя = действующая("Agent Lesson Directive", {"lesson": lesson})
-	if not имя:
-		return {}
-	д = frappe.db.get_value(
+	д = directives.запись(
 		"Agent Lesson Directive",
-		имя,
-		[
+		{"lesson": lesson},
+		(
 			"objectives",
 			"teaching_directive",
 			"probing_questions",
 			"common_misconceptions",
 			"success_criteria",
-		],
-		as_dict=True,
+		),
 	)
+	if not д:
+		return {}
 	return {
 		"objectives": _строки(д.objectives),
 		"directive": {
@@ -1283,22 +1280,19 @@ def _директива_курса(course: str) -> dict:
 	Цели курса идут наружу, а не внутрь директивы: их агент вправе озвучить
 	ученику, как и цели урока.
 	"""
-	запись = frappe.get_all(
+	д = directives.запись(
 		"Agent Course Directive",
-		filters={"course": course, "is_active": 1},
-		fields=[
+		{"course": course},
+		(
 			"objectives",
 			"teaching_directive",
 			"student_profile",
 			"glossary",
 			"remember_about_student",
-		],
-		limit=1,
-		ignore_permissions=True,
+		),
 	)
-	if not запись:
+	if not д:
 		return {}
-	д = запись[0]
 	return {
 		"objectives": _строки(д.objectives),
 		"directive": {

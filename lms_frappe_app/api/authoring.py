@@ -25,6 +25,23 @@ from lms_frappe_app.api import контракт, список, текущий_п
 #: `permissions`: там они уже дают полный доступ к учебным записям.
 АВТОРСКИЕ_РОЛИ = frozenset({"Course Creator", "Moderator", "System Manager", "Administrator"})
 
+#: Поля директивы, которые куратор видит в черновике и в уроке. Порядок тот
+#: же, в каком их принимают `set_directive` и `set_course_directive`.
+ПОЛЯ_ДИРЕКТИВЫ = (
+	"objectives",
+	"teaching_directive",
+	"probing_questions",
+	"common_misconceptions",
+	"success_criteria",
+)
+ПОЛЯ_ДИРЕКТИВЫ_КУРСА = (
+	"objectives",
+	"teaching_directive",
+	"student_profile",
+	"glossary",
+	"remember_about_student",
+)
+
 КУРС_НЕ_НАЙДЕН = "course_not_found"
 ГЛАВА_НЕ_НАЙДЕНА = "chapter_not_found"
 КУРС_НЕ_ГОТОВ = "course_not_ready"
@@ -685,61 +702,28 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 
 def _действующая_директива(lesson: str) -> dict | None:
 	"""Директива, которую сейчас получает агент ученика, со своей версией."""
-	записи = frappe.get_all(
-		"Agent Lesson Directive",
-		filters={"lesson": lesson, "is_active": 1},
-		fields=[
-			"name",
-			"version",
-			"objectives",
-			"teaching_directive",
-			"probing_questions",
-			"common_misconceptions",
-			"success_criteria",
-		],
-		limit=1,
-	)
-	if not записи:
-		return None
-	запись = записи[0]
-	return {
-		"id": запись.name,
-		"version": запись.version,
-		"objectives": запись.objectives,
-		"teaching_directive": запись.teaching_directive,
-		"probing_questions": запись.probing_questions,
-		"common_misconceptions": запись.common_misconceptions,
-		"success_criteria": запись.success_criteria,
-	}
+	return _директива_наружу("Agent Lesson Directive", {"lesson": lesson}, ПОЛЯ_ДИРЕКТИВЫ)
 
 
 def _действующая_директива_курса(course: str) -> dict | None:
 	"""Сквозная директива, которую агент получает на каждом занятии курса."""
-	записи = frappe.get_all(
-		"Agent Course Directive",
-		filters={"course": course, "is_active": 1},
-		fields=[
-			"name",
-			"version",
-			"objectives",
-			"teaching_directive",
-			"student_profile",
-			"glossary",
-			"remember_about_student",
-		],
-		limit=1,
-	)
-	if not записи:
+	return _директива_наружу("Agent Course Directive", {"course": course}, ПОЛЯ_ДИРЕКТИВЫ_КУРСА)
+
+
+def _директива_наружу(doctype: str, владелец: dict, поля: tuple[str, ...]) -> dict | None:
+	"""Действующая директива куратору: текст как есть, плюс версия.
+
+	Куратор смотрит ровно то, что уедет агенту ученика, поэтому строки не
+	разбираются на пункты — этим занят учебный поток, и разбор здесь означал
+	бы, что куратор сверяет не исходный текст.
+	"""
+	запись = directives.запись(doctype, владелец, поля)
+	if not запись:
 		return None
-	запись = записи[0]
 	return {
 		"id": запись.name,
 		"version": запись.version,
-		"objectives": запись.objectives,
-		"teaching_directive": запись.teaching_directive,
-		"student_profile": запись.student_profile,
-		"glossary": запись.glossary,
-		"remember_about_student": запись.remember_about_student,
+		**{поле: запись.get(поле) for поле in поля},
 	}
 
 
