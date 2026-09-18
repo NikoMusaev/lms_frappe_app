@@ -18,7 +18,6 @@ from frappe.utils import add_to_date, now_datetime
 
 from lms_frappe_app.agent_learning.access import доступен_курс, политика_квиза_для_курса
 from lms_frappe_app.agent_learning.constants import (
-	ВАРИАНТОВ_МАКСИМУМ,
 	ВЫБОР,
 	ЗАНЯТИЕ_ЖДЁТ_КВИЗ,
 	ЗАНЯТИЕ_ЗАВЕРШЕНО,
@@ -32,6 +31,7 @@ from lms_frappe_app.agent_learning.constants import (
 	СОБЫТИЕ_ВЕРДИКТ,
 	СОБЫТИЕ_КВИЗ_НАЧАТ,
 )
+from lms_frappe_app.agent_learning.course_builder import заполненные, поля_вопроса
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.normalizer import _очистить
 
@@ -250,13 +250,11 @@ def _вопросы_с_эталоном(вопросы: list[str], типы: dic
 	"""Вопросы, у которых есть с чем сверять ответ."""
 	if not вопросы:
 		return set()
-	поля = ["name"] + [f"is_correct_{номер}" for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)]
-	поля += [f"possibility_{номер}" for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)]
+	поля = ["name", *поля_вопроса("is_correct", "possibility")]
 	годные = set()
 	for запись in frappe.get_all("LMS Question", filters={"name": ("in", вопросы)}, fields=поля):
-		если_выбор = типы.get(запись.name) == ВЫБОР
-		ключи = "is_correct_" if если_выбор else "possibility_"
-		if any(значение for ключ, значение in запись.items() if ключ.startswith(ключи)):
+		эталон = "is_correct" if типы.get(запись.name) == ВЫБОР else "possibility"
+		if заполненные(запись, эталон):
 			годные.add(запись.name)
 	return годные
 
@@ -296,19 +294,10 @@ def _вопрос_для_агента(вопрос: dict, номер: int, вс�
 	if запись.type == ВЫБОР:
 		отдать["multiple"] = bool(запись.multiple)
 		отдать["options"] = [
-			{"id": str(номер_варианта), "text": _очистить(текст)}
-			for номер_варианта, текст in _варианты(запись)
+			{"id": str(номер), "text": _очистить(текст)}
+			for номер, текст in заполненные(запись, "option")
 		]
 	return отдать
-
-
-def _варианты(запись) -> list[tuple[int, str]]:
-	варианты = []
-	for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1):
-		текст = запись.get(f"option_{номер}")
-		if текст and str(текст).strip():
-			варианты.append((номер, текст))
-	return варианты
 
 
 # --- ответ и вердикт ---
@@ -373,25 +362,17 @@ def _сверить(запись, answer: str) -> tuple[bool, str | None]:
 	"""
 	if запись.type == ВЫБОР:
 		выбранные = _разобрать_выбор(answer, запись)
-		верные = {
-			str(номер)
-			for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)
-			if запись.get(f"is_correct_{номер}")
-		}
+		верные = {str(номер) for номер, _ in заполненные(запись, "is_correct")}
 		пояснение = " ".join(
-			_очистить(запись.get(f"explanation_{номер}"))
-			for номер in sorted(верные)
-			if запись.get(f"explanation_{номер}")
+			_очистить(текст)
+			for номер, текст in заполненные(запись, "explanation")
+			if str(номер) in верные
 		)
 		# Строгое равенство, а не вхождение: иначе «выбрать все варианты»
 		# засчитывалось бы как верный ответ.
 		return выбранные == верные, пояснение or None
 
-	эталоны = {
-		_привести(запись.get(f"possibility_{номер}"))
-		for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)
-		if запись.get(f"possibility_{номер}")
-	}
+	эталоны = {_привести(эталон) for _, эталон in заполненные(запись, "possibility")}
 	return _привести(answer) in эталоны, None
 
 
@@ -406,11 +387,7 @@ def _разобрать_выбор(answer, запись) -> set[str]:
 	номера. Ответ целиком сверяется с текстом раньше, чем режется по запятым:
 	иначе вариант «Москва, Россия» не нашёлся бы.
 	"""
-	тексты = {
-		_привести(запись.get(f"option_{номер}")): str(номер)
-		for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)
-		if запись.get(f"option_{номер}")
-	}
+	тексты = {_привести(текст): str(номер) for номер, текст in заполненные(запись, "option")}
 	номера = set(тексты.values())
 	if isinstance(answer, (list, tuple, set)):
 		части = [str(часть).strip() for часть in answer]

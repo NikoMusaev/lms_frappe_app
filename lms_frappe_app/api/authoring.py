@@ -672,17 +672,11 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 				"text": документ.question,
 				"type": строка.type,
 				"options": [
-					{
-						"text": документ.get(f"option_{н}"),
-						"correct": bool(документ.get(f"is_correct_{н}")),
-					}
-					for н in range(1, course_builder.ВАРИАНТОВ_МАКСИМУМ + 1)
-					if документ.get(f"option_{н}")
+					{"text": текст, "correct": bool(документ.get(f"is_correct_{номер}"))}
+					for номер, текст in course_builder.заполненные(документ, "option")
 				],
 				"answers": [
-					документ.get(f"possibility_{н}")
-					for н in range(1, course_builder.ВАРИАНТОВ_МАКСИМУМ + 1)
-					if документ.get(f"possibility_{н}")
+					эталон for _, эталон in course_builder.заполненные(документ, "possibility")
 				],
 			}
 		)
