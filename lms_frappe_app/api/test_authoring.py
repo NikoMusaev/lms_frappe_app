@@ -66,6 +66,36 @@ class IntegrationTestAuthoring(IntegrationTestCase):
 		self.assertIn("empty_lesson", [п["code"] for п in ответ["error"]["problems"]])
 		self.assertFalse(frappe.db.get_value("LMS Course", self.курс, "published"))
 
+	def test_курс_снимается_с_публикации_и_возвращается_обратно(self):
+		"""`Why:` снятие — обратимая правка каталога, а не откат обучения:
+		прогресс ученика переживает и снятие, и повторную публикацию."""
+		ученик = создать_ученика(f"reader-{frappe.generate_hash(length=6)}@example.com")
+		self.assertTrue(authoring.publish_course(course=self.курс)["data"]["published"])
+		frappe.get_doc(
+			{
+				"doctype": "LMS Course Progress",
+				"lesson": self.уроки[0],
+				"member": ученик,
+				"course": self.курс,
+				"status": "Complete",
+			}
+		).insert(ignore_permissions=True)
+
+		ответ = authoring.unpublish_course(course=self.курс)["data"]
+
+		self.assertFalse(ответ["published"])
+		self.assertFalse(frappe.db.get_value("LMS Course", self.курс, "published"))
+		self.assertTrue(
+			frappe.db.exists("LMS Course Progress", {"member": ученик, "lesson": self.уроки[0]}),
+			"прогресс ученика пропал вместе с публикацией",
+		)
+		self.assertTrue(authoring.publish_course(course=self.курс)["data"]["published"])
+
+	def test_снятие_несуществующего_курса_даёт_код(self):
+		ответ = authoring.unpublish_course(course="нет-такого-курса")
+
+		self.assertEqual(ответ["error"]["code"], "course_not_found")
+
 	def test_кривой_вопрос_не_оставляет_мусора(self):
 		"""Отказ отменяет только вопросы этого квиза, но отменяет их все."""
 		было = frappe.db.count("LMS Question")
@@ -229,6 +259,44 @@ class IntegrationTestAuthoringStructure(IntegrationTestCase):
 		# Поле курса переезжает вместе с уроком: иначе он останется числиться
 		# в прежнем курсе, а показываться в новом.
 		self.assertEqual(frappe.db.get_value("Course Lesson", self.уроки[0], "chapter"), self.вторая)
+
+	def test_главы_переставляются_и_это_видно_frappe_learning(self):
+		"""Порядок глав ученик и куратор обязаны видеть одинаковым."""
+		from lms.lms.utils import get_chapters
+
+		ответ = authoring.reorder_chapters(course=self.курс, chapters=[self.вторая, self.первая])
+
+		self.assertEqual(ответ["data"]["chapters"], [self.вторая, self.первая])
+		self.assertEqual(
+			[глава["name"] for глава in structure.главы_курса(self.курс)],
+			[self.вторая, self.первая],
+		)
+		self.assertEqual(
+			[глава["name"] for глава in get_chapters(self.курс)], [self.вторая, self.первая]
+		)
+
+	def test_неполный_список_глав_отклоняется(self):
+		"""Агент, забывший главу, иначе молча выкинул бы её из программы."""
+		ответ = authoring.reorder_chapters(course=self.курс, chapters=[self.вторая])
+
+		self.assertEqual(ответ["error"]["code"], "order_mismatch")
+		self.assertEqual(
+			[глава["name"] for глава in structure.главы_курса(self.курс)],
+			[self.первая, self.вторая],
+		)
+
+	def test_порядок_глав_приходит_строкой_json(self):
+		"""Frappe отдаёт тело запроса как форму: список приезжает строкой."""
+		import json
+
+		authoring.reorder_chapters(
+			course=self.курс, chapters=json.dumps([self.вторая, self.первая])
+		)
+
+		self.assertEqual(
+			[глава["name"] for глава in structure.главы_курса(self.курс)],
+			[self.вторая, self.первая],
+		)
 
 	def test_лишний_урок_удаляется_целиком(self):
 		authoring.add_quiz(
