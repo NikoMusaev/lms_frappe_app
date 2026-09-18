@@ -5,6 +5,14 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_to_date, now_datetime
 
+from lms_frappe_app.agent_learning.constants import (
+	ЗАВЕРШЁННЫЕ,
+	ЗАНЯТИЕ_БРОШЕНО,
+	ОТКРЫТЫЕ,
+	ПЕРЕХОДЫ,
+	СОБЫТИЕ_ЗАНЯТИЕ_БРОШЕНО,
+)
+
 #: Запасной порог бездействия, если настройки почему-то недоступны.
 СРОК_БЕЗДЕЙСТВИЯ_ЧАСОВ = 6
 
@@ -20,17 +28,6 @@ def _срок_бездействия() -> int:
 		"Agent Learning Settings", "Agent Learning Settings", "session_timeout_hours"
 	) or СРОК_БЕЗДЕЙСТВИЯ_ЧАСОВ
 
-ЗАВЕРШЁННЫЕ = ("Completed", "Abandoned")
-
-#: Куда можно перейти из каждого статуса. Переход, которого здесь нет, —
-#: ошибка вызывающего кода, а не «редкий случай».
-ПЕРЕХОДЫ = {
-	"In Progress": {"Awaiting Quiz", "Completed", "Abandoned"},
-	"Awaiting Quiz": {"In Progress", "Completed", "Abandoned"},
-	"Completed": set(),
-	"Abandoned": set(),
-}
-
 
 class AgentLearningSession(Document):
 	"""Факт занятия: кто, какой урок, в каком состоянии.
@@ -45,7 +42,7 @@ class AgentLearningSession(Document):
 		self.started_at = self.started_at or сейчас
 		self.last_activity_at = self.last_activity_at or сейчас
 		if not self.course:
-			self.course = _курс_урока(self.lesson)
+			self.course = курс_урока(self.lesson)
 
 	def validate(self):
 		self._проверить_переход()
@@ -86,8 +83,13 @@ class AgentLearningSession(Document):
 		return событие
 
 
-def _курс_урока(lesson: str | None) -> str | None:
-	"""Курс, которому принадлежит урок, — через главу."""
+def курс_урока(lesson: str | None) -> str | None:
+	"""Курс, которому принадлежит урок, — через главу.
+
+	`None` вместо отказа: занятие, заведённое по уроку без главы, оставляет
+	поле курса пустым, а учебный поток на том же `None` отказывает агенту
+	своим кодом. Правило «через главу» при этом одно — реализаций было две.
+	"""
 	if not lesson:
 		return None
 	chapter = frappe.db.get_value("Course Lesson", lesson, "chapter")
@@ -105,14 +107,14 @@ def закрыть_брошенные_занятия() -> int:
 	порог = add_to_date(now_datetime(), hours=-_срок_бездействия())
 	просроченные = frappe.get_all(
 		"Agent Learning Session",
-		filters={"status": ("in", ("In Progress", "Awaiting Quiz")), "last_activity_at": ("<", порог)},
+		filters={"status": ("in", ОТКРЫТЫЕ), "last_activity_at": ("<", порог)},
 		pluck="name",
 	)
 	for name in просроченные:
 		занятие = frappe.get_doc("Agent Learning Session", name)
-		занятие.status = "Abandoned"
+		занятие.status = ЗАНЯТИЕ_БРОШЕНО
 		занятие.save(ignore_permissions=True)
-		занятие.записать_событие("Session Abandoned", "закрыто по бездействию")
+		занятие.записать_событие(СОБЫТИЕ_ЗАНЯТИЕ_БРОШЕНО, "закрыто по бездействию")
 		# Попытку квиза не трогаем. Why: пробовалось закрывать её вместе с
 		# занятием — и ученик, отвлёкшийся на середине квиза дольше порога,
 		# терял все ответы, попытку из лимита и запускал отсчёт паузы. При

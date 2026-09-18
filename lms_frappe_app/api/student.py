@@ -13,7 +13,7 @@ import json
 import frappe
 from frappe.utils import now_datetime
 
-from lms_frappe_app.agent_learning import quiz
+from lms_frappe_app.agent_learning import directives, quiz
 from lms_frappe_app.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
 	организация_приостановлена,
@@ -24,14 +24,28 @@ from lms_frappe_app.agent_learning.access import (
 	можно_записаться,
 	политика_квиза_для_курса,
 )
+from lms_frappe_app.agent_learning.constants import (
+	ВИДЫ_ЗАМЕТОК,
+	ЗАВЕРШЁННЫЕ,
+	ЗАМЕТКА_НАБЛЮДЕНИЕ,
+	ЗАМЕТКА_ФАКТ,
+	ЗАНЯТИЕ_ЗАВЕРШЕНО,
+	ОТКРЫТЫЕ,
+	ПРОЙДЕН,
+	СОБЫТИЕ_ВЕРДИКТ,
+	СОБЫТИЕ_ДИРЕКТИВА_ВЫДАНА,
+	СОБЫТИЕ_ОТМЕТКА,
+)
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
 from lms_frappe_app.agent_learning.doctype.agent_learning_session.agent_learning_session import (
-	ЗАВЕРШЁННЫЕ,
+	курс_урока,
 )
-from lms_frappe_app.agent_learning.directives import действующая
-from lms_frappe_app.agent_learning.errors import Отказ
+from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
+	пробных_уроков,
+)
+from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
 from lms_frappe_app.agent_learning.structure import уроки_курса, уроки_по_главам
 from lms_frappe_app.api import контракт, список, текущий_пользователь
@@ -41,7 +55,6 @@ from lms_frappe_app.api import контракт, список, текущий_п
 ЦЕЛИ_ПРОПУЩЕНЫ = "objectives_skipped"
 ЦЕЛИ_НЕ_СОВПАЛИ = "objectives_mismatch"
 НУЖЕН_КВИЗ = "quiz_required"
-УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ЧУЖОЕ_ЗАНЯТИЕ = "not_your_session"
 ЗАНЯТИЕ_ЗАКРЫТО = "session_closed"
 НЕВЕРНОЕ_СОСТОЯНИЕ = "invalid_chat_state"
@@ -52,9 +65,6 @@ from lms_frappe_app.api import контракт, список, текущий_п
 #: только ограничивает передавшего — подделывать его незачем.
 КАНАЛЫ = ("agent", "web")
 
-#: Запасной порог пробных уроков, если настройки почему-то недоступны.
-ПРОБНЫХ_УРОКОВ = 2
-
 #: Как прошла цель на занятии. Промежуточного «почти разобрали» нет намеренно:
 #: шкала из трёх делений заполняется одинаково разными агентами, из пяти —
 #: по-разному.
@@ -63,9 +73,6 @@ from lms_frappe_app.api import контракт, список, текущий_п
 ПЕРЕПОЛНЕНО = "note_limit_reached"
 ЗАМЕТКА_НЕ_НАЙДЕНА = "note_not_found"
 НЕИЗВЕСТНЫЙ_ВИД = "unknown_note_kind"
-
-#: Наружу вид заметки зовётся строчными словами, внутри — значениями Select.
-ВИДЫ_ЗАМЕТОК = {"fact": "Fact", "observation": "Observation"}
 
 #: Сколько ключей помещается в один набор. `Why:` предел вместо фоновой
 #: уборки: он держит профиль читаемым без второй движущейся части, а упор в
@@ -262,7 +269,7 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 	курсовая = _директива_курса(курс)
 	# Событие одно: занятие выдало инструкцию, а из скольких она частей — деталь,
 	# за которой в журнале нет смысла следить.
-	занятие.записать_событие("Directive Issued", f"урок {lesson}")
+	занятие.записать_событие(СОБЫТИЕ_ДИРЕКТИВА_ВЫДАНА, f"урок {lesson}")
 
 	политика = политика_квиза_для_курса(ученик, курс)
 	сведения = доступные[курс]
@@ -323,7 +330,7 @@ def remember(kind: str, key: str, text: str, session: str | None = None) -> dict
 	# по None искал бы `course is null`, не находя ни одной записи.
 	курс = ""
 	занятие = None
-	if вид == "Observation":
+	if вид == ЗАМЕТКА_НАБЛЮДЕНИЕ:
 		if not session:
 			raise Отказ(
 				ЧУЖОЕ_ЗАНЯТИЕ,
@@ -537,7 +544,7 @@ def report_outcomes(session: str, outcomes) -> dict:
 	for цель in цели:
 		занятие.append("outcomes", {"objective": цель, "status": сданные[цель]})
 	занятие.save(ignore_permissions=True)
-	занятие.записать_событие("Checkpoint Reported", "отчёт по целям урока")
+	занятие.записать_событие(СОБЫТИЕ_ОТМЕТКА, "отчёт по целям урока")
 
 	return {"session": session, "reported": len(цели)}
 
@@ -547,7 +554,7 @@ def report_outcomes(session: str, outcomes) -> dict:
 def report_checkpoint(session: str, note: str) -> dict:
 	"""Отметка о пройденном по ходу занятия. Телеметрия, не зачёт."""
 	занятие = _своё_занятие(session)
-	занятие.записать_событие("Checkpoint Reported", note)
+	занятие.записать_событие(СОБЫТИЕ_ОТМЕТКА, note)
 	return {"recorded_at": now_datetime().isoformat()}
 
 
@@ -592,7 +599,7 @@ def report_issue(
 			"session": занятие.name,
 			"course": занятие.course,
 			"lesson": занятие.lesson,
-			"lesson_directive": действующая(
+			"lesson_directive": directives.действующая(
 				"Agent Lesson Directive", {"lesson": занятие.lesson}
 			),
 			"kind": вид,
@@ -636,9 +643,9 @@ def complete_lesson(session: str) -> dict:
 		)
 
 	quiz.отметить_урок_пройденным(занятие)
-	занятие.status = "Completed"
+	занятие.status = ЗАНЯТИЕ_ЗАВЕРШЕНО
 	занятие.save(ignore_permissions=True)
-	занятие.записать_событие("Verdict Returned", "урок закрыт без квиза")
+	занятие.записать_событие(СОБЫТИЕ_ВЕРДИКТ, "урок закрыт без квиза")
 
 	return {
 		"lesson": занятие.lesson,
@@ -991,7 +998,7 @@ def _текущее_занятие(ученик: str, lesson: str):
 		filters={
 			"student": ученик,
 			"lesson": lesson,
-			"status": ("in", ("In Progress", "Awaiting Quiz")),
+			"status": ("in", ОТКРЫТЫЕ),
 		},
 		pluck="name",
 		order_by="creation desc",
@@ -1015,12 +1022,7 @@ def _проверить_пробные_уроки(ученик: str, lesson: str
 	)
 	if lesson in уроки:
 		return
-	порог = (
-		frappe.get_cached_value(
-			"Agent Learning Settings", "Agent Learning Settings", "web_demo_lessons"
-		)
-		or ПРОБНЫХ_УРОКОВ
-	)
+	порог = пробных_уроков()
 	if len(уроки) >= порог:
 		raise Отказ(
 			ДЕМО_ИСЧЕРПАНО,
@@ -1058,7 +1060,7 @@ def _заметки(ученик: str, course: str | None) -> dict:
 	)
 	факты, наблюдения = [], []
 	for з in записи:
-		если_факт = з.kind == "Fact"
+		если_факт = з.kind == ЗАМЕТКА_ФАКТ
 		(факты if если_факт else наблюдения).append(
 			{
 				"key": з.note_key,
@@ -1080,7 +1082,7 @@ def _незакрытые_цели(ученик: str, курс: str, кроме:
 	"""Цели прошлых уроков курса, до которых не дошли или дошли вскользь."""
 	занятия = frappe.get_all(
 		"Agent Learning Session",
-		filters={"student": ученик, "course": курс, "status": "Completed"},
+		filters={"student": ученик, "course": курс, "status": ЗАНЯТИЕ_ЗАВЕРШЕНО},
 		fields=["name", "lesson", "finished_at"],
 		order_by="finished_at desc",
 		ignore_permissions=True,
@@ -1160,8 +1162,8 @@ def _требовать_покрытие(занятие) -> None:
 
 
 def _курс_урока(lesson: str) -> str:
-	глава = frappe.db.get_value("Course Lesson", lesson, "chapter")
-	курс = frappe.db.get_value("Course Chapter", глава, "course") if глава else None
+	"""Курс урока — или отказ агенту: без курса занятию неоткуда взяться."""
+	курс = курс_урока(lesson)
 	if not курс:
 		raise Отказ(УРОК_НЕ_НАЙДЕН, "Такого урока нет", lesson=lesson)
 	return курс
@@ -1188,7 +1190,7 @@ def _пройденные(ученик: str, курс: str) -> set[str]:
 	return set(
 		frappe.get_all(
 			"LMS Course Progress",
-			filters={"member": ученик, "course": курс, "status": "Complete"},
+			filters={"member": ученик, "course": курс, "status": ПРОЙДЕН},
 			pluck="lesson",
 		)
 	)
@@ -1245,21 +1247,19 @@ def _директива(lesson: str) -> dict:
 	`audience: teacher_only`. Это одна из трёх митигаций против пересказа
 	директивы ученику; гарантий она не даёт — гарантию даёт серверный квиз.
 	"""
-	имя = действующая("Agent Lesson Directive", {"lesson": lesson})
-	if not имя:
-		return {}
-	д = frappe.db.get_value(
+	д = directives.запись(
 		"Agent Lesson Directive",
-		имя,
-		[
+		{"lesson": lesson},
+		(
 			"objectives",
 			"teaching_directive",
 			"probing_questions",
 			"common_misconceptions",
 			"success_criteria",
-		],
-		as_dict=True,
+		),
 	)
+	if not д:
+		return {}
 	return {
 		"objectives": _строки(д.objectives),
 		"directive": {
@@ -1278,22 +1278,19 @@ def _директива_курса(course: str) -> dict:
 	Цели курса идут наружу, а не внутрь директивы: их агент вправе озвучить
 	ученику, как и цели урока.
 	"""
-	запись = frappe.get_all(
+	д = directives.запись(
 		"Agent Course Directive",
-		filters={"course": course, "is_active": 1},
-		fields=[
+		{"course": course},
+		(
 			"objectives",
 			"teaching_directive",
 			"student_profile",
 			"glossary",
 			"remember_about_student",
-		],
-		limit=1,
-		ignore_permissions=True,
+		),
 	)
-	if not запись:
+	if not д:
 		return {}
-	д = запись[0]
 	return {
 		"objectives": _строки(д.objectives),
 		"directive": {

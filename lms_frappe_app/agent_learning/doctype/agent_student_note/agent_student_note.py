@@ -4,6 +4,8 @@
 import frappe
 from frappe.model.document import Document
 
+from lms_frappe_app.agent_learning.constants import ЗАМЕТКА_ФАКТ
+
 
 class AgentStudentNote(Document):
 	"""Заметка агента об ученике, живущая дольше одного занятия.
@@ -22,7 +24,7 @@ class AgentStudentNote(Document):
 		self.note_key = (self.note_key or "").strip().lower()
 		if not self.note_key:
 			frappe.throw(frappe._("Ключ заметки обязателен"), frappe.ValidationError)
-		if self.kind == "Fact":
+		if self.kind == ЗАМЕТКА_ФАКТ:
 			# Пустая строка, а не None: Frappe хранит незаполненный Link как
 			# `''`, и уникальный индекс с NULL не сработал бы вовсе — MariaDB
 			# считает NULL-ы различными и пропустила бы дубли фактов.

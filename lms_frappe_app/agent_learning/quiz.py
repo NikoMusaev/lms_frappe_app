@@ -17,14 +17,23 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from lms_frappe_app.agent_learning.access import доступен_курс, политика_квиза_для_курса
+from lms_frappe_app.agent_learning.constants import (
+	ВЫБОР,
+	ЗАНЯТИЕ_ЖДЁТ_КВИЗ,
+	ЗАНЯТИЕ_ЗАВЕРШЕНО,
+	ЗАНЯТИЕ_ИДЁТ,
+	ОТКРЫТЫЕ,
+	ПОПЫТКА_ЗАЧТЕНА,
+	ПОПЫТКА_ИДЁТ,
+	ПОПЫТКА_НЕ_ЗАЧТЕНА,
+	ПРОВЕРЯЕМЫЕ_ТИПЫ,
+	ПРОЙДЕН,
+	СОБЫТИЕ_ВЕРДИКТ,
+	СОБЫТИЕ_КВИЗ_НАЧАТ,
+)
+from lms_frappe_app.agent_learning.course_builder import заполненные, поля_вопроса
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.normalizer import _очистить
-
-#: Frappe Learning хранит варианты плоскими полями option_1..option_10.
-ВАРИАНТОВ_МАКСИМУМ = 10
-
-#: Типы вопросов, которые сервер способен проверить сам.
-ПРОВЕРЯЕМЫЕ_ТИПЫ = ("Choices", "User Input")
 
 КВИЗА_НЕТ = "quiz_not_configured"
 НЕЧЕГО_ПРОВЕРЯТЬ = "quiz_not_checkable"
@@ -71,7 +80,7 @@ def начать_попытку(session: str) -> dict:
 	if открытая:
 		# По занятию, а не по квизу: один квиз может быть привязан к двум
 		# урокам, и попытка чужого занятия закрыла бы не тот урок.
-		занятие.записать_событие("Quiz Started", "продолжение попытки")
+		занятие.записать_событие(СОБЫТИЕ_КВИЗ_НАЧАТ, "продолжение попытки")
 		return {"attempt": открытая, "question": следующий_вопрос(открытая, вопросы)}
 
 	_проверить_право_на_попытку(занятие, квиз, политика)
@@ -85,15 +94,15 @@ def начать_попытку(session: str) -> dict:
 			"lesson": занятие.lesson,
 			"course": занятие.course,
 			"attempt_number": _прошлых_попыток(занятие.student, квиз) + 1,
-			"status": "In Progress",
+			"status": ПОПЫТКА_ИДЁТ,
 			"started_at": now_datetime(),
 		}
 	).insert(ignore_permissions=True)
 
-	if занятие.status == "In Progress":
-		занятие.status = "Awaiting Quiz"
+	if занятие.status == ЗАНЯТИЕ_ИДЁТ:
+		занятие.status = ЗАНЯТИЕ_ЖДЁТ_КВИЗ
 		занятие.save(ignore_permissions=True)
-	занятие.записать_событие("Quiz Started", f"попытка {попытка.attempt_number}")
+	занятие.записать_событие(СОБЫТИЕ_КВИЗ_НАЧАТ, f"попытка {попытка.attempt_number}")
 
 	return {"attempt": попытка.name, "question": следующий_вопрос(попытка.name, вопросы)}
 
@@ -109,7 +118,7 @@ def _проверить_право_на_попытку(занятие, квиз:
 
 	последняя = frappe.get_all(
 		"Agent Quiz Attempt",
-		filters={"student": занятие.student, "quiz": квиз, "status": ("!=", "In Progress")},
+		filters={"student": занятие.student, "quiz": квиз, "status": ("!=", ПОПЫТКА_ИДЁТ)},
 		fields=["finished_at"],
 		order_by="finished_at desc",
 		limit=1,
@@ -141,7 +150,7 @@ def _открытая_попытка(session: str) -> str | None:
 	"""Незавершённая попытка этого занятия, если она есть."""
 	открытые = frappe.get_all(
 		"Agent Quiz Attempt",
-		filters={"session": session, "status": "In Progress"},
+		filters={"session": session, "status": ПОПЫТКА_ИДЁТ},
 		pluck="name",
 		order_by="creation desc",
 		limit=1,
@@ -241,13 +250,11 @@ def _вопросы_с_эталоном(вопросы: list[str], типы: dic
 	"""Вопросы, у которых есть с чем сверять ответ."""
 	if not вопросы:
 		return set()
-	поля = ["name"] + [f"is_correct_{номер}" for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)]
-	поля += [f"possibility_{номер}" for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)]
+	поля = ["name", *поля_вопроса("is_correct", "possibility")]
 	годные = set()
 	for запись in frappe.get_all("LMS Question", filters={"name": ("in", вопросы)}, fields=поля):
-		если_выбор = типы.get(запись.name) == "Choices"
-		ключи = "is_correct_" if если_выбор else "possibility_"
-		if any(значение for ключ, значение in запись.items() if ключ.startswith(ключи)):
+		эталон = "is_correct" if типы.get(запись.name) == ВЫБОР else "possibility"
+		if заполненные(запись, эталон):
 			годные.add(запись.name)
 	return годные
 
@@ -280,26 +287,17 @@ def _вопрос_для_агента(вопрос: dict, номер: int, вс�
 	отдать = {
 		"id": запись.name,
 		"text": _очистить(запись.question),
-		"kind": "choice" if запись.type == "Choices" else "input",
+		"kind": "choice" if запись.type == ВЫБОР else "input",
 		"index": номер,
 		"total": всего,
 	}
-	if запись.type == "Choices":
+	if запись.type == ВЫБОР:
 		отдать["multiple"] = bool(запись.multiple)
 		отдать["options"] = [
-			{"id": str(номер_варианта), "text": _очистить(текст)}
-			for номер_варианта, текст in _варианты(запись)
+			{"id": str(номер), "text": _очистить(текст)}
+			for номер, текст in заполненные(запись, "option")
 		]
 	return отдать
-
-
-def _варианты(запись) -> list[tuple[int, str]]:
-	варианты = []
-	for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1):
-		текст = запись.get(f"option_{номер}")
-		if текст and str(текст).strip():
-			варианты.append((номер, текст))
-	return варианты
 
 
 # --- ответ и вердикт ---
@@ -308,7 +306,7 @@ def _варианты(запись) -> list[tuple[int, str]]:
 def принять_ответ(attempt: str, question: str, answer: str) -> dict:
 	"""Сверяет ответ, возвращает вердикт и следующий вопрос."""
 	попытка = frappe.get_doc("Agent Quiz Attempt", attempt)
-	if попытка.status != "In Progress":
+	if попытка.status != ПОПЫТКА_ИДЁТ:
 		raise Отказ(ПОПЫТКА_ЗАВЕРШЕНА, "Эта попытка уже завершена")
 
 	состав = _вопросы_квиза(попытка.quiz)
@@ -362,27 +360,19 @@ def _сверить(запись, answer: str) -> tuple[bool, str | None]:
 	задаются и как они порождаются, — а это закрытая часть. Взамен получаем
 	гарантию, что эталоны не утекают через агента.
 	"""
-	if запись.type == "Choices":
+	if запись.type == ВЫБОР:
 		выбранные = _разобрать_выбор(answer, запись)
-		верные = {
-			str(номер)
-			for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)
-			if запись.get(f"is_correct_{номер}")
-		}
+		верные = {str(номер) for номер, _ in заполненные(запись, "is_correct")}
 		пояснение = " ".join(
-			_очистить(запись.get(f"explanation_{номер}"))
-			for номер in sorted(верные)
-			if запись.get(f"explanation_{номер}")
+			_очистить(текст)
+			for номер, текст in заполненные(запись, "explanation")
+			if str(номер) in верные
 		)
 		# Строгое равенство, а не вхождение: иначе «выбрать все варианты»
 		# засчитывалось бы как верный ответ.
 		return выбранные == верные, пояснение or None
 
-	эталоны = {
-		_привести(запись.get(f"possibility_{номер}"))
-		for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)
-		if запись.get(f"possibility_{номер}")
-	}
+	эталоны = {_привести(эталон) for _, эталон in заполненные(запись, "possibility")}
 	return _привести(answer) in эталоны, None
 
 
@@ -397,11 +387,7 @@ def _разобрать_выбор(answer, запись) -> set[str]:
 	номера. Ответ целиком сверяется с текстом раньше, чем режется по запятым:
 	иначе вариант «Москва, Россия» не нашёлся бы.
 	"""
-	тексты = {
-		_привести(запись.get(f"option_{номер}")): str(номер)
-		for номер in range(1, ВАРИАНТОВ_МАКСИМУМ + 1)
-		if запись.get(f"option_{номер}")
-	}
+	тексты = {_привести(текст): str(номер) for номер, текст in заполненные(запись, "option")}
 	номера = set(тексты.values())
 	if isinstance(answer, (list, tuple, set)):
 		части = [str(часть).strip() for часть in answer]
@@ -441,7 +427,7 @@ def _завершить(попытка) -> dict:
 	политика = политика_квиза_для_курса(попытка.student, попытка.course)
 	зачтено = доля >= политика["pass_threshold"]
 
-	попытка.status = "Passed" if зачтено else "Failed"
+	попытка.status = ПОПЫТКА_ЗАЧТЕНА if зачтено else ПОПЫТКА_НЕ_ЗАЧТЕНА
 	попытка.score = round(доля, 3)
 	попытка.passed = int(зачтено)
 	попытка.finished_at = now_datetime()
@@ -453,15 +439,15 @@ def _завершить(попытка) -> dict:
 	занятие = frappe.get_doc("Agent Learning Session", попытка.session)
 	if зачтено:
 		отметить_урок_пройденным(попытка)
-		if занятие.status in ("In Progress", "Awaiting Quiz"):
-			занятие.status = "Completed"
+		if занятие.status in ОТКРЫТЫЕ:
+			занятие.status = ЗАНЯТИЕ_ЗАВЕРШЕНО
 			занятие.save(ignore_permissions=True)
 		# Занятие, закрытое по бездействию, переводить некуда: у брошенного
 		# статуса выхода нет. Результат квиза от этого не страдает — иначе
 		# ученик, вернувшийся к последнему вопросу через сутки, ронял бы
 		# транзакцию и терял всю попытку.
 	занятие.записать_событие(
-		"Verdict Returned", f"итог {попытка.score}, {'зачтено' if зачтено else 'не зачтено'}"
+		СОБЫТИЕ_ВЕРДИКТ, f"итог {попытка.score}, {'зачтено' if зачтено else 'не зачтено'}"
 	)
 
 	return {
@@ -529,7 +515,7 @@ def отметить_урок_пройденным(запись) -> None:
 		"LMS Course Progress", {"member": запись.student, "lesson": запись.lesson}
 	)
 	if уже:
-		frappe.db.set_value("LMS Course Progress", уже, "status", "Complete")
+		frappe.db.set_value("LMS Course Progress", уже, "status", ПРОЙДЕН)
 		return
 	frappe.get_doc(
 		{
@@ -538,6 +524,6 @@ def отметить_урок_пройденным(запись) -> None:
 			"lesson": запись.lesson,
 			"chapter": frappe.db.get_value("Course Lesson", запись.lesson, "chapter"),
 			"course": запись.course,
-			"status": "Complete",
+			"status": ПРОЙДЕН,
 		}
 	).insert(ignore_permissions=True)

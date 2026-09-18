@@ -3,7 +3,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from lms_frappe_app.agent_learning.sample_data import создать_куратора, создать_ученика
+from lms_frappe_app.tests.sample_data import создать_куратора, создать_ученика
 
 # (route пункта, заголовок, куда уводит редирект)
 ПУНКТЫ = (
@@ -149,7 +149,7 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 		)
 
 	def test_страница_зовёт_в_браузер_с_числом_пробных_уроков(self):
-		from lms_frappe_app.agent_learning.sample_data import политика_по_умолчанию
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
 
 		self.addCleanup(политика_по_умолчанию)
 		frappe.set_user("Administrator")

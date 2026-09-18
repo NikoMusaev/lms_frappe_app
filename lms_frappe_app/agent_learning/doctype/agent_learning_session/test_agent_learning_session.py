@@ -8,7 +8,7 @@ from frappe.utils import add_to_date, now_datetime
 from lms_frappe_app.agent_learning.doctype.agent_learning_session.agent_learning_session import (
 	закрыть_брошенные_занятия,
 )
-from lms_frappe_app.agent_learning.sample_data import создать_ученика, создать_урок
+from lms_frappe_app.tests.sample_data import создать_ученика, создать_урок
 
 DOCTYPE = "Agent Learning Session"
 ПЕРВЫЙ = "uchenik-odin@example.com"

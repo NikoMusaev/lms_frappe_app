@@ -15,7 +15,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from lms_frappe_app.agent_learning.sample_data import создать_ученика
+from lms_frappe_app.tests.sample_data import создать_ученика
 
 WORKSPACE = "Agent Learning"
 МОДУЛЬ = "Agent Learning"

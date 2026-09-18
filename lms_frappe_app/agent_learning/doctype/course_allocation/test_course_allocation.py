@@ -7,10 +7,7 @@ from frappe.tests import IntegrationTestCase
 from lms_frappe_app.agent_learning.doctype.course_allocation.course_allocation import (
 	назначения_пользователя,
 )
-from lms_frappe_app.agent_learning.doctype.learning_organization.learning_organization import (
-	политика_квиза,
-)
-from lms_frappe_app.agent_learning.sample_data import (
+from lms_frappe_app.tests.sample_data import (
 	политика_по_умолчанию,
 	добавить_в_организацию,
 	создать_курс,
@@ -23,7 +20,11 @@ from lms_frappe_app.agent_learning.sample_data import (
 
 
 class IntegrationTestCourseAllocation(IntegrationTestCase):
-	"""Организации, членство, назначение курсов и политика квиза."""
+	"""Членство и назначение курсов: кому назначение порождает зачисление.
+
+	Политика квиза и прочие свойства организации — в тестах
+	`Learning Organization`, у своего доктайпа.
+	"""
 
 	def setUp(self):
 		политика_по_умолчанию()
@@ -121,33 +122,3 @@ class IntegrationTestCourseAllocation(IntegrationTestCase):
 
 		self.assertIn(назначение.name, имена(ПЕРВЫЙ))
 		self.assertNotIn(назначение.name, имена(ВТОРОЙ))
-
-	# --- политика квиза ---
-
-	def test_организация_перекрывает_только_заданные_поля(self):
-		# Пустое поле означает «как в общих настройках»: организация не обязана
-		# дублировать значения, которые её устраивают.
-		политика = политика_квиза(self.организация)
-		self.assertEqual(политика["pass_threshold"], 0.8)
-		self.assertEqual(политика["max_attempts"], 3)
-
-		организация = frappe.get_doc("Learning Organization", self.организация)
-		организация.pass_threshold = 0.9
-		организация.save(ignore_permissions=True)
-
-		политика = политика_квиза(self.организация)
-
-		self.assertEqual(политика["pass_threshold"], 0.9)
-		self.assertEqual(политика["max_attempts"], 3)
-
-	def test_недопустимый_порог_отклоняется(self):
-		организация = frappe.get_doc("Learning Organization", self.организация)
-		организация.pass_threshold = 80
-		with self.assertRaises(frappe.ValidationError):
-			организация.save(ignore_permissions=True)
-
-	def test_домены_приводятся_к_единому_виду(self):
-		организация = frappe.get_doc("Learning Organization", self.организация)
-		организация.email_domains = "@Example.COM\n\n example.com \nzavod.ru"
-		организация.save(ignore_permissions=True)
-		self.assertEqual(организация.email_domains, "example.com\nzavod.ru")

@@ -18,15 +18,31 @@ from lms_frappe_app.agent_learning import course_builder, directives, quiz, stru
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
-from lms_frappe_app.agent_learning.errors import Отказ
+from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
 from lms_frappe_app.api import контракт, список, текущий_пользователь
 
 #: Роли, которым разрешено собирать курсы. Совпадают с административными в
 #: `permissions`: там они уже дают полный доступ к учебным записям.
 АВТОРСКИЕ_РОЛИ = frozenset({"Course Creator", "Moderator", "System Manager", "Administrator"})
 
+#: Поля директивы, которые куратор видит в черновике и в уроке. Порядок тот
+#: же, в каком их принимают `set_directive` и `set_course_directive`.
+ПОЛЯ_ДИРЕКТИВЫ = (
+	"objectives",
+	"teaching_directive",
+	"probing_questions",
+	"common_misconceptions",
+	"success_criteria",
+)
+ПОЛЯ_ДИРЕКТИВЫ_КУРСА = (
+	"objectives",
+	"teaching_directive",
+	"student_profile",
+	"glossary",
+	"remember_about_student",
+)
+
 КУРС_НЕ_НАЙДЕН = "course_not_found"
-УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ГЛАВА_НЕ_НАЙДЕНА = "chapter_not_found"
 КУРС_НЕ_ГОТОВ = "course_not_ready"
 КВИЗ_УЖЕ_ЕСТЬ = "quiz_exists"
@@ -289,8 +305,9 @@ def reorder_lessons(chapter: str, lessons) -> dict:
 	"""Задаёт порядок уроков главы полным списком."""
 	_автор()
 	_должен_существовать("Course Chapter", chapter, ГЛАВА_НЕ_НАЙДЕНА)
-	structure.переставить(chapter, "Course Chapter", список(lessons))
-	return {"chapter": chapter, "lessons": список(lessons)}
+	порядок = список(lessons)
+	structure.переставить(chapter, "Course Chapter", порядок)
+	return {"chapter": chapter, "lessons": порядок}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -299,8 +316,9 @@ def reorder_chapters(course: str, chapters) -> dict:
 	"""Задаёт порядок глав курса полным списком."""
 	_автор()
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
-	structure.переставить(course, "LMS Course", список(chapters))
-	return {"course": course, "chapters": список(chapters)}
+	порядок = список(chapters)
+	structure.переставить(course, "LMS Course", порядок)
+	return {"course": course, "chapters": порядок}
 
 
 # --- директива и квиз ---
@@ -450,6 +468,10 @@ def add_quiz(lesson: str, questions, title: str | None = None, passing_percentag
 	# на живом прогоне сборки.
 	frappe.db.savepoint("agent_quiz_build")
 	for номер, вопрос in enumerate(вопросы, start=1):
+		# Словарём, как в `add_question`: список вопросов приезжает строкой
+		# JSON, и его элементы разбираются вместе с ним не всегда — вложенная
+		# строка роняла бы вызов на `.get` мимо контракта.
+		вопрос = _как_словарь(вопрос)
 		try:
 			идентификатор, тип = course_builder.создать_вопрос(вопрос)
 		except Отказ:
@@ -475,11 +497,12 @@ def add_question(lesson: str, question: dict | str) -> dict:
 	"""Добавляет вопрос в существующий квиз урока."""
 	_автор()
 	квиз = _квиз_урока_или_отказ(lesson)
-	идентификатор, тип = _создать_вопрос_или_отказ(question, lesson)
+	вопрос = _как_словарь(question)
+	идентификатор, тип = _создать_вопрос_или_отказ(вопрос, lesson)
 	документ = frappe.get_doc("LMS Quiz", квиз)
 	документ.append(
 		"questions",
-		{"question": идентификатор, "type": тип, "marks": (_как_словарь(question).get("marks") or 1)},
+		{"question": идентификатор, "type": тип, "marks": вопрос.get("marks") or 1},
 	)
 	документ.save()
 	return {"quiz": квиз, "question": идентификатор, "questions_total": len(документ.questions)}
@@ -673,17 +696,11 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 				"text": документ.question,
 				"type": строка.type,
 				"options": [
-					{
-						"text": документ.get(f"option_{н}"),
-						"correct": bool(документ.get(f"is_correct_{н}")),
-					}
-					for н in range(1, course_builder.ВАРИАНТОВ_МАКСИМУМ + 1)
-					if документ.get(f"option_{н}")
+					{"text": текст, "correct": bool(документ.get(f"is_correct_{номер}"))}
+					for номер, текст in course_builder.заполненные(документ, "option")
 				],
 				"answers": [
-					документ.get(f"possibility_{н}")
-					for н in range(1, course_builder.ВАРИАНТОВ_МАКСИМУМ + 1)
-					if документ.get(f"possibility_{н}")
+					эталон for _, эталон in course_builder.заполненные(документ, "possibility")
 				],
 			}
 		)
@@ -692,61 +709,28 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 
 def _действующая_директива(lesson: str) -> dict | None:
 	"""Директива, которую сейчас получает агент ученика, со своей версией."""
-	записи = frappe.get_all(
-		"Agent Lesson Directive",
-		filters={"lesson": lesson, "is_active": 1},
-		fields=[
-			"name",
-			"version",
-			"objectives",
-			"teaching_directive",
-			"probing_questions",
-			"common_misconceptions",
-			"success_criteria",
-		],
-		limit=1,
-	)
-	if not записи:
-		return None
-	запись = записи[0]
-	return {
-		"id": запись.name,
-		"version": запись.version,
-		"objectives": запись.objectives,
-		"teaching_directive": запись.teaching_directive,
-		"probing_questions": запись.probing_questions,
-		"common_misconceptions": запись.common_misconceptions,
-		"success_criteria": запись.success_criteria,
-	}
+	return _директива_наружу("Agent Lesson Directive", {"lesson": lesson}, ПОЛЯ_ДИРЕКТИВЫ)
 
 
 def _действующая_директива_курса(course: str) -> dict | None:
 	"""Сквозная директива, которую агент получает на каждом занятии курса."""
-	записи = frappe.get_all(
-		"Agent Course Directive",
-		filters={"course": course, "is_active": 1},
-		fields=[
-			"name",
-			"version",
-			"objectives",
-			"teaching_directive",
-			"student_profile",
-			"glossary",
-			"remember_about_student",
-		],
-		limit=1,
-	)
-	if not записи:
+	return _директива_наружу("Agent Course Directive", {"course": course}, ПОЛЯ_ДИРЕКТИВЫ_КУРСА)
+
+
+def _директива_наружу(doctype: str, владелец: dict, поля: tuple[str, ...]) -> dict | None:
+	"""Действующая директива куратору: текст как есть, плюс версия.
+
+	Куратор смотрит ровно то, что уедет агенту ученика, поэтому строки не
+	разбираются на пункты — этим занят учебный поток, и разбор здесь означал
+	бы, что куратор сверяет не исходный текст.
+	"""
+	запись = directives.запись(doctype, владелец, поля)
+	if not запись:
 		return None
-	запись = записи[0]
 	return {
 		"id": запись.name,
 		"version": запись.version,
-		"objectives": запись.objectives,
-		"teaching_directive": запись.teaching_directive,
-		"student_profile": запись.student_profile,
-		"glossary": запись.glossary,
-		"remember_about_student": запись.remember_about_student,
+		**{поле: запись.get(поле) for поле in поля},
 	}
 
 
@@ -808,10 +792,10 @@ def _квиз_урока_или_отказ(lesson: str) -> str:
 	return квиз
 
 
-def _создать_вопрос_или_отказ(вопрос, lesson: str) -> tuple[str, str]:
+def _создать_вопрос_или_отказ(вопрос: dict, lesson: str) -> tuple[str, str]:
 	frappe.db.savepoint("agent_question_build")
 	try:
-		return course_builder.создать_вопрос(_как_словарь(вопрос))
+		return course_builder.создать_вопрос(вопрос)
 	except Отказ:
 		raise
 	except frappe.ValidationError as причина:

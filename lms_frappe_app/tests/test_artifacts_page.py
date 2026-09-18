@@ -4,7 +4,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from lms_frappe_app.agent_learning.sample_data import создать_ученика, создать_урок, зачислить
+from lms_frappe_app.tests.sample_data import создать_ученика, создать_урок, зачислить
 from lms_frappe_app.api import student
 
 
