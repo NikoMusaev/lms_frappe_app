@@ -39,6 +39,9 @@ from lms_frappe_app.agent_learning.constants import (
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
+from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
+	пробных_уроков,
+)
 from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
 from lms_frappe_app.agent_learning.structure import уроки_курса, уроки_по_главам
@@ -58,9 +61,6 @@ from lms_frappe_app.api import контракт, список, текущий_п
 #: Откуда пришёл вызов: свой агент ученика или веб-чат платформы. Канал `web`
 #: только ограничивает передавшего — подделывать его незачем.
 КАНАЛЫ = ("agent", "web")
-
-#: Запасной порог пробных уроков, если настройки почему-то недоступны.
-ПРОБНЫХ_УРОКОВ = 2
 
 #: Как прошла цель на занятии. Промежуточного «почти разобрали» нет намеренно:
 #: шкала из трёх делений заполняется одинаково разными агентами, из пяти —
@@ -1019,12 +1019,7 @@ def _проверить_пробные_уроки(ученик: str, lesson: str
 	)
 	if lesson in уроки:
 		return
-	порог = (
-		frappe.get_cached_value(
-			"Agent Learning Settings", "Agent Learning Settings", "web_demo_lessons"
-		)
-		or ПРОБНЫХ_УРОКОВ
-	)
+	порог = пробных_уроков()
 	if len(уроки) >= порог:
 		raise Отказ(
 			ДЕМО_ИСЧЕРПАНО,

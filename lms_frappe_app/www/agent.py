@@ -9,7 +9,9 @@
 import frappe
 from frappe.utils import get_url
 
-from lms_frappe_app.api.student import ПРОБНЫХ_УРОКОВ
+from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
+	пробных_уроков,
+)
 
 no_cache = 1
 
@@ -59,10 +61,7 @@ def сведения(пользователь: str) -> dict:
 		# Путь без своего агента: пробные уроки в веб-чате. Число — из той же
 		# настройки, которой лимит проверяет `start_lesson`.
 		"chat_url": f"{сайт}/chat",
-		"web_demo_lessons": frappe.get_cached_value(
-			"Agent Learning Settings", "Agent Learning Settings", "web_demo_lessons"
-		)
-		or ПРОБНЫХ_УРОКОВ,
+		"web_demo_lessons": пробных_уроков(),
 	}
 
 

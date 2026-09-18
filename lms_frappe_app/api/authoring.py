@@ -305,8 +305,9 @@ def reorder_lessons(chapter: str, lessons) -> dict:
 	"""Задаёт порядок уроков главы полным списком."""
 	_автор()
 	_должен_существовать("Course Chapter", chapter, ГЛАВА_НЕ_НАЙДЕНА)
-	structure.переставить(chapter, "Course Chapter", список(lessons))
-	return {"chapter": chapter, "lessons": список(lessons)}
+	порядок = список(lessons)
+	structure.переставить(chapter, "Course Chapter", порядок)
+	return {"chapter": chapter, "lessons": порядок}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -315,8 +316,9 @@ def reorder_chapters(course: str, chapters) -> dict:
 	"""Задаёт порядок глав курса полным списком."""
 	_автор()
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
-	structure.переставить(course, "LMS Course", список(chapters))
-	return {"course": course, "chapters": список(chapters)}
+	порядок = список(chapters)
+	structure.переставить(course, "LMS Course", порядок)
+	return {"course": course, "chapters": порядок}
 
 
 # --- директива и квиз ---
@@ -466,6 +468,10 @@ def add_quiz(lesson: str, questions, title: str | None = None, passing_percentag
 	# на живом прогоне сборки.
 	frappe.db.savepoint("agent_quiz_build")
 	for номер, вопрос in enumerate(вопросы, start=1):
+		# Словарём, как в `add_question`: список вопросов приезжает строкой
+		# JSON, и его элементы разбираются вместе с ним не всегда — вложенная
+		# строка роняла бы вызов на `.get` мимо контракта.
+		вопрос = _как_словарь(вопрос)
 		try:
 			идентификатор, тип = course_builder.создать_вопрос(вопрос)
 		except Отказ:
@@ -491,11 +497,12 @@ def add_question(lesson: str, question: dict | str) -> dict:
 	"""Добавляет вопрос в существующий квиз урока."""
 	_автор()
 	квиз = _квиз_урока_или_отказ(lesson)
-	идентификатор, тип = _создать_вопрос_или_отказ(question, lesson)
+	вопрос = _как_словарь(question)
+	идентификатор, тип = _создать_вопрос_или_отказ(вопрос, lesson)
 	документ = frappe.get_doc("LMS Quiz", квиз)
 	документ.append(
 		"questions",
-		{"question": идентификатор, "type": тип, "marks": (_как_словарь(question).get("marks") or 1)},
+		{"question": идентификатор, "type": тип, "marks": вопрос.get("marks") or 1},
 	)
 	документ.save()
 	return {"quiz": квиз, "question": идентификатор, "questions_total": len(документ.questions)}
@@ -785,10 +792,10 @@ def _квиз_урока_или_отказ(lesson: str) -> str:
 	return квиз
 
 
-def _создать_вопрос_или_отказ(вопрос, lesson: str) -> tuple[str, str]:
+def _создать_вопрос_или_отказ(вопрос: dict, lesson: str) -> tuple[str, str]:
 	frappe.db.savepoint("agent_question_build")
 	try:
-		return course_builder.создать_вопрос(_как_словарь(вопрос))
+		return course_builder.создать_вопрос(вопрос)
 	except Отказ:
 		raise
 	except frappe.ValidationError as причина:
