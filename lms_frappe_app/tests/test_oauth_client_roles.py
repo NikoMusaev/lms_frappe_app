@@ -3,7 +3,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from lms_frappe_app.agent_learning.sample_data import создать_куратора, создать_ученика
+from lms_frappe_app.tests.sample_data import создать_куратора, создать_ученика
 
 РОЛИ_ПЛАТФОРМЫ = {"LMS Student", "Course Creator"}
 

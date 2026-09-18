@@ -19,7 +19,7 @@ from lms_frappe_app.agent_learning.quiz import (
 	принять_ответ,
 )
 from lms_frappe_app.agent_learning.errors import Отказ
-from lms_frappe_app.agent_learning.sample_data import (
+from lms_frappe_app.tests.sample_data import (
 	добавить_в_организацию,
 	создать_занятие,
 	создать_вопрос,

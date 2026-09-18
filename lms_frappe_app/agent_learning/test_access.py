@@ -11,7 +11,7 @@ from lms_frappe_app.agent_learning.access import (
 	курсы_ученика,
 	политика_квиза_для_курса,
 )
-from lms_frappe_app.agent_learning.sample_data import (
+from lms_frappe_app.tests.sample_data import (
 	политика_по_умолчанию,
 	добавить_в_организацию,
 	создать_курс,

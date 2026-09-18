@@ -13,7 +13,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.website.utils import get_home_page
 
-from lms_frappe_app.agent_learning.sample_data import создать_куратора, создать_ученика
+from lms_frappe_app.tests.sample_data import создать_куратора, создать_ученика
 
 ДОМАШНЯЯ = "lms"
 

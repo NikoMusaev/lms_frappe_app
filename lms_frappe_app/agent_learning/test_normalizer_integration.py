@@ -7,7 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
-from lms_frappe_app.agent_learning.sample_data import создать_урок
+from lms_frappe_app.tests.sample_data import создать_урок
 
 
 class IntegrationTestNormalizer(IntegrationTestCase):

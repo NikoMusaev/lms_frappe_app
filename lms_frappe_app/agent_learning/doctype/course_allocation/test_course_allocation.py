@@ -10,7 +10,7 @@ from lms_frappe_app.agent_learning.doctype.course_allocation.course_allocation i
 from lms_frappe_app.agent_learning.doctype.learning_organization.learning_organization import (
 	политика_квиза,
 )
-from lms_frappe_app.agent_learning.sample_data import (
+from lms_frappe_app.tests.sample_data import (
 	политика_по_умолчанию,
 	добавить_в_организацию,
 	создать_курс,

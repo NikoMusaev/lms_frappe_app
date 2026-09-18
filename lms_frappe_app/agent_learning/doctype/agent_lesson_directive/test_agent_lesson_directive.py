@@ -5,7 +5,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from lms_frappe_app.agent_learning.directives import действующая
-from lms_frappe_app.agent_learning.sample_data import создать_ученика, создать_урок
+from lms_frappe_app.tests.sample_data import создать_ученика, создать_урок
 
 DOCTYPE = "Agent Lesson Directive"
 УЧЕНИК = "uchenik-proba@example.com"

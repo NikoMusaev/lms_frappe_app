@@ -7,7 +7,7 @@ from frappe.tests import IntegrationTestCase
 from lms_frappe_app.agent_learning.doctype.course_allocation.course_allocation import (
 	сверить_зачисления,
 )
-from lms_frappe_app.agent_learning.sample_data import (
+from lms_frappe_app.tests.sample_data import (
 	добавить_в_организацию,
 	создать_курс,
 	создать_организацию,
