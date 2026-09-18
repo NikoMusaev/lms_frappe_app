@@ -12,6 +12,7 @@
 import frappe
 
 from lms_frappe_app.agent_learning.access import курсы_ученика
+from lms_frappe_app.agent_learning.constants import ПРОЙДЕН
 from lms_frappe_app.agent_learning.doctype.course_allocation.course_allocation import (
 	адресаты_назначения,
 )
@@ -24,12 +25,6 @@ from lms_frappe_app.agent_learning.permissions import (
 from lms_frappe_app.api import контракт, текущий_пользователь
 
 ЧУЖОЙ_УЧЕНИК = "not_your_student"
-
-СТАТУСЫ = {
-	"not_started": "не начат",
-	"in_progress": "в процессе",
-	"completed": "пройден",
-}
 
 
 @frappe.whitelist()
@@ -88,7 +83,7 @@ def _пройдено_по_участникам(
 	в_курсе = set(уроки)
 	записи = frappe.get_all(
 		"LMS Course Progress",
-		filters={"course": курс, "member": ("in", участники), "status": "Complete"},
+		filters={"course": курс, "member": ("in", участники), "status": ПРОЙДЕН},
 		fields=["member", "lesson"],
 	)
 	пройдено: dict[str, set[str]] = {}

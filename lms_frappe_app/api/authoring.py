@@ -18,7 +18,7 @@ from lms_frappe_app.agent_learning import course_builder, directives, quiz, stru
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
-from lms_frappe_app.agent_learning.errors import Отказ
+from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
 from lms_frappe_app.api import контракт, список, текущий_пользователь
 
 #: Роли, которым разрешено собирать курсы. Совпадают с административными в
@@ -26,7 +26,6 @@ from lms_frappe_app.api import контракт, список, текущий_п
 АВТОРСКИЕ_РОЛИ = frozenset({"Course Creator", "Moderator", "System Manager", "Administrator"})
 
 КУРС_НЕ_НАЙДЕН = "course_not_found"
-УРОК_НЕ_НАЙДЕН = "lesson_not_found"
 ГЛАВА_НЕ_НАЙДЕНА = "chapter_not_found"
 КУРС_НЕ_ГОТОВ = "course_not_ready"
 КВИЗ_УЖЕ_ЕСТЬ = "quiz_exists"

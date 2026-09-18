@@ -12,16 +12,11 @@
 
 import frappe
 
+from lms_frappe_app.agent_learning.constants import ВАРИАНТОВ_МАКСИМУМ, ВЫБОР, ПРОВЕРЯЕМЫЕ_ТИПЫ
 from lms_frappe_app.agent_learning.errors import Отказ
-
-ВАРИАНТОВ_МАКСИМУМ = 10
 
 СЛИШКОМ_МНОГО_ВАРИАНТОВ = "too_many_options"
 НЕИЗВЕСТНЫЙ_ТИП = "unknown_question_type"
-
-#: Типы, которые сервер способен зачесть сам. `Open Ended` сюда не входит
-#: намеренно: его проверка требует человека — см. `quiz._вопросы_квиза`.
-ПРОВЕРЯЕМЫЕ_ТИПЫ = ("Choices", "User Input")
 
 
 # --- вопросы ---
@@ -36,7 +31,7 @@ def создать_вопрос(вопрос: dict) -> tuple[str, str]:
 	схеме не обязательно ни одно поле. Запись мимо документа обошла бы весь
 	этот контроль молча.
 	"""
-	тип = вопрос.get("type") or "Choices"
+	тип = вопрос.get("type") or ВЫБОР
 	if тип not in ПРОВЕРЯЕМЫЕ_ТИПЫ:
 		raise Отказ(
 			НЕИЗВЕСТНЫЙ_ТИП,
@@ -47,7 +42,7 @@ def создать_вопрос(вопрос: dict) -> tuple[str, str]:
 	документ = frappe.new_doc("LMS Question")
 	документ.question = (вопрос.get("text") or "").strip()
 	документ.type = тип
-	if тип == "Choices":
+	if тип == ВЫБОР:
 		_проставить_варианты(документ, вопрос.get("options") or [])
 	else:
 		_проставить_образцы(документ, вопрос.get("answers") or [])
