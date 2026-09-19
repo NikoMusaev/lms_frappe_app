@@ -11,6 +11,7 @@ from lms_frappe_app.api.authoring import КУРС_НЕ_НАЙДЕН
 from lms_frappe_app.tests.sample_data import (
 	привязать_урок,
 	зачислить,
+	создать_занятие,
 	создать_ученика,
 	создать_урок,
 )
@@ -66,19 +67,12 @@ class IntegrationTestCourseMap(IntegrationTestCase):
 
 	def test_зачисленный_видит_своё_покрытие(self):
 		зачислить(self.ученик, self.урок)
+		занятие = создать_занятие(self.ученик, self.урок)
 		frappe.set_user(self.ученик)
-		занятие = frappe.get_doc(
-			{
-				"doctype": "Agent Learning Session",
-				"lesson": self.урок,
-				"student": self.ученик,
-				"status": "Active",
-			}
-		).insert(ignore_permissions=True)
 		from lms_frappe_app.api import student
 
 		student.report_outcomes(
-			session=занятие.name,
+			session=занятие,
 			outcomes=json.dumps(
 				[
 					{"objective": "Назвать спонсора проекта", "status": "covered"},
