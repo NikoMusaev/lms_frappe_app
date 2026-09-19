@@ -1103,7 +1103,8 @@ Learning не позволяет смешивать открытые с пров
 
 **Параметры:** `lesson`, `teaching_directive`, а также `objectives`,
 `probing_questions`, `common_misconceptions`, `success_criteria` —
-многострочным текстом, строка на пункт.
+многострочным текстом, строка на пункт; `map_icon` — имя иконки lucide для
+ячейки урока на карте курса (`course_map`).
 
 ```json
 { "ok": true, "data": { "id": "AD-00007", "lesson": "lesson-1", "version": 2 } }
@@ -1111,6 +1112,9 @@ Learning не позволяет смешивать открытые с пров
 
 `objectives` — те самые цели, которые ученик получает в `start_lesson`, по
 которым сдаётся `report_outcomes` и без которых отчёт не требуется вовсе.
+
+`map_icon` и `objectives` — единственные поля директивы, видимые снаружи: их
+отдаёт `course_map`, в том числе гостю. Остальное остаётся на сервере.
 
 **Отказы:** `lesson_not_found`.
 
