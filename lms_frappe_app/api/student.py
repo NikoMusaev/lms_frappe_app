@@ -75,6 +75,7 @@ from lms_frappe_app.api import контракт, список, текущий_п
 ПЕРЕПОЛНЕНО = "note_limit_reached"
 ЗАМЕТКА_НЕ_НАЙДЕНА = "note_not_found"
 НЕИЗВЕСТНЫЙ_ВИД = "unknown_note_kind"
+ПУСТОЙ_КЛЮЧ = "note_key_required"
 
 #: Сколько ключей помещается в один набор (`facts`, `observations`) — запасное
 #: значение для настройки `student_notes_limit`. Упор в предел — отказ
@@ -355,7 +356,10 @@ def remember(kind: str, key: str, text: str, session: str | None = None) -> dict
 
 	ключ = (key or "").strip().lower()
 	if not ключ:
-		raise Отказ(НЕИЗВЕСТНЫЙ_ВИД, "Ключ заметки обязателен", key=key)
+		# Свой код, а не «неизвестный вид»: вид к этому месту уже распознан,
+		# и агент, ветвящийся по коду, стал бы подставлять другой вид вместо
+		# того, чтобы дать ключ (lms-platform#209).
+		raise Отказ(ПУСТОЙ_КЛЮЧ, "Ключ заметки обязателен", key=key)
 
 	существующая = frappe.db.exists(
 		"Agent Student Note", {"student": ученик, "course": курс, "note_key": ключ}

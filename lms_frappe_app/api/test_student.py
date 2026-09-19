@@ -478,6 +478,15 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.НЕИЗВЕСТНЫЙ_ВИД)
 
+	def test_пустой_ключ_заметки_отклоняется_своим_кодом(self):
+		"""Why: раньше пустой ключ отвечал кодом «неизвестный вид», хотя вид к
+		этому месту уже распознан. Агент ветвится по коду, а не по тексту, и
+		чинил бы не то — подставлял другой вид вместо того, чтобы дать ключ."""
+		ответ = student.remember(kind="fact", key="   ", text="Ведёт склад")
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ПУСТОЙ_КЛЮЧ)
+
 	def test_лимит_заметок_упирается_в_предел(self):
 		for номер in range(student.ЛИМИТ_ЗАМЕТОК):
 			student.remember(kind="fact", key=f"k{номер}", text="да")
