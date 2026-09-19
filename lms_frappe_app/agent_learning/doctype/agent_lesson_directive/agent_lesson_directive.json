@@ -13,6 +13,7 @@
   "is_active",
   "sb_content",
   "objectives",
+  "map_icon",
   "teaching_directive",
   "probing_questions",
   "common_misconceptions",
@@ -53,6 +54,12 @@
    "fieldname": "objectives",
    "fieldtype": "Small Text",
    "label": "Цели урока"
+  },
+  {
+   "description": "Имя иконки lucide для ячейки карты курса, например rocket. Пусто — ячейка покажет номер урока",
+   "fieldname": "map_icon",
+   "fieldtype": "Data",
+   "label": "Иконка на карте"
   },
   {
    "description": "Инструкция преподавателю: порядок, тон, на чём задержаться. Ученику не показывается",
