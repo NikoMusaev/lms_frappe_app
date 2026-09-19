@@ -395,6 +395,10 @@ class IntegrationTestAuthoringReadBack(IntegrationTestCase):
 		курс = frappe.db.get_value(
 			"Course Chapter", frappe.db.get_value("Course Lesson", self.урок, "chapter"), "course"
 		)
+		# Карта — витрина: черновик она посторонним не показывает, а куратор
+		# смотрит свою работу через course_draft. Проверяем путь до читателя,
+		# ради которого иконка и задаётся.
+		frappe.db.set_value("LMS Course", курс, "published", 1)
 		карта = public.course_map(course=курс)["data"]
 		уроки = [урок for глава in карта["chapters"] for урок in глава["lessons"]]
 
