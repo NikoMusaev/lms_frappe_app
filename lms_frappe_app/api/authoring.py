@@ -18,7 +18,12 @@ from lms_frappe_app.agent_learning import course_builder, directives, quiz, stru
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
-from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
+from lms_frappe_app.agent_learning.constants import ВИДЫ_РЕПОРТОВ, ИМЯ_ВИДА_РЕПОРТА
+from lms_frappe_app.agent_learning.errors import (
+	НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА,
+	Отказ,
+	УРОК_НЕ_НАЙДЕН,
+)
 from lms_frappe_app.api import контракт, список, текущий_пользователь
 
 #: Роли, которым разрешено собирать курсы. Совпадают с административными в
@@ -812,3 +817,90 @@ def _создать_вопрос_или_отказ(вопрос: dict, lesson: s
 def _должен_существовать(doctype: str, имя: str, код: str) -> None:
 	if not frappe.db.exists(doctype, имя):
 		raise Отказ(код, f"{doctype} не найден", id=имя)
+
+
+#: Больше полусотни жалоб за раз куратор всё равно не разберёт, а выборка без
+#: предела однажды поднимет весь курс целиком.
+РЕПОРТОВ_ЗА_РАЗ = 50
+
+
+@frappe.whitelist(methods=["GET"])
+@контракт
+def course_reports(
+	course: str,
+	kind: str | None = None,
+	lesson: str | None = None,
+	limit: int | None = None,
+) -> dict:
+	"""Репорты агентов по курсу: что мешает курсу работать.
+
+	`Why:` без чтения механизм разомкнут — `report_issue` умел только
+	записывать, и обратная связь о курсе, который не работает, лежала мёртвым
+	грузом. Курс чинит тот, кто его собрал, а видел жалобы только сотрудник
+	платформы в desk.
+
+	Кто пожаловался, не отдаётся. Куратору нужно, что не так с курсом, а не
+	кто сказал: имя в выдаче превращает обратную связь в донос и отучает
+	жаловаться. Занятие и ученик остаются в записи — сотрудник платформы
+	разберётся, если дойдёт до разбирательства.
+	"""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+
+	фильтры = {"course": course}
+	if kind:
+		значение = ВИДЫ_РЕПОРТОВ.get(kind.strip().lower())
+		if not значение:
+			raise Отказ(
+				НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА,
+				"Вид репорта: " + ", ".join(ВИДЫ_РЕПОРТОВ),
+				kind=kind,
+			)
+		фильтры["kind"] = значение
+	if lesson:
+		фильтры["lesson"] = lesson
+
+	записи = frappe.get_all(
+		"Agent Course Report",
+		filters=фильтры,
+		fields=["name", "kind", "lesson", "objective", "question", "text", "creation", "lesson_directive"],
+		order_by="creation desc",
+		limit=min(int(limit or РЕПОРТОВ_ЗА_РАЗ), РЕПОРТОВ_ЗА_РАЗ),
+	)
+	версии = _версии_директив([з.lesson_directive for з in записи if з.lesson_directive])
+
+	return {
+		"course": course,
+		"reports": [
+			{
+				"id": з.name,
+				"kind": ИМЯ_ВИДА_РЕПОРТА.get(з.kind, з.kind),
+				"lesson": з.lesson,
+				"objective": з.objective or None,
+				"question": з.question or None,
+				"text": з.text,
+				"reported_at": з.creation.isoformat() if з.creation else None,
+				"directive_version": версии.get(з.lesson_directive),
+			}
+			for з in записи
+		],
+	}
+
+
+def _версии_директив(имена: list[str]) -> dict[str, int]:
+	"""Номера редакций директив одним запросом на всю выдачу.
+
+	`Why:` претензия «указание не подходит» без редакции нечитаема — курс с
+	тех пор переписывали, и непонятно, на что жаловались. Запрос на каждый
+	репорт превратил бы чтение полусотни жалоб в полсотни обходов базы.
+	"""
+	if not имена:
+		return {}
+	return {
+		д.name: д.version
+		for д in frappe.get_all(
+			"Agent Lesson Directive",
+			filters={"name": ("in", list(set(имена)))},
+			fields=["name", "version"],
+		)
+	}
