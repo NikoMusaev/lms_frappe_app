@@ -27,6 +27,7 @@ from lms_frappe_app.agent_learning.access import (
 )
 from lms_frappe_app.agent_learning.constants import (
 	ВИДЫ_ЗАМЕТОК,
+	ВИДЫ_РЕПОРТОВ,
 	ЗАВЕРШЁННЫЕ,
 	ЗАМЕТКА_НАБЛЮДЕНИЕ,
 	ЗАМЕТКА_ФАКТ,
@@ -47,7 +48,11 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learnin
 	настройка,
 	пробных_уроков,
 )
-from lms_frappe_app.agent_learning.errors import Отказ, УРОК_НЕ_НАЙДЕН
+from lms_frappe_app.agent_learning.errors import (
+	НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА,
+	Отказ,
+	УРОК_НЕ_НАЙДЕН,
+)
 from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
 from lms_frappe_app.agent_learning.structure import уроки_курса, уроки_по_главам
 from lms_frappe_app.api import контракт, список, текущий_пользователь
@@ -89,20 +94,8 @@ def лимит_заметок() -> int:
 	return настройка("student_notes_limit", ЛИМИТ_ЗАМЕТОК)
 
 
-НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА = "unknown_report_kind"
 ПУСТОЙ_РЕПОРТ = "report_text_required"
 
-#: Вид репорта наружу — snake_case, внутри — значение Select. Наружу уходит
-#: имя, а не внутренняя формулировка: переименование в схеме не должно ломать
-#: агентов.
-ВИДЫ_РЕПОРТОВ = {
-	"stuck": "Stuck",
-	"misconception": "Misconception",
-	"material_issue": "Material Issue",
-	"quiz_question_issue": "Quiz Question Issue",
-	"directive_mismatch": "Directive Mismatch",
-	"out_of_scope": "Out Of Scope",
-}
 
 #: Сколько влезает в репорт. `Why:` `objective` в схеме — `Data`, то есть
 #: varchar(140), а цели приходят из директивы, где длина ничем не ограничена:
