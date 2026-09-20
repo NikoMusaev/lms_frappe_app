@@ -33,7 +33,11 @@ class IntegrationTestCourseReports(IntegrationTestCase):
 		self.урок = создать_урок(f"Урок репортов {суффикс}")
 		глава = frappe.db.get_value("Course Lesson", self.урок, "chapter")
 		self.курс = frappe.db.get_value("Course Chapter", глава, "course")
+		# Урок принадлежит курсу через главу, а `создать_урок` заводит уроку
+		# собственный курс: без смены главы репорт по нему уходил бы в чужой
+		# курс, и фильтр по уроку возвращал пустоту.
 		self.второй_урок = создать_урок(f"Второй урок {суффикс}")
+		frappe.db.set_value("Course Lesson", self.второй_урок, "chapter", глава)
 		привязать_урок(глава, self.второй_урок)
 
 		frappe.get_doc(
