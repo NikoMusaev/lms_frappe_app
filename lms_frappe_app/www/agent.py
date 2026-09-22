@@ -15,7 +15,7 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learnin
 
 no_cache = 1
 
-ИСХОДНИКИ = "https://github.com/NikoMusaev/lms_frappe_app"
+ИСХОДНИКИ = "https://github.com/lms-high-time/learning-app"
 #: Frappe пускает не больше стольких регистраций OAuth-клиентов; клиент
 #: регистрируется при каждом новом подключении.
 ЛИМИТ_РЕГИСТРАЦИЙ = "5 подключений за 10 минут"

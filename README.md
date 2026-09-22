@@ -74,7 +74,7 @@ REST-контрактом — [CONTRACT.md](CONTRACT.md).
 закрытой части проекта; для разработки достаточно любого bench, куда установлены
 Learning и это приложение.
 
-**Тесты гоняются против форка [`NikoMusaev/lms`](https://github.com/NikoMusaev/lms),
+**Тесты гоняются против форка [`lms-high-time/learning-fork`](https://github.com/lms-high-time/learning-fork),
 ветка `high-time`** — его ставит CI, на нём же работает стенд. Сейчас правки
 форка только во фронтенде, и с upstream `frappe/lms` разницы для приложения нет;
 первая серверная правка форка её создаст, и тогда прогон на upstream станет
