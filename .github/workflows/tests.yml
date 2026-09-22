@@ -84,7 +84,7 @@ jobs:
           # платформы. Why: на upstream `main` тесты шли бы по другой схеме
           # Learning, чем работает стенд, — права, DocType и хуки расходятся
           # с первой же серверной правкой форка или отставанием от upstream.
-          bench get-app --branch high-time https://github.com/NikoMusaev/lms
+          bench get-app --branch high-time https://github.com/lms-high-time/learning-fork
           bench get-app lms_frappe_app "$GITHUB_WORKSPACE"
 
       - name: Создать сайт и установить приложения
