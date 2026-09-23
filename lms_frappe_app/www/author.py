@@ -97,14 +97,22 @@ def сведения(
 	основа["course"] = _курс(черновик["data"])
 	замечания = _замечания(course)
 	_замечания_курса(основа["course"], замечания)
+	сверка = _сверка(course)
+	for глава in основа["course"]["chapters"]:
+		for урок in глава["lessons"]:
+			урок["map_issues"] = len(_расхождения_урока(сверка, урок["id"]))
 	if lesson:
 		основа["lesson"] = _урок(основа["course"], lesson)
 		основа["missing"] = основа["lesson"] is None
 		if основа["lesson"]:
 			_замечания_урока(основа["lesson"], замечания)
+			основа["lesson"]["map_issues"] = _расхождения_урока(сверка, lesson)
+			основа["lesson"]["map_url"] = (
+				f"{адрес(course)}&view={КАРТА}&node={quote('lesson:' + lesson, safe='')}" if сверка["map"] else None
+			)
 	elif view == КАРТА:
 		основа["view"] = КАРТА
-		основа["map_check"] = _сверка(course)
+		основа["map_check"] = сверка
 		основа["map_notes"] = _по_местам(
 			(з for з in замечания if з["target"].startswith("map.") and з["status"] != "accepted"),
 			lambda з: з["target"].partition(".")[2],
@@ -113,6 +121,30 @@ def сведения(
 		основа["view"] = ЗАМЕЧАНИЯ
 		основа["notes_queue"] = _очередь(замечания)
 	return основа
+
+
+def _расхождения_урока(сверка: dict, урок: str) -> list[dict]:
+	"""Расхождения карты, которые касаются урока: про сам урок, про блок,
+	который он собирает по плану или на деле, про узел карты с этим уроком.
+	Блок, собираемый не тем уроком, касается обоих."""
+	if not сверка["map"]:
+		return []
+	пары = сверка["matches"]
+	урок_узла = {у["id"]: пары.get(у["lesson"]) for у in сверка["map"]["nodes"] if у["lesson"]}
+	на_деле = {(б["artifact"], б["key"]): б["lesson"] for б in сверка["platform"]["blocks"]}
+	по_плану = {(б["artifact"], б["key"]): пары.get(б["lesson"]) for б in сверка["map"]["blocks"] if б["lesson"]}
+
+	def касается(р: dict) -> bool:
+		if р.get("lesson") == урок:
+			return True
+		if р["group"] == "blocks":
+			блок = (р["artifact"], р["key"])
+			return урок in (р.get("expected"), р.get("actual"), на_деле.get(блок), по_плану.get(блок))
+		if р["group"] == "integrity":
+			return урок_узла.get(р.get("node")) == урок
+		return False
+
+	return [р for р in сверка["discrepancies"] if касается(р)]
 
 
 def _замечания(course: str) -> list[dict]:
