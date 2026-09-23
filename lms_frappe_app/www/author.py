@@ -90,7 +90,7 @@ def сведения(
 		основа["allowed"] = False
 		return основа
 	if not course:
-		основа["courses"] = authoring.list_courses()["data"]["courses"]
+		основа["courses"] = _курсы(authoring.list_courses()["data"]["courses"])
 		return основа
 
 	черновик = authoring.course_draft(course=course)
@@ -124,6 +124,60 @@ def сведения(
 		основа["view"] = ЗАМЕЧАНИЯ
 		основа["notes_queue"] = _очередь(замечания)
 	return основа
+
+
+def _курсы(курсы: list[dict]) -> list[dict]:
+	"""Список курсов со сводкой внимания: сколько замечаний ждёт человека,
+	сколько расхождений с картой, когда курс менялся. Два автора и много
+	курсов — список сразу говорит, куда идти.
+
+	Сверка с картой — только у курсов, у которых карта есть: она дороже
+	остального, а без карты считать нечего.
+	"""
+	курсы_ид = [курс["id"] for курс in курсы]
+	ждут = _ждут_автора(курсы_ид)
+	с_картой = (
+		set(frappe.get_all("Agent Course Map", filters={"course": ["in", курсы_ид]}, pluck="course"))
+		if курсы_ид
+		else set()
+	)
+	for курс in курсы:
+		курс["notes_attention"] = ждут.get(курс["id"], 0)
+		курс["map_discrepancies"] = (
+			authoring.course_map_check(course=курс["id"])["data"]["counts"]["total"]
+			if курс["id"] in с_картой
+			else None
+		)
+		курс["revision"] = authoring.ревизия(курс["id"])
+	return курсы
+
+
+def _ждут_автора(курсы: list[str]) -> dict[str, int]:
+	"""Сколько замечаний каждого курса ждёт человека — двумя запросами на
+	весь список, а не парой на курс."""
+	if not курсы:
+		return {}
+	открытые = frappe.get_all(
+		"Agent Author Note",
+		filters={"course": ["in", курсы], "status": ["in", ["open", "done"]]},
+		fields=["name", "course", "status", "via"],
+	)
+	if not открытые:
+		return {}
+	последние: dict[str, str] = {}
+	for ответ in frappe.get_all(
+		"Agent Note Reply",
+		filters={"parent": ["in", [з.name for з in открытые]], "parenttype": "Agent Author Note"},
+		fields=["parent", "via"],
+		order_by="idx asc",
+	):
+		последние[ответ.parent] = ответ.via
+	счёт: dict[str, int] = {}
+	for з in открытые:
+		ответы = [{"via": последние[з.name]}] if з.name in последние else []
+		if notes.ждёт(з.status, з.via, ответы) == "author":
+			счёт[з.course] = счёт.get(з.course, 0) + 1
+	return счёт
 
 
 def _расхождения_урока(сверка: dict, урок: str) -> list[dict]:

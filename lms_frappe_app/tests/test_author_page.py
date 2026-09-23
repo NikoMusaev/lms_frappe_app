@@ -202,6 +202,12 @@ class IntegrationTestAuthorPageMap(IntegrationTestCase):
 				self.assertIsNone(с["map_check"])
 
 
+def сведения_списка(пользователь: str) -> list[dict]:
+	from lms_frappe_app.www.author import сведения
+
+	return сведения(пользователь)["courses"]
+
+
 class IntegrationTestAuthorPageNotes(IntegrationTestCase):
 	"""Замечания в кабинете: очередь по тому, что ждёт человека, замечания
 	урока по местам, счётчики и ссылки на места (lms-high-time/learning-services#266)."""
@@ -279,6 +285,16 @@ class IntegrationTestAuthorPageNotes(IntegrationTestCase):
 		self.assertEqual(урок["open_notes"], 2)
 		self.assertIsNotNone(с["course"]["notes_revision"])
 		self.assertEqual([з["id"] for з in с["course"]["notes"]["course"]], [self.вопрос_агента])
+
+	def test_список_курсов_говорит_куда_идти(self):
+		"""Два автора, много курсов: список сразу показывает, где ждут
+		человека, где курс разошёлся с картой и когда его меняли (#270)."""
+		с = self.сведения_для()
+		курс = next(к for к in сведения_списка(self.куратор) if к["id"] == self.курс)
+
+		self.assertEqual(курс["notes_attention"], 2)
+		self.assertIsNone(курс["map_discrepancies"])
+		self.assertEqual(курс["revision"], с["course"]["revision"])
 
 	def test_карта_получает_замечания_по_узлам(self):
 		с = self.сведения_для(view="map")
@@ -407,6 +423,15 @@ class IntegrationTestAuthorPageLessonMap(IntegrationTestCase):
 
 		self.assertEqual(уроки[self.первый]["map_issues"], 3)
 		self.assertEqual(уроки[self.второй]["map_issues"], 1)
+
+	def test_список_курсов_считает_расхождения_с_картой(self):
+		self.записать_карту()
+
+		курс = next(к for к in сведения_списка(self.куратор) if к["id"] == self.курс)
+
+		всего = authoring.course_map_check(course=self.курс)["data"]["counts"]["total"]
+		self.assertGreater(всего, 0)
+		self.assertEqual(курс["map_discrepancies"], всего)
 
 	def test_без_карты_у_урока_расхождений_нет(self):
 		урок = self.сведения_для(lesson=self.первый)["lesson"]

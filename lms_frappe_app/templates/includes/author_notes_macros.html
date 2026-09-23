@@ -46,14 +46,23 @@
 {% endmacro %}
 
 {#
-	Место на странице: якорь, кнопка «Замечание» и замечания этого места.
-	Принятые свёрнуты: они история, а не работа.
+	Тихая кнопка — в строке заголовка поля директивы или вопроса. Там их по
+	десятку на урок, и пилюли с рамкой шумели сильнее самого текста.
 #}
-{% macro место(target, lesson, label, замечания, якорь, кнопка="Замечание") %}
+{% macro кнопка_замечания(target, lesson, label) -%}
+	<button type="button" class="note-add quiet" {{ атрибуты(target, lesson, label) }} aria-label="Замечание: {{ label | e }}">+ замечание</button>
+{%- endmacro %}
+
+{#
+	Место на странице: якорь, кнопка «Замечание» и замечания этого места.
+	Принятые свёрнуты: они история, а не работа. `data-live` — область,
+	которую скрипт замечаний обновляет с сервера без перезагрузки.
+#}
+{% macro место(target, lesson, label, замечания, якорь, кнопка="Замечание", с_кнопкой=True) %}
 	{% set открытые = замечания | rejectattr("status", "equalto", "accepted") | list %}
 	{% set принятые = замечания | selectattr("status", "equalto", "accepted") | list %}
-	<div class="note-place" id="{{ якорь }}">
-		<button type="button" class="note-add" {{ атрибуты(target, lesson, label) }}>{{ кнопка }}</button>
+	<div class="note-place" id="{{ якорь }}" data-live="{{ якорь }}">
+		{% if с_кнопкой %}<button type="button" class="note-add" {{ атрибуты(target, lesson, label) }}>{{ кнопка }}</button>{% endif %}
 		<div class="notes-list" data-for="{{ (lesson or '') | e }}|{{ target | e }}">
 			{% for з in открытые %}{{ карточка(з) }}{% endfor %}
 		</div>
