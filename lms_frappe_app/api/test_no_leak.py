@@ -141,6 +141,23 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		# пояснения делает `проверить`.
 		self.assertFalse(ответ["data"]["verdict"]["correct"])
 
+	def test_зачин_и_обещание_адресованы_ученику_а_не_утечка(self):
+		"""Зачин урока и обещание курса — для ученика, в отличие от директивы
+		с грифом `teacher_only`. Лежат верхним уровнем ответа и проверку утечек
+		проходят; спрятать их под гриф значило бы запретить агенту произносить
+		то, ради чего они заведены (#238)."""
+		frappe.db.set_value("Course Lesson", self.урок, "lesson_hook", "Зачем тема сейчас")
+		frappe.db.set_value("LMS Course", self.курс, "course_promise", "Что получите к концу")
+		frappe.set_user(self.ученик)
+
+		ответ = student.start_lesson(lesson=self.урок)
+		self.проверить("start_lesson", ответ)
+		данные = ответ["data"]
+
+		self.assertEqual(данные["lesson_hook"], "Зачем тема сейчас")
+		self.assertEqual(данные["course_promise"], "Что получите к концу")
+		self.assertNotIn("lesson_hook", данные["directive"] or {})
+
 	def test_пояснение_приходит_только_к_верному_ответу(self):
 		frappe.set_user(self.ученик)
 		занятие = student.start_lesson()["data"]["session"]

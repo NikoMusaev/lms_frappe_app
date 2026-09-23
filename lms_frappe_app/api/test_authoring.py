@@ -1059,3 +1059,36 @@ class IntegrationTestLessonHookAndPromise(IntegrationTestCase):
 
 		authoring.update_course(course=self.курс, promise="")
 		self.assertFalse(frappe.db.get_value("LMS Course", self.курс, "course_promise"))
+
+
+class IntegrationTestReadinessHookAndPromise(IntegrationTestCase):
+	"""Пустые зачин и обещание — предупреждение, а не отказ: иначе три
+	опубликованных курса разом перестали бы публиковаться (#238, пункт 8)."""
+
+	# Тот же курс, что и выше, без наследования: наследник прогнал бы тесты
+	# родителя второй раз.
+	setUp = IntegrationTestLessonHookAndPromise.setUp
+	tearDown = IntegrationTestLessonHookAndPromise.tearDown
+
+	def готовность(self) -> dict:
+		from lms_frappe_app.agent_learning import course_builder
+
+		return course_builder.проверить_готовность(self.курс)
+
+	def test_без_обещания_и_зачина_курс_публикуется_с_предупреждением(self):
+		готовность = self.готовность()
+		коды = [(п["code"], п.get("lesson")) for п in готовность["warnings"]]
+
+		self.assertIn(("course_without_promise", None), коды)
+		self.assertIn(("lesson_without_hook", self.урок), коды)
+		self.assertNotIn("course_without_promise", [п["code"] for п in готовность["blocking"]])
+		self.assertNotIn("lesson_without_hook", [п["code"] for п in готовность["blocking"]])
+
+	def test_с_обещанием_и_зачином_предупреждений_нет(self):
+		authoring.update_course(course=self.курс, promise="Уйдёте с канвасом")
+		authoring.update_lesson(lesson=self.урок, lesson_hook="Зачем это сейчас")
+
+		коды = [п["code"] for п in self.готовность()["warnings"]]
+
+		self.assertNotIn("course_without_promise", коды)
+		self.assertNotIn("lesson_without_hook", коды)
