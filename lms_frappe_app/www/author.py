@@ -12,7 +12,6 @@
 вопросов — страница не знает и не показывает: это закрытая часть (спека, §3).
 """
 
-import re
 from urllib.parse import quote
 
 import frappe
@@ -134,7 +133,7 @@ def _замечания(course: str) -> list[dict]:
 def якорь(target: str) -> str:
 	"""Якорь места на странице: `directive.teaching_directive` →
 	`note-directive-teaching_directive`."""
-	return "note-" + re.sub(r"[^\w]+", "-", target).strip("-")
+	return "note-" + target.replace(".", "-").replace("/", "-")
 
 
 def _по_местам(замечания, ключ) -> dict[str, list[dict]]:
@@ -220,6 +219,7 @@ def _курс(курс: dict) -> dict:
 				пункт["url"] = адрес(курс["id"], пункт["lesson"])
 	for документ in курс["artifacts"]:
 		for блок in документ["blocks"]:
+			блок["artifact"] = документ["artifact"]
 			блок["lesson_title"] = названия.get(блок["lesson"]) if блок["lesson"] else None
 			блок["lesson_url"] = адрес(курс["id"], блок["lesson"]) if блок["lesson"] else None
 	курс["directive_fields"] = _поля(курс["directive"], ПОЛЯ_КУРСА)

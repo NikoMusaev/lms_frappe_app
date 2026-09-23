@@ -1,11 +1,14 @@
 {% extends "templates/web.html" %}
+{% from "lms_frappe_app/templates/includes/author_notes_macros.html" import место, карточка, атрибуты %}
 
 {% block title %}{{ title }}{% endblock %}
 
 {% macro число(n) %}{{ "{:,}".format(n or 0).replace(",", " ") }}{% endmacro %}
 
 
-{% macro поля_директивы(поля) %}
+{% macro якорь(target) %}{{ ("note-" ~ target) | replace(".", "-") | replace("/", "-") }}{% endmacro %}
+
+{% macro поля_директивы(поля, префикс=None, lesson=None, замечания={}, подпись="") %}
 	{% set ПОДПИСИ = {
 		"teaching_directive": "Как вести занятие",
 		"objectives": "Цели",
@@ -17,20 +20,25 @@
 		"remember_about_student": "Что запоминать об ученике",
 	} %}
 	{% for п in поля %}
-	<div class="field">
+	{% set target = префикс ~ "." ~ п.name if префикс else None %}
+	{% set метка = подпись ~ " · " ~ ПОДПИСИ.get(п.name, п.name) %}
+	<div class="field"{% if target %} {{ атрибуты(target, lesson, метка) }}{% endif %}>
 		<h4>{{ ПОДПИСИ.get(п.name, п.name) }} <code>{{ п.name }}</code></h4>
 		{% if п["items"] is not none %}
 		<ul>{% for пункт in п["items"] %}<li>{{ пункт | e }}</li>{% endfor %}</ul>
 		{% else %}
 		<div class="prose">{{ п.html }}</div>
 		{% endif %}
+		{% if target %}{{ место(target, lesson, метка, замечания.get(target, []), якорь(target)) }}{% endif %}
 	</div>
 	{% endfor %}
 {% endmacro %}
 
-{% macro блоки_документа(блоки, со_ссылкой) %}
+{% macro блоки_документа(блоки, со_ссылкой, замечания={}) %}
 	{% for б in блоки %}
-	<div class="block" style="--span: {{ [б.span or 1, 4] | min }};">
+	{% set target = "block." ~ б.artifact ~ "/" ~ б.key %}
+	{% set метка = "Документ · блок «" ~ б.title ~ "»" %}
+	<div class="block" style="--span: {{ [б.span or 1, 4] | min }};" {{ атрибуты(target, None, метка) }}>
 		<div class="block-head">
 			<span class="mono">{{ б.key }}</span>
 			{% if со_ссылкой %}
@@ -40,6 +48,7 @@
 		</div>
 		<h4>{{ б.title | e }}</h4>
 		{% if б.hint %}<details><summary>Подсказка агенту и критерии</summary><p>{{ б.hint | e }}</p></details>{% endif %}
+		{{ место(target, None, метка, замечания.get(target, []), якорь(target)) }}
 	</div>
 	{% endfor %}
 {% endmacro %}
@@ -137,6 +146,7 @@
 	}
 	.author-page .tab:hover { color: var(--ink); }
 	.author-page .tab.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 500; }
+	.author-page .tab .n.warn { background: var(--warn-soft); color: var(--warn); }
 	.author-page .tab .n {
 		min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center;
 		font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--gap-soft); color: var(--gap);
@@ -230,8 +240,9 @@
 
 {% elif lesson %}
 	{% set f = lesson.facts %}
+	{% set метка_урока = "Урок " ~ lesson.number ~ " «" ~ lesson.title ~ "»" %}
 	<div class="crumbs"><a href="{{ page_url }}">Все курсы</a> / <a href="{{ course.url }}">{{ course.title | e }}</a> / {{ lesson.chapter_title | e }}</div>
-	<div class="notice" id="author-notice" role="status"><span>Агент изменил курс.</span><button type="button" onclick="location.reload()">Обновить</button></div>
+	<div class="notice" id="author-notice" role="status"><span data-notice-text>Агент изменил курс.</span><button type="button" onclick="location.reload()">Обновить</button></div>
 	<div>
 		<h1><span class="num muted">{{ lesson.number }}.</span> {{ lesson.title | e }}</h1>
 		<div class="facts">
@@ -247,9 +258,11 @@
 		<span>{% if lesson.prev %}<a href="{{ lesson.prev.url }}">← {{ lesson.prev.number }}. {{ lesson.prev.title | e }}</a>{% endif %}</span>
 		<span>{% if lesson.next %}<a href="{{ lesson.next.url }}">{{ lesson.next.number }}. {{ lesson.next.title | e }} →</a>{% endif %}</span>
 	</div>
+	{{ место("lesson", lesson.id, метка_урока, lesson.notes.get("lesson", []), "note-lesson", "Замечание к уроку") }}
 
-	<section class="panel">
+	<section class="panel" {{ атрибуты("material", lesson.id, метка_урока ~ " · материал") }}>
 		<h2>Материал</h2>
+		{{ место("material", lesson.id, метка_урока ~ " · материал", lesson.notes.get("material", []), "note-material") }}
 		{% if lesson.segments_html %}
 			{% for сегмент in lesson.segments_html %}
 			<div class="segment">
@@ -264,7 +277,7 @@
 
 	<section class="panel">
 		<h2>Директива{% if lesson.directive %} <span class="muted num">v{{ lesson.directive.version }} от {{ frappe.utils.format_datetime(lesson.directive.created_at, "dd.MM.yyyy HH:mm") }}</span>{% endif %}</h2>
-		{% if lesson.directive %}{{ поля_директивы(lesson.directive.fields) }}
+		{% if lesson.directive %}{{ поля_директивы(lesson.directive.fields, "directive", lesson.id, lesson.notes, метка_урока ~ " · директива") }}
 		{% else %}<p class="gap-text">Директивы нет — агент ученика поведёт урок только по материалу.</p>{% endif %}
 	</section>
 
@@ -272,7 +285,8 @@
 		<h2>Квиз{% if lesson.quiz %} <span class="muted num">порог {{ lesson.quiz.passing_percentage }}</span>{% endif %}</h2>
 		{% if lesson.quiz %}
 			{% for в in lesson.quiz.questions %}
-			<div class="question{% if в.broken %} broken{% endif %}">
+			{% set target = "question." ~ в.id %}
+			<div class="question{% if в.broken %} broken{% endif %}" {{ атрибуты(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index) }}>
 				<div><span class="num muted">{{ loop.index }}.</span> {{ (в.text or "Вопрос без текста") | e }}</div>
 				{% if в.options %}
 				<ol type="a">
@@ -283,6 +297,7 @@
 				</ol>
 				{% endif %}
 				{% if в.answers %}<p class="why">Верные ответы: {{ в.answers | join("; ") | e }}</p>{% endif %}
+				{{ место(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index, lesson.notes.get(target, []), якорь(target)) }}
 			</div>
 			{% endfor %}
 		{% else %}<p class="muted">Квиза нет.</p>{% endif %}
@@ -290,14 +305,14 @@
 
 	<section>
 		<h2>Блоки документа</h2>
-		{% if lesson.blocks %}<div class="blocks">{{ блоки_документа(lesson.blocks, False) }}</div>
+		{% if lesson.blocks %}<div class="blocks">{{ блоки_документа(lesson.blocks, False, course.notes) }}</div>
 		{% else %}<p class="muted">Урок не собирает ни одного блока документа.</p>{% endif %}
 	</section>
 	<div class="quiet" id="author-quiet"></div>
 
 {% elif course %}
 	<div class="crumbs"><a href="{{ page_url }}">Все курсы</a></div>
-	<div class="notice" id="author-notice" role="status"><span>Агент изменил курс.</span><button type="button" onclick="location.reload()">Обновить</button></div>
+	<div class="notice" id="author-notice" role="status"><span data-notice-text>Агент изменил курс.</span><button type="button" onclick="location.reload()">Обновить</button></div>
 	<div>
 		<h1>{{ course.title | e }}</h1>
 		<p class="intro">{{ (course.summary or "") | e }}</p>
@@ -308,13 +323,35 @@
 	</div>
 
 	<nav class="tabs" aria-label="Вкладки курса">
-		<a class="tab{% if view != 'map' %} active{% endif %}" href="{{ course.url }}"{% if view != 'map' %} aria-current="page"{% endif %}>Сборка</a>
+		<a class="tab{% if view == 'build' %} active{% endif %}" href="{{ course.url }}"{% if view == 'build' %} aria-current="page"{% endif %}>Сборка</a>
 		<a class="tab{% if view == 'map' %} active{% endif %}" href="{{ course.url }}&view=map"{% if view == 'map' %} aria-current="page"{% endif %}>Карта
 			{% if course.map_discrepancies %}<span class="n">{{ course.map_discrepancies }}</span>{% endif %}</a>
+		<a class="tab{% if view == 'notes' %} active{% endif %}" href="{{ course.url }}&view=notes"{% if view == 'notes' %} aria-current="page"{% endif %}>Замечания
+			{% if course.notes_attention %}<span class="n warn">{{ course.notes_attention }}</span>{% endif %}</a>
 	</nav>
 
 	{% if view == "map" %}
 	{% include "lms_frappe_app/templates/includes/author_map.html" %}
+	{% elif view == "notes" %}
+	{% set q = notes_queue %}
+	<p class="intro">Замечания к курсу. Агент берёт те, что ждут его, правит курс и отмечает «сделано»; вы принимаете или возвращаете с ответом.</p>
+	{{ место("course", None, "Курс", [], "note-course", "Замечание к курсу") }}
+	{% for ключ, заголовок, пояснение in [
+		("check", "Проверьте", "Агент отметил «сделано»: примите или верните с ответом."),
+		("question", "Агент спрашивает", "Ответьте — и ход вернётся к агенту."),
+		("agent", "Ждут агента", "Агент возьмёт их, когда начнёт работу над курсом."),
+	] %}
+	<section class="queue-group">
+		<h2>{{ заголовок }} <span class="muted num">{{ q[ключ] | length }}</span></h2>
+		<p class="muted">{{ пояснение }}</p>
+		<div class="notes-list">{% for з in q[ключ] %}{{ карточка(з, True) }}{% else %}<p class="muted">Нет.</p>{% endfor %}</div>
+	</section>
+	{% endfor %}
+	{% if q.accepted %}
+	<details class="queue-group"><summary>Принятые · {{ q.accepted | length }}</summary>
+		<div class="notes-list">{% for з in q.accepted %}{{ карточка(з, True) }}{% endfor %}</div>
+	</details>
+	{% endif %}
 	{% else %}
 	<div class="chips">
 		{% set c = course.counts %}
@@ -326,7 +363,9 @@
 		{% else %}
 		<a class="chip link{% if course.map_discrepancies %} short{% endif %}" href="{{ course.url }}&view=map"><span class="n">{{ course.map_discrepancies }}</span>расхождений с картой</a>
 		{% endif %}
+		<a class="chip link{% if course.notes_attention %} short{% endif %}" href="{{ course.url }}&view=notes"><span class="n">{{ course.notes_attention }}</span>замечаний ждут вас</a>
 	</div>
+	{{ место("course", None, "Курс", course.notes.get("course", []), "note-course", "Замечание к курсу") }}
 
 	<section class="panel">
 		<h2>Готовность к публикации</h2>
@@ -348,7 +387,8 @@
 				<tr class="chapter ch{{ г.color }}"><td colspan="5">{{ г.title | e }}</td></tr>
 				{% for у in г.lessons %}
 				<tr class="lesson ch{{ г.color }}">
-					<td class="title"><span class="num muted">{{ у.number }}.</span> <a href="{{ у.url }}">{{ у.title | e }}</a></td>
+					<td class="title"><span class="num muted">{{ у.number }}.</span> <a href="{{ у.url }}">{{ у.title | e }}</a>
+						{% if у.open_notes %}<a class="note-count" href="{{ у.url }}#note-lesson" title="Открытых замечаний к уроку">✎ {{ у.open_notes }}</a>{% endif %}</td>
 					<td><span class="tile num{% if not у.has_body %} empty{% elif у.body_segments > 1 %} split{% endif %}"
 						{% if у.body_segments > 1 %}title="Платформа режет урок на {{ у.body_segments }} части"{% endif %}>
 						{% if у.has_body %}{{ число(у.body_chars) }}{% if у.body_segments > 1 %} · {{ у.body_segments }} сегм.{% endif %}{% else %}нет{% endif %}</span></td>
@@ -366,7 +406,7 @@
 	{% for д in course.artifacts %}
 	<section>
 		<h2>Документ «{{ д.title | e }}» <span class="muted num" style="font-weight: 400;">{{ д.artifact }} · v{{ д.version }}</span></h2>
-		<div class="blocks{% if д.layout == 'canvas' %} canvas{% endif %}">{{ блоки_документа(д.blocks, True) }}</div>
+		<div class="blocks{% if д.layout == 'canvas' %} canvas{% endif %}">{{ блоки_документа(д.blocks, True, course.notes) }}</div>
 	</section>
 	{% else %}
 	<section class="panel"><h2>Документ курса</h2><p class="muted">Схемы документа нет: ученик ничего не собирает по ходу курса.</p></section>
@@ -375,7 +415,7 @@
 	<section class="panel">
 		<h2>Сквозная директива{% if course.directive %} <span class="muted num">v{{ course.directive.version }}</span>{% endif %}</h2>
 		{% if course.directive %}
-		<details><summary>Показать поля</summary>{{ поля_директивы(course.directive_fields) }}</details>
+		<details><summary>Показать поля</summary>{{ поля_директивы(course.directive_fields, "course_directive", None, course.notes, "Сквозная директива") }}</details>
 		{% else %}<p class="gap-text">Сквозной директивы нет.</p>{% endif %}
 	</section>
 	{% endif %}
@@ -384,7 +424,7 @@
 {% else %}
 	<div>
 		<h1>Кабинет автора</h1>
-		<p class="intro">Курсы, как их собрал агент. Здесь ничего не правится: правки говорите агенту, а изменения появятся на странице курса.</p>
+		<p class="intro">Курсы, как их собрал агент. Курс правит агент; вы ставите замечания прямо на место — агент увидит их в очереди, поправит и отметит «сделано».</p>
 	</div>
 	{% if courses %}
 	<ul class="courses">
@@ -402,6 +442,7 @@
 	{% endif %}
 {% endif %}
 
+{% if course and not missing %}{% include "lms_frappe_app/templates/includes/author_notes.html" %}{% endif %}
 </div>
 </div>
 
@@ -412,10 +453,21 @@
 	// нельзя — длинный урок прыгал бы; поэтому только плашка «обновить».
 	const курс = {{ course.id | tojson }};
 	const известная = {{ course.revision | tojson }};
+	let известныеЗамечания = {{ course.notes_revision | tojson }};
 	const плашка = document.getElementById("author-notice");
 	const тихо = document.getElementById("author-quiet");
 	const адрес = "/api/method/{{ revision_method }}?course=" + encodeURIComponent(курс);
 	let таймер = setInterval(проверить, 15000);
+
+	async function метки() {
+		const ответ = await fetch(адрес, { credentials: "same-origin", headers: { Accept: "application/json" } });
+		return { ответ, данные: ответ.ok ? ((await ответ.json()).message || {}).data : null };
+	}
+	// Своё замечание или ответ меняют метку замечаний; чтобы не показывать
+	// плашку о себе, страница сверяет метку сразу после своего действия.
+	window.авторСверитьМетку = async () => {
+		try { const { данные } = await метки(); if (данные) известныеЗамечания = данные.notes_revision; } catch (e) { /* следующий опрос */ }
+	};
 
 	async function проверить() {
 		try {
@@ -428,7 +480,10 @@
 			const тело = await ответ.json();
 			const данные = тело.message && тело.message.data;
 			тихо.textContent = "";
-			if (данные && данные.revision !== известная) {
+			const текст = данные && (данные.revision !== известная ? "Агент изменил курс."
+				: данные.notes_revision !== известныеЗамечания ? "Агент ответил на замечание." : "");
+			if (текст) {
+				плашка.querySelector("[data-notice-text]").textContent = текст;
 				плашка.classList.add("shown");
 				clearInterval(таймер);
 			}
