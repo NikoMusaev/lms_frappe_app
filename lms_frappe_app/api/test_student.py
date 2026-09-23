@@ -990,6 +990,46 @@ class IntegrationTestCourseOutline(IntegrationTestCase):
 		)
 		self.assertEqual(перенос[0]["lesson"], self.первый)
 
+	def test_с_чего_продолжать_возвращается_в_перенесённых_целях(self):
+		"""Мостик строится на «с чего продолжать», а не на «что пройдено»: верный
+		конспект может разрушить педагогическую линию — вернуть объяснение,
+		которое запутало (#238, решение 2А)."""
+		перенос = self._перенос_после(
+			[{"objective": "Посчитать сроки", "status": "touched", "resume_from": "  вернуться к буферу, а не к оценке  "}]
+		)
+		self.assertEqual(перенос[0]["resume_from"], "вернуться к буферу, а не к оценке")
+
+	def test_resume_from_необязателен(self):
+		перенос = self._перенос_после([{"objective": "Посчитать сроки", "status": "skipped"}])
+		self.assertIsNone(перенос[0]["resume_from"])
+
+	def test_resume_from_это_фраза_а_не_конспект(self):
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{"doctype": "Agent Lesson Directive", "lesson": self.первый, "objectives": "Посчитать сроки"}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson(lesson=self.первый)["data"]["session"]
+
+		ответ = student.report_outcomes(
+			занятие,
+			outcomes=[{"objective": "Посчитать сроки", "status": "touched", "resume_from": "я" * 501}],
+		)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["field"], "resume_from")
+
+	def _перенос_после(self, строки: list[dict]) -> list[dict]:
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{"doctype": "Agent Lesson Directive", "lesson": self.первый, "objectives": "Посчитать сроки"}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+		первое = student.start_lesson(lesson=self.первый)["data"]["session"]
+		student.report_outcomes(первое, outcomes=строки)
+		student.complete_lesson(первое)
+		return student.start_lesson(lesson=self.второй)["data"]["student_context"]["carried_over"]
+
 	def test_глубина_переноса_читается_из_настроек(self):
 		"""С глубиной в один урок цель позапрошлого занятия уже не переносится."""
 		from lms_frappe_app.tests.sample_data import политика_по_умолчанию

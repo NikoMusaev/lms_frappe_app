@@ -1011,3 +1011,51 @@ class IntegrationTestAuthorNotes(IntegrationTestCase):
 			authoring.list_notes(course=self.курс)
 		with self.assertRaises(frappe.PermissionError):
 			authoring.reply_note(note=ид, text="Я ученик")
+
+
+class IntegrationTestLessonHookAndPromise(IntegrationTestCase):
+	"""Зачин урока и обещание курса (#238).
+
+	Адресат обоих — ученик, а директива адресована агенту; поэтому это поля
+	`Course Lesson` и `LMS Course`, а не поля директив (решение владельца 1Б).
+	"""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"curator-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Курс {суффикс}", summary="Собран агентом")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=глава, title="Урок", body="# Урок")["data"]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_у_урока_и_курса_есть_поля_зачина_и_обещания(self):
+		self.assertTrue(frappe.get_meta("Course Lesson").has_field("lesson_hook"))
+		self.assertTrue(frappe.get_meta("LMS Course").has_field("course_promise"))
+
+	def test_зачин_урока_задаётся_и_очищается(self):
+		ответ = authoring.update_lesson(lesson=self.урок, lesson_hook="Зачем тема сейчас")
+		self.assertEqual(ответ["data"]["lesson_hook"], "Зачем тема сейчас")
+		self.assertEqual(frappe.db.get_value("Course Lesson", self.урок, "lesson_hook"), "Зачем тема сейчас")
+
+		authoring.update_lesson(lesson=self.урок, title="Другое название")
+		self.assertEqual(
+			frappe.db.get_value("Course Lesson", self.урок, "lesson_hook"),
+			"Зачем тема сейчас",
+			"параметр не передан — поле не трогается",
+		)
+
+		authoring.update_lesson(lesson=self.урок, lesson_hook="")
+		self.assertFalse(frappe.db.get_value("Course Lesson", self.урок, "lesson_hook"))
+
+	def test_обещание_курса_задаётся_и_очищается(self):
+		ответ = authoring.update_course(course=self.курс, promise="Уйдёте с готовым канвасом")
+		self.assertEqual(ответ["data"]["promise"], "Уйдёте с готовым канвасом")
+		self.assertEqual(
+			frappe.db.get_value("LMS Course", self.курс, "course_promise"), "Уйдёте с готовым канвасом"
+		)
+
+		authoring.update_course(course=self.курс, promise="")
+		self.assertFalse(frappe.db.get_value("LMS Course", self.курс, "course_promise"))
