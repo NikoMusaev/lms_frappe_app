@@ -155,7 +155,15 @@ fixtures = [
 		"filters": [
 			["name", "in", ["Organization Manager", "Organization Admin", "Agent Service"]]
 		],
-	}
+	},
+	# Зачин урока и обещание курса адресованы ученику, а директивы — агенту,
+	# поэтому поля живут на самих DocType Learning, а не в директивах (#238,
+	# решение 1Б). Цена: это первые наши поля на чужих DocType, и
+	# версионируются они вместе с уроком, а не с редакцией директивы.
+	{
+		"dt": "Custom Field",
+		"filters": [["name", "in", ["Course Lesson-lesson_hook", "LMS Course-course_promise"]]],
+	},
 ]
 
 # Фоновые задачи

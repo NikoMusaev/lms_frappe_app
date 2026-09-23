@@ -139,9 +139,17 @@ def list_courses(published: bool | None = None) -> dict:
 @frappe.whitelist(methods=["POST"])
 @контракт
 def update_course(
-	course: str, title: str | None = None, summary: str | None = None, description: str | None = None
+	course: str,
+	title: str | None = None,
+	summary: str | None = None,
+	description: str | None = None,
+	promise: str | None = None,
 ) -> dict:
-	"""Правит название, краткое описание или полное описание курса."""
+	"""Правит название, описания или обещание курса.
+
+	`promise` — что человек получит к концу курса; звучит ученику на первом
+	занятии по курсу. Пустая строка очищает (#238).
+	"""
 	_автор()
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
 	документ = frappe.get_doc("LMS Course", course)
@@ -149,11 +157,17 @@ def update_course(
 		("title", title),
 		("short_introduction", summary),
 		("description", description),
+		("course_promise", promise),
 	):
 		if значение is not None:
 			документ.set(поле, значение)
 	документ.save()
-	return {"id": документ.name, "title": документ.title, "summary": документ.short_introduction}
+	return {
+		"id": документ.name,
+		"title": документ.title,
+		"summary": документ.short_introduction,
+		"promise": документ.get("course_promise") or None,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -195,8 +209,14 @@ def add_lesson(chapter: str, title: str, body: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @контракт
-def update_lesson(lesson: str, title: str | None = None, body: str | None = None) -> dict:
-	"""Правит название или материал урока."""
+def update_lesson(
+	lesson: str, title: str | None = None, body: str | None = None, lesson_hook: str | None = None
+) -> dict:
+	"""Правит название, материал или зачин урока.
+
+	`lesson_hook` — зачем эта тема ученику сейчас, две-три фразы; звучит в
+	начале непройденного урока. Пустая строка очищает (#238).
+	"""
 	_автор()
 	_должен_существовать("Course Lesson", lesson, УРОК_НЕ_НАЙДЕН)
 	документ = frappe.get_doc("Course Lesson", lesson)
@@ -204,8 +224,10 @@ def update_lesson(lesson: str, title: str | None = None, body: str | None = None
 		документ.title = title
 	if body is not None:
 		документ.body = body
+	if lesson_hook is not None:
+		документ.set("lesson_hook", lesson_hook)
 	документ.save()
-	return {"id": документ.name, "title": документ.title}
+	return {"id": документ.name, "title": документ.title, "lesson_hook": документ.get("lesson_hook") or None}
 
 
 @frappe.whitelist(methods=["POST"])
