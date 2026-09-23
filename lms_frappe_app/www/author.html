@@ -1,0 +1,412 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% macro число(n) %}{{ "{:,}".format(n or 0).replace(",", " ") }}{% endmacro %}
+
+
+{% macro поля_директивы(поля) %}
+	{% set ПОДПИСИ = {
+		"teaching_directive": "Как вести занятие",
+		"objectives": "Цели",
+		"probing_questions": "Вопросы к проекту",
+		"success_criteria": "Признаки успеха",
+		"common_misconceptions": "Частые заблуждения",
+		"student_profile": "Кто ученик",
+		"glossary": "Глоссарий",
+		"remember_about_student": "Что запоминать об ученике",
+	} %}
+	{% for п in поля %}
+	<div class="field">
+		<h4>{{ ПОДПИСИ.get(п.name, п.name) }} <code>{{ п.name }}</code></h4>
+		{% if п["items"] is not none %}
+		<ul>{% for пункт in п["items"] %}<li>{{ пункт | e }}</li>{% endfor %}</ul>
+		{% else %}
+		<div class="prose">{{ п.html }}</div>
+		{% endif %}
+	</div>
+	{% endfor %}
+{% endmacro %}
+
+{% macro блоки_документа(блоки, со_ссылкой) %}
+	{% for б in блоки %}
+	<div class="block" style="--span: {{ [б.span or 1, 4] | min }};">
+		<div class="block-head">
+			<span class="mono">{{ б.key }}</span>
+			{% if со_ссылкой %}
+				{% if б.lesson_url %}<a href="{{ б.lesson_url }}">{{ б.lesson_title | e }}</a>
+				{% else %}<span class="gap-text">урок не назначен</span>{% endif %}
+			{% endif %}
+		</div>
+		<h4>{{ б.title | e }}</h4>
+		{% if б.hint %}<details><summary>Подсказка агенту и критерии</summary><p>{{ б.hint | e }}</p></details>{% endif %}
+	</div>
+	{% endfor %}
+{% endmacro %}
+
+{% block page_content %}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+	.author-page {
+		--bg: #f2f4f6; --paper: #ffffff; --ink: #1d2530; --muted: #5c6773;
+		--line: #d5dbe1; --accent: #0f7c8a; --accent-soft: #d8eef1;
+		--gap: #c2432c; --gap-soft: #f8e1dc; --warn: #8a6a1f; --warn-soft: #f6ead0;
+		--ch1: #5b6b7d; --ch1s: #e4e9ee; --ch2: #0f7c8a; --ch2s: #d8eef1;
+		--ch3: #b7791f; --ch3s: #f6ead0; --ch4: #6f5bb5; --ch4s: #e6e0f5;
+		--ch5: #b8456c; --ch5s: #f5dde6;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root:not([data-theme="light"]) .author-page {
+			--bg: #151a20; --paper: #1e242c; --ink: #e6eaee; --muted: #98a3ae;
+			--line: #313a44; --accent: #4fb6c3; --accent-soft: #143a40;
+			--gap: #ef7a63; --gap-soft: #4a2119; --warn: #d9a24a; --warn-soft: #3f3116;
+			--ch1: #9aa8b7; --ch1s: #2a323b; --ch2: #4fb6c3; --ch2s: #143a40;
+			--ch3: #d9a24a; --ch3s: #3f3116; --ch4: #a18ee0; --ch4s: #2d2745;
+			--ch5: #e07a9c; --ch5s: #44202f;
+		}
+	}
+	:root[data-theme="dark"] .author-page {
+		--bg: #151a20; --paper: #1e242c; --ink: #e6eaee; --muted: #98a3ae;
+		--line: #313a44; --accent: #4fb6c3; --accent-soft: #143a40;
+		--gap: #ef7a63; --gap-soft: #4a2119; --warn: #d9a24a; --warn-soft: #3f3116;
+		--ch1: #9aa8b7; --ch1s: #2a323b; --ch2: #4fb6c3; --ch2s: #143a40;
+		--ch3: #d9a24a; --ch3s: #3f3116; --ch4: #a18ee0; --ch4s: #2d2745;
+		--ch5: #e07a9c; --ch5s: #44202f;
+	}
+
+	.author-page {
+		background: var(--bg); color: var(--ink);
+		font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; font-size: 15px; line-height: 1.5;
+		padding: 24px 16px 64px; margin: 0 -15px;
+		--ch: var(--accent); --chs: var(--accent-soft);
+	}
+	/* Тема сайта утяжеляет текст до 420; читать длинный материал так тяжело. */
+	.author-page p, .author-page li, .author-page td, .author-page .prose { font-weight: 400; }
+	.author-page .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 20px; }
+	/* Элемент сетки по умолчанию не уже своего содержимого: широкая таблица
+	   структуры растягивала всю страницу за экран телефона. */
+	.author-page .wrap > * { min-width: 0; }
+	.author-page h1 { overflow-wrap: anywhere; }
+	.author-page a { color: var(--accent); }
+	.author-page a:focus-visible, .author-page summary:focus-visible, .author-page button:focus-visible {
+		outline: 2px solid var(--accent); outline-offset: 2px;
+	}
+	.author-page h1 { font-size: 26px; font-weight: 600; margin: 4px 0 6px; letter-spacing: -0.01em; color: var(--ink); }
+	.author-page h2 { font-size: 17px; font-weight: 600; margin: 0 0 12px; color: var(--ink); }
+	.author-page h4 { font-size: 14px; font-weight: 600; margin: 0 0 6px; color: var(--ink); }
+	.author-page .mono, .author-page code, .author-page .num {
+		font-family: "IBM Plex Mono", Consolas, monospace; font-variant-numeric: tabular-nums;
+	}
+	.author-page code { font-size: 12px; color: var(--muted); background: none; padding: 0; }
+	.author-page .muted { color: var(--muted); }
+	.author-page .crumbs { font-size: 13px; color: var(--muted); }
+	.author-page .crumbs a { color: var(--muted); }
+	/* Не `.lead`: так называется класс Bootstrap сайта, и он раздувал шрифт. */
+	.author-page .intro { color: var(--muted); max-width: 68ch; margin: 0; font-size: 15px; }
+	.author-page .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+
+	.author-page .status { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--ch1s); color: var(--ch1); }
+	.author-page .status.live { background: var(--accent-soft); color: var(--accent); }
+
+	.author-page .notice {
+		position: sticky; top: 8px; z-index: 5; display: none; align-items: center; gap: 12px;
+		background: var(--accent); color: var(--paper); border-radius: 10px; padding: 10px 14px;
+	}
+	.author-page .notice.shown { display: flex; }
+	.author-page .notice button { font: inherit; background: var(--paper); color: var(--accent); border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+	.author-page .quiet { font-size: 13px; color: var(--muted); min-height: 1em; }
+
+	.author-page .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+	.author-page .chip {
+		display: inline-flex; align-items: center; gap: 8px; background: var(--paper);
+		border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px 6px 8px; font-size: 14px;
+	}
+	.author-page .chip .n {
+		min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center;
+		font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500; background: var(--accent-soft); color: var(--accent);
+	}
+	.author-page .chip.short .n { background: var(--gap-soft); color: var(--gap); }
+
+	.author-page .issues { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+	.author-page .issues li { padding: 8px 12px; border-radius: 8px; border-left: 3px solid; }
+	.author-page .issues .blocking { background: var(--gap-soft); border-color: var(--gap); }
+	.author-page .issues .warning { background: var(--warn-soft); border-color: var(--warn); }
+	.author-page .issues code { margin-left: 6px; }
+
+	/* Структура: карта наполненности. Плитка урока окрашена цветом главы,
+	   пустое место — пунктиром: что недособрано, видно без чтения. */
+	.author-page .structure { width: 100%; border-collapse: separate; border-spacing: 0 4px; }
+	.author-page .structure th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 0 10px 4px; }
+	.author-page .structure .chapter td {
+		padding: 14px 10px 4px; font-weight: 600; color: var(--ch); border-bottom: 2px solid var(--ch);
+	}
+	.author-page .structure .lesson td { background: var(--paper); padding: 8px 10px; vertical-align: top; }
+	.author-page .structure .lesson td:first-child { border-radius: 8px 0 0 8px; border-left: 4px solid var(--ch); }
+	.author-page .structure .lesson td:last-child { border-radius: 0 8px 8px 0; }
+	.author-page .structure .lesson:hover td { background: var(--chs); }
+	.author-page .structure .title a { color: var(--ink); font-weight: 500; text-decoration: none; }
+	.author-page .structure .title a:hover { text-decoration: underline; }
+	.author-page .tile { display: inline-block; font-size: 13px; padding: 2px 8px; border-radius: 6px; background: var(--chs); color: var(--ink); white-space: nowrap; }
+	.author-page .tile.empty { background: none; border: 1px dashed var(--gap); color: var(--gap); }
+	.author-page .tile.split { box-shadow: inset 0 -2px 0 var(--warn); }
+	.author-page .ch1 { --ch: var(--ch1); --chs: var(--ch1s); } .author-page .ch2 { --ch: var(--ch2); --chs: var(--ch2s); }
+	.author-page .ch3 { --ch: var(--ch3); --chs: var(--ch3s); } .author-page .ch4 { --ch: var(--ch4); --chs: var(--ch4s); }
+	.author-page .ch5 { --ch: var(--ch5); --chs: var(--ch5s); }
+	.author-page .scroll { overflow-x: auto; }
+
+	.author-page details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+	.author-page .field { margin-top: 14px; }
+	.author-page .field ul { margin: 0; padding-left: 20px; }
+	.author-page .prose { max-width: 72ch; }
+	.author-page .prose table { border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+	.author-page .prose th, .author-page .prose td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
+	.author-page .prose h2, .author-page .prose h3 { font-size: 17px; margin: 22px 0 8px; }
+
+	.author-page .blocks { display: grid; gap: 10px; }
+	.author-page .blocks.canvas { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+	.author-page .blocks.canvas .block { grid-column: span var(--span); }
+	.author-page .block { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+	.author-page .block-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+	.author-page .gap-text { color: var(--gap); }
+
+	.author-page .courses { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+	.author-page .courses a { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; color: var(--ink); text-decoration: none; }
+	.author-page .courses a:hover { border-color: var(--accent); }
+
+	.author-page .pager { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+	.author-page .facts { display: flex; flex-wrap: wrap; gap: 6px; }
+	.author-page .segment + .segment { border-top: 1px dashed var(--line); margin-top: 18px; padding-top: 6px; }
+	.author-page .segment-mark { font-size: 12px; color: var(--warn); margin-bottom: 8px; }
+	.author-page .question { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-top: 10px; }
+	.author-page .question.broken { border-color: var(--gap); background: var(--gap-soft); }
+	.author-page .question ol { margin: 8px 0 0; padding-left: 22px; }
+	.author-page .question li { margin: 4px 0; }
+	.author-page .question .correct { color: var(--accent); font-weight: 500; }
+	.author-page .question .why { color: var(--muted); font-size: 14px; }
+
+	@media (max-width: 720px) {
+		.author-page .blocks.canvas { grid-template-columns: 1fr; }
+		.author-page .blocks.canvas .block { grid-column: auto; }
+		.author-page h1 { font-size: 22px; }
+	}
+</style>
+
+<div class="author-page">
+<div class="wrap">
+
+{% if is_guest %}
+	<div class="panel">
+		<h1>Кабинет автора</h1>
+		<p class="intro">Здесь видно, как агент собрал курс. <a href="{{ login_url }}">Войдите</a>, чтобы открыть его.</p>
+	</div>
+
+{% elif not allowed %}
+	<div class="panel">
+		<h1>Кабинет автора</h1>
+		<p class="intro">Кабинет открыт авторам курсов. Если вы собираете курс, попросите администратора дать вам роль Course Creator.</p>
+	</div>
+
+{% elif missing %}
+	<div class="panel">
+		<h1>Такого нет</h1>
+		<p class="intro">Курса с таким адресом нет, или урок уже не в этом курсе: агент мог его перенести или удалить.
+		{% if course %}<a href="{{ course.url }}">Открыть курс</a>{% else %}<a href="{{ page_url }}">Все курсы</a>{% endif %}</p>
+	</div>
+
+{% elif lesson %}
+	{% set f = lesson.facts %}
+	<div class="crumbs"><a href="{{ page_url }}">Все курсы</a> / <a href="{{ course.url }}">{{ course.title | e }}</a> / {{ lesson.chapter_title | e }}</div>
+	<div class="notice" id="author-notice" role="status"><span>Агент изменил курс.</span><button type="button" onclick="location.reload()">Обновить</button></div>
+	<div>
+		<h1><span class="num muted">{{ lesson.number }}.</span> {{ lesson.title | e }}</h1>
+		<div class="facts">
+			<span class="tile{% if not f.has_body %} empty{% elif f.body_segments > 1 %} split{% endif %}">
+				{% if f.has_body %}{{ число(f.body_chars) }} зн., {{ f.body_segments }} {{ "сегмент" if f.body_segments == 1 else "сегмента" if f.body_segments < 5 else "сегментов" }}{% else %}нет материала{% endif %}</span>
+			<span class="tile{% if not f.has_directive %} empty{% endif %}">
+				{% if f.has_directive %}директива v{{ f.directive_version }}, целей {{ f.objectives }}{% else %}нет директивы{% endif %}</span>
+			<span class="tile{% if not f.quiz %} empty{% endif %}">
+				{% if f.quiz %}квиз: {{ f.quiz.questions | length }} вопр., порог {{ f.quiz.passing_percentage }}{% else %}нет квиза{% endif %}</span>
+		</div>
+	</div>
+	<div class="pager">
+		<span>{% if lesson.prev %}<a href="{{ lesson.prev.url }}">← {{ lesson.prev.number }}. {{ lesson.prev.title | e }}</a>{% endif %}</span>
+		<span>{% if lesson.next %}<a href="{{ lesson.next.url }}">{{ lesson.next.number }}. {{ lesson.next.title | e }} →</a>{% endif %}</span>
+	</div>
+
+	<section class="panel">
+		<h2>Материал</h2>
+		{% if lesson.segments_html %}
+			{% for сегмент in lesson.segments_html %}
+			<div class="segment">
+				{% if lesson.segments_html | length > 1 %}<div class="segment-mark mono">сегмент {{ loop.index }} из {{ lesson.segments_html | length }} — агент получает его отдельным запросом</div>{% endif %}
+				<div class="prose">{{ сегмент }}</div>
+			</div>
+			{% endfor %}
+		{% else %}
+			<p class="gap-text">Материала нет — урок не пройдёт проверку готовности.</p>
+		{% endif %}
+	</section>
+
+	<section class="panel">
+		<h2>Директива{% if lesson.directive %} <span class="muted num">v{{ lesson.directive.version }} от {{ frappe.utils.format_datetime(lesson.directive.created_at, "dd.MM.yyyy HH:mm") }}</span>{% endif %}</h2>
+		{% if lesson.directive %}{{ поля_директивы(lesson.directive.fields) }}
+		{% else %}<p class="gap-text">Директивы нет — агент ученика поведёт урок только по материалу.</p>{% endif %}
+	</section>
+
+	<section class="panel">
+		<h2>Квиз{% if lesson.quiz %} <span class="muted num">порог {{ lesson.quiz.passing_percentage }}</span>{% endif %}</h2>
+		{% if lesson.quiz %}
+			{% for в in lesson.quiz.questions %}
+			<div class="question{% if в.broken %} broken{% endif %}">
+				<div><span class="num muted">{{ loop.index }}.</span> {{ (в.text or "Вопрос без текста") | e }}</div>
+				{% if в.options %}
+				<ol type="a">
+					{% for о in в.options %}
+					<li{% if о.correct %} class="correct"{% endif %}>{% if о.correct %}✓ {% endif %}{{ о.text | e }}
+						{% if о.explanation %}<div class="why">{{ о.explanation | e }}</div>{% endif %}</li>
+					{% endfor %}
+				</ol>
+				{% endif %}
+				{% if в.answers %}<p class="why">Верные ответы: {{ в.answers | join("; ") | e }}</p>{% endif %}
+			</div>
+			{% endfor %}
+		{% else %}<p class="muted">Квиза нет.</p>{% endif %}
+	</section>
+
+	<section>
+		<h2>Блоки документа</h2>
+		{% if lesson.blocks %}<div class="blocks">{{ блоки_документа(lesson.blocks, False) }}</div>
+		{% else %}<p class="muted">Урок не собирает ни одного блока документа.</p>{% endif %}
+	</section>
+	<div class="quiet" id="author-quiet"></div>
+
+{% elif course %}
+	<div class="crumbs"><a href="{{ page_url }}">Все курсы</a></div>
+	<div class="notice" id="author-notice" role="status"><span>Агент изменил курс.</span><button type="button" onclick="location.reload()">Обновить</button></div>
+	<div>
+		<h1>{{ course.title | e }}</h1>
+		<p class="intro">{{ (course.summary or "") | e }}</p>
+		<p class="muted" style="margin: 6px 0 0; font-size: 13px;">
+			<span class="status{% if course.published %} live{% endif %}">{{ "опубликован" if course.published else "черновик" }}</span>
+			изменён {{ frappe.utils.pretty_date(course.revision) }}
+		</p>
+	</div>
+
+	<div class="chips">
+		{% set c = course.counts %}
+		<span class="chip{% if c.with_body < c.lessons %} short{% endif %}"><span class="n">{{ c.with_body }}/{{ c.lessons }}</span>с материалом</span>
+		<span class="chip{% if c.with_directive < c.lessons %} short{% endif %}"><span class="n">{{ c.with_directive }}/{{ c.lessons }}</span>с директивой</span>
+		<span class="chip{% if c.with_quiz < c.lessons %} short{% endif %}"><span class="n">{{ c.with_quiz }}/{{ c.lessons }}</span>с квизом</span>
+	</div>
+
+	<section class="panel">
+		<h2>Готовность к публикации</h2>
+		{% set r = course.readiness %}
+		{% if not r.blocking and not r.warnings %}<p class="muted">Платформа не видит ни помех, ни предупреждений.</p>{% endif %}
+		<ul class="issues">
+			{% for п in r.blocking %}<li class="blocking">{{ п.message | e }}{% if п.url %} — <a href="{{ п.url }}">{{ п.lesson_title | e }}</a>{% endif %}<code>{{ п.code }}</code></li>{% endfor %}
+			{% for п in r.warnings %}<li class="warning">{{ п.message | e }}{% if п.url %} — <a href="{{ п.url }}">{{ п.lesson_title | e }}</a>{% endif %}<code>{{ п.code }}</code></li>{% endfor %}
+		</ul>
+	</section>
+
+	<section>
+		<h2>Структура</h2>
+		<div class="scroll">
+		<table class="structure">
+			<thead><tr><th>Урок</th><th>Материал</th><th>Директива</th><th>Квиз</th><th>Блоки документа</th></tr></thead>
+			<tbody>
+			{% for г in course.chapters %}
+				<tr class="chapter ch{{ г.color }}"><td colspan="5">{{ г.title | e }}</td></tr>
+				{% for у in г.lessons %}
+				<tr class="lesson ch{{ г.color }}">
+					<td class="title"><span class="num muted">{{ у.number }}.</span> <a href="{{ у.url }}">{{ у.title | e }}</a></td>
+					<td><span class="tile num{% if not у.has_body %} empty{% elif у.body_segments > 1 %} split{% endif %}"
+						{% if у.body_segments > 1 %}title="Платформа режет урок на {{ у.body_segments }} части"{% endif %}>
+						{% if у.has_body %}{{ число(у.body_chars) }}{% if у.body_segments > 1 %} · {{ у.body_segments }} сегм.{% endif %}{% else %}нет{% endif %}</span></td>
+					<td><span class="tile num{% if not у.has_directive %} empty{% endif %}">{% if у.has_directive %}v{{ у.directive_version }} · {{ у.objectives }} цел.{% else %}нет{% endif %}</span></td>
+					<td><span class="tile num{% if not у.quiz %} empty{% endif %}">{% if у.quiz %}{{ у.quiz.questions | length }} вопр. · {{ у.quiz.passing_percentage }}{% else %}нет{% endif %}</span></td>
+					<td class="mono" style="font-size: 13px;">{{ у.blocks | join(", ") if у.blocks else "—" }}</td>
+				</tr>
+				{% endfor %}
+			{% endfor %}
+			</tbody>
+		</table>
+		</div>
+	</section>
+
+	{% for д in course.artifacts %}
+	<section>
+		<h2>Документ «{{ д.title | e }}» <span class="muted num" style="font-weight: 400;">{{ д.artifact }} · v{{ д.version }}</span></h2>
+		<div class="blocks{% if д.layout == 'canvas' %} canvas{% endif %}">{{ блоки_документа(д.blocks, True) }}</div>
+	</section>
+	{% else %}
+	<section class="panel"><h2>Документ курса</h2><p class="muted">Схемы документа нет: ученик ничего не собирает по ходу курса.</p></section>
+	{% endfor %}
+
+	<section class="panel">
+		<h2>Сквозная директива{% if course.directive %} <span class="muted num">v{{ course.directive.version }}</span>{% endif %}</h2>
+		{% if course.directive %}
+		<details><summary>Показать поля</summary>{{ поля_директивы(course.directive_fields) }}</details>
+		{% else %}<p class="gap-text">Сквозной директивы нет.</p>{% endif %}
+	</section>
+	<div class="quiet" id="author-quiet"></div>
+
+{% else %}
+	<div>
+		<h1>Кабинет автора</h1>
+		<p class="intro">Курсы, как их собрал агент. Здесь ничего не правится: правки говорите агенту, а изменения появятся на странице курса.</p>
+	</div>
+	{% if courses %}
+	<ul class="courses">
+		{% for к in courses %}
+		<li><a href="{{ page_url }}?course={{ к.id | urlencode }}">
+			<strong>{{ к.title | e }}</strong>
+			<span class="status{% if к.published %} live{% endif %}">{{ "опубликован" if к.published else "черновик" }}</span>
+			<span class="muted" style="font-size: 14px;">{{ (к.summary or "") | e }}</span>
+			<span class="muted num" style="font-size: 13px;">уроков {{ к.lessons_total }}</span>
+		</a></li>
+		{% endfor %}
+	</ul>
+	{% else %}
+	<p class="intro">Курсов пока нет. Попросите агента создать курс — он появится здесь.</p>
+	{% endif %}
+{% endif %}
+
+</div>
+</div>
+
+{% if course and not missing %}
+<script>
+(function () {
+	// Агент правит курс, пока человек читает. Перерисовывать под читателем
+	// нельзя — длинный урок прыгал бы; поэтому только плашка «обновить».
+	const курс = {{ course.id | tojson }};
+	const известная = {{ course.revision | tojson }};
+	const плашка = document.getElementById("author-notice");
+	const тихо = document.getElementById("author-quiet");
+	const адрес = "/api/method/{{ revision_method }}?course=" + encodeURIComponent(курс);
+	let таймер = setInterval(проверить, 15000);
+
+	async function проверить() {
+		try {
+			const ответ = await fetch(адрес, { credentials: "same-origin", headers: { Accept: "application/json" } });
+			if (ответ.status === 401 || ответ.status === 403) {
+				тихо.innerHTML = 'Сессия закончилась — <a href="/login?redirect-to=' + encodeURIComponent(location.pathname + location.search) + '">войдите</a>, чтобы видеть изменения.';
+				clearInterval(таймер);
+				return;
+			}
+			const тело = await ответ.json();
+			const данные = тело.message && тело.message.data;
+			тихо.textContent = "";
+			if (данные && данные.revision !== известная) {
+				плашка.classList.add("shown");
+				clearInterval(таймер);
+			}
+		} catch (e) {
+			тихо.textContent = "Не удалось проверить обновления.";
+		}
+	}
+})();
+</script>
+{% endif %}
+{% endblock %}
