@@ -94,6 +94,30 @@
 		--ch5: #e07a9c; --ch5s: #44202f;
 	}
 
+	/* Шапка, фон и подвал сайта — в тон кабинету: в тёмной теме тёмный блок
+	   стоял между белой шапкой и белыми полями. Стили подключены только на
+	   страницах кабинета; в светлой теме меняется лишь фон страницы. */
+	body { background: #f2f4f6; }
+	/* Значок меню на телефоне: у `.icon` в теме сайта нет обводки, и кнопка
+	   выходила пустой рамкой — на всех страницах Frappe, не только здесь. */
+	.navbar .navbar-toggler .icon { stroke: currentColor; fill: none; stroke-width: 1.5; }
+	@media (prefers-color-scheme: dark) {
+		:root:not([data-theme="light"]) body { background: #151a20; }
+		:root:not([data-theme="light"]) :is(.navbar, .web-footer) { background: #151a20; color: #98a3ae; border-color: #313a44; }
+		:root:not([data-theme="light"]) :is(.navbar-brand, .nav-link, .dropdown-item) { color: #e6eaee; }
+		:root:not([data-theme="light"]) .web-footer a { color: #98a3ae; }
+		:root:not([data-theme="light"]) .navbar .dropdown-menu { background: #1e242c; border-color: #313a44; }
+		:root:not([data-theme="light"]) .navbar .dropdown-item:is(:hover, :focus) { background: #2a323b; }
+		:root:not([data-theme="light"]) .navbar .navbar-toggler { color: #e6eaee; border-color: #313a44; }
+	}
+	:root[data-theme="dark"] body { background: #151a20; }
+	:root[data-theme="dark"] :is(.navbar, .web-footer) { background: #151a20; color: #98a3ae; border-color: #313a44; }
+	:root[data-theme="dark"] :is(.navbar-brand, .nav-link, .dropdown-item) { color: #e6eaee; }
+	:root[data-theme="dark"] .web-footer a { color: #98a3ae; }
+	:root[data-theme="dark"] .navbar .dropdown-menu { background: #1e242c; border-color: #313a44; }
+	:root[data-theme="dark"] .navbar .dropdown-item:is(:hover, :focus) { background: #2a323b; }
+	:root[data-theme="dark"] .navbar .navbar-toggler { color: #e6eaee; border-color: #313a44; }
+
 	.author-page {
 		background: var(--bg); color: var(--ink);
 		font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; font-size: 15px; line-height: 1.5;
@@ -204,6 +228,7 @@
 	.author-page .ch3 { --ch: var(--ch3); --chs: var(--ch3s); } .author-page .ch4 { --ch: var(--ch4); --chs: var(--ch4s); }
 	.author-page .ch5 { --ch: var(--ch5); --chs: var(--ch5s); }
 	.author-page .scroll { overflow-x: auto; }
+	.author-page .structure .blocks-cell { font-size: 13px; }
 
 	.author-page details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
 	.author-page .field { margin-top: 14px; }
@@ -237,7 +262,21 @@
 	}
 	.author-page .lesson-bar .notice { position: static; }
 	.author-page .lesson-nav { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-	.author-page .lesson-nav::-webkit-scrollbar { display: none; }
+	.author-page [data-scroll-row]::-webkit-scrollbar { display: none; }
+	/* Строка шире экрана гаснет к краю, за которым ещё есть что листать:
+	   иначе не видно, что она прокручивается. Классы ставит скрипт. */
+	.author-page [data-scroll-row].more-right {
+		-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+		mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+	}
+	.author-page [data-scroll-row].more-left {
+		-webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent);
+		mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent);
+	}
+	.author-page [data-scroll-row].more-left.more-right {
+		-webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+		mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+	}
 	.author-page .lesson-nav a {
 		flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
 		font-size: 14px; color: var(--ink); text-decoration: none; background: var(--paper); border: 1px solid var(--line);
@@ -293,6 +332,26 @@
 		   вкладки и таблицу на полэкрана вниз. */
 		.author-page .course-summary:not(.open) { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 		.author-page #course-summary-more:not([hidden]) { display: inline; }
+
+		.author-page .chips[data-scroll-row] { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+		.author-page .chips[data-scroll-row] > * { flex: none; white-space: nowrap; }
+
+		/* Таблица структуры на телефоне — урок карточкой: название, под ним
+		   плитки с подписями; пять колонок в 390 px не помещались. */
+		.author-page .structure, .author-page .structure tbody, .author-page .structure tr.chapter,
+		.author-page .structure tr.chapter td { display: block; }
+		.author-page .structure thead { display: none; }
+		.author-page .structure tr.lesson {
+			display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 4px 0; padding: 8px 10px;
+			background: var(--paper); border-left: 4px solid var(--ch); border-radius: 8px;
+		}
+		.author-page .structure tr.lesson td,
+		.author-page .structure .lesson td:first-child, .author-page .structure .lesson td:last-child,
+		.author-page .structure .lesson:hover td {
+			display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0; border-radius: 0;
+		}
+		.author-page .structure tr.lesson td.title { display: block; flex: 1 0 100%; }
+		.author-page .structure tr.lesson td[data-label]::before { content: attr(data-label); font-size: 12px; color: var(--muted); }
 		.author-page h1 { font-size: 22px; }
 	}
 </style>
@@ -346,7 +405,7 @@
 	#}
 	<div class="lesson-bar" id="lesson-bar">
 		<div class="notice" id="author-notice" role="status"><span data-notice-text>Агент изменил курс.</span><button type="button" onclick="location.reload()">Обновить</button></div>
-		<nav class="lesson-nav" aria-label="Разделы урока">
+		<nav class="lesson-nav" aria-label="Разделы урока" data-scroll-row>
 			{% if lesson.map_issues %}<a href="#map-issues">Карта <span class="n gap">{{ lesson.map_issues | length }}</span></a>{% endif %}
 			<a href="#section-material">Материал</a>
 			<a href="#section-directive">Директива</a>
@@ -490,17 +549,19 @@
 	</details>
 	{% endif %}
 	{% else %}
-	<div class="chips">
+	{# Сначала то, что ждёт действия, потом наполненность: на телефоне сводка
+	   идёт одной строкой, и начало строки видно без прокрутки. #}
+	<div class="chips" data-scroll-row>
 		{% set c = course.counts %}
-		<span class="chip{% if c.with_body < c.lessons %} short{% endif %}"><span class="n">{{ c.with_body }}/{{ c.lessons }}</span>с материалом</span>
-		<span class="chip{% if c.with_directive < c.lessons %} short{% endif %}"><span class="n">{{ c.with_directive }}/{{ c.lessons }}</span>с директивой</span>
-		<span class="chip{% if c.with_quiz < c.lessons %} short{% endif %}"><span class="n">{{ c.with_quiz }}/{{ c.lessons }}</span>с квизом</span>
+		<a class="chip link{% if course.notes_attention %} short{% endif %}" href="{{ course.url }}&view=notes"><span class="n">{{ course.notes_attention }}</span>замечаний ждут вас</a>
 		{% if course.map_discrepancies is none %}
 		<a class="chip link" href="{{ course.url }}&view=map">карты нет</a>
 		{% else %}
 		<a class="chip link{% if course.map_discrepancies %} short{% endif %}" href="{{ course.url }}&view=map"><span class="n">{{ course.map_discrepancies }}</span>расхождений с картой</a>
 		{% endif %}
-		<a class="chip link{% if course.notes_attention %} short{% endif %}" href="{{ course.url }}&view=notes"><span class="n">{{ course.notes_attention }}</span>замечаний ждут вас</a>
+		<span class="chip{% if c.with_body < c.lessons %} short{% endif %}"><span class="n">{{ c.with_body }}/{{ c.lessons }}</span>с материалом</span>
+		<span class="chip{% if c.with_directive < c.lessons %} short{% endif %}"><span class="n">{{ c.with_directive }}/{{ c.lessons }}</span>с директивой</span>
+		<span class="chip{% if c.with_quiz < c.lessons %} short{% endif %}"><span class="n">{{ c.with_quiz }}/{{ c.lessons }}</span>с квизом</span>
 	</div>
 	{{ место("course", None, "Курс", course.notes.get("course", []), "note-course", "Замечание к курсу") }}
 
@@ -527,12 +588,12 @@
 					<td class="title"><span class="num muted">{{ у.number }}.</span> <a href="{{ у.url }}">{{ у.title | e }}</a>
 						{% if у.open_notes %}<a class="note-count" href="{{ у.url }}#section-notes" title="Открытых замечаний к уроку">✎ {{ у.open_notes }}</a>{% endif %}
 						{% if у.map_issues %}<a class="map-count" href="{{ у.url }}#map-issues" title="Расхождений с картой">карта {{ у.map_issues }}</a>{% endif %}</td>
-					<td><span class="tile num{% if not у.has_body %} empty{% elif у.body_segments > 1 %} split{% endif %}"
+					<td data-label="Материал"><span class="tile num{% if not у.has_body %} empty{% elif у.body_segments > 1 %} split{% endif %}"
 						{% if у.body_segments > 1 %}title="Платформа режет урок на {{ у.body_segments }} части"{% endif %}>
 						{% if у.has_body %}{{ число(у.body_chars) }}{% if у.body_segments > 1 %} · {{ у.body_segments }} сегм.{% endif %}{% else %}нет{% endif %}</span></td>
-					<td><span class="tile num{% if not у.has_directive %} empty{% endif %}">{% if у.has_directive %}v{{ у.directive_version }} · {{ у.objectives }} цел.{% else %}нет{% endif %}</span></td>
-					<td><span class="tile num{% if not у.quiz %} empty{% endif %}">{% if у.quiz %}{{ у.quiz.questions | length }} вопр. · {{ у.quiz.passing_percentage }}{% else %}нет{% endif %}</span></td>
-					<td class="mono" style="font-size: 13px;">{{ у.blocks | join(", ") if у.blocks else "—" }}</td>
+					<td data-label="Директива"><span class="tile num{% if not у.has_directive %} empty{% endif %}">{% if у.has_directive %}v{{ у.directive_version }} · {{ у.objectives }} цел.{% else %}нет{% endif %}</span></td>
+					<td data-label="Квиз"><span class="tile num{% if not у.quiz %} empty{% endif %}">{% if у.quiz %}{{ у.quiz.questions | length }} вопр. · {{ у.quiz.passing_percentage }}{% else %}нет{% endif %}</span></td>
+					<td class="mono blocks-cell" data-label="Блоки">{{ у.blocks | join(", ") if у.blocks else "—" }}</td>
 				</tr>
 				{% endfor %}
 			{% endfor %}
@@ -659,6 +720,17 @@
 			целиком.textContent = открыто ? "Свернуть" : "Описание целиком";
 		});
 	}
+
+	// Строка с прокруткой вбок гаснет к тому краю, за которым ещё что-то есть.
+	document.querySelectorAll("[data-scroll-row]").forEach(ряд => {
+		const отметить = () => {
+			ряд.classList.toggle("more-left", ряд.scrollLeft > 2);
+			ряд.classList.toggle("more-right", ряд.scrollLeft + ряд.clientWidth < ряд.scrollWidth - 2);
+		};
+		отметить();
+		ряд.addEventListener("scroll", отметить, { passive: true });
+		addEventListener("resize", отметить);
+	});
 
 	const панель = document.getElementById("lesson-bar");
 	if (!панель) return;

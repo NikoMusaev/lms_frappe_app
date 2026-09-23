@@ -27,12 +27,15 @@
 		border-radius: 8px; padding: 5px 8px; min-width: 0; max-width: min(460px, 100%); text-overflow: ellipsis;
 	}
 	.author-page .map-select select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+	@media (max-width: 720px) {
+		/* На телефоне оба списка — во всю ширину, один под другим. */
+		.author-page .map-select { flex: 1 1 100%; }
+		.author-page .map-select .eyebrow { min-width: 84px; }
+		.author-page .map-select select { flex: 1; max-width: none; }
+	}
 	.author-page .map-row .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); margin-right: 4px; }
 	.author-page button.chip { cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); line-height: 1.2; }
 	.author-page button.chip:hover, .author-page button.chip:focus-visible { border-color: var(--accent); outline: none; }
-	.author-page button.chip.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-	.author-page .chip.gap .n { background: var(--gap-soft); color: var(--gap); }
-	.author-page .chip.neutral .n { background: var(--ch1s); color: var(--muted); }
 	.author-page .chip.reset { border-style: dashed; color: var(--muted); }
 	.author-page button.chip:disabled { cursor: default; opacity: .6; }
 
@@ -153,8 +156,8 @@
 			<button type="button" data-layout="tree" aria-pressed="false">Дерево</button>
 		</div>
 		<label class="map-select" id="map-focus-label" hidden><span class="eyebrow">Фокус</span><select id="map-focus-select"></select></label>
+		<label class="map-select"><span class="eyebrow">Подсветить</span><select id="map-mark-select"></select></label>
 	</div>
-	<div class="map-row" id="map-checks"></div>
 	<div class="map-stage">
 	<div class="map-board" id="map-board" aria-describedby="map-legend"></div>
 	<div class="map-tree" id="map-tree" hidden></div>
@@ -362,7 +365,7 @@
 		let nodeEls = new Map(), edgeEls = [], treeRows = [];
 		// Граф на телефоне читается только прокруткой вбок — там по умолчанию дерево.
 		let view = matchMedia('(max-width: 720px)').matches ? 'tree' : 'graph';
-		let focusId = 'all', active = null, chosen = null;
+		let focusId = 'all', chosen = null;
 
 		function nodeClass(n) {
 			let cls = `node ${n.kind}`;
@@ -621,9 +624,9 @@
 
 		const issuesCard = (title, list) => `<div class="kind">Расхождения</div><p><b>${esc(title)}</b></p><ul>${list.map(issueHtml).join('')}</ul>`;
 
-		// ---------- вид, фокус и проверки ----------
-		const checksEl = document.getElementById('map-checks');
+		// ---------- вид, фокус и подсветка ----------
 		const focusSelect = document.getElementById('map-focus-select');
+		const markSelect = document.getElementById('map-mark-select');
 		const all = new Set(nodes.keys());
 
 		function draw() {
@@ -646,8 +649,10 @@
 		}
 		segButtons.forEach(b => b.addEventListener('click', () => { if (b.dataset.layout !== view) setView(b.dataset.layout); }));
 
-		function activeChip(id) { active = id; checksEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.id === id)); }
-		const button = (cls, html, title) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerHTML = html; if (title) b.title = title; return b; };
+		function activeChip(id) { markSelect.value = id || ''; }
+		const option = (parent, value, text, disabled) => {
+			const o = document.createElement('option'); o.value = value; o.textContent = text; o.disabled = !!disabled; parent.appendChild(o);
+		};
 
 		// Фокус — одним списком: ряд чипов с десятком длинных названий занимал
 		// на телефоне полэкрана.
@@ -659,27 +664,34 @@
 			focusSelect.addEventListener('change', () => setFocus(focusSelect.value));
 		}
 
-		const checksLabel = document.createElement('span'); checksLabel.className = 'eyebrow'; checksLabel.textContent = 'Расхождения'; checksEl.appendChild(checksLabel);
-		const toggle = (id, set, html) => {
-			if (active === id) { clear(); return; }
-			if (focusId !== 'all') setFocus('all');
-			mark(set, html, id);
-		};
+		// Подсветка — тоже списком: ряд чипов групп и меток на телефоне
+		// занимал 207 px над картой. Сбросить — «Ничего» или «Закрыть» в карточке.
+		const marks = new Map();
+		option(markSelect, '', 'Ничего');
+		const groupsEl = document.createElement('optgroup'); groupsEl.label = 'Расхождения';
 		Object.keys(GROUPS).forEach(g => {
 			const list = data.discrepancies.filter(d => d.group === g);
-			const b = button(`chip ${list.length ? 'gap' : 'neutral'}`, `<span class="n">${list.length}</span>${GROUPS[g]}`);
-			b.dataset.id = g; b.disabled = !list.length;
-			b.addEventListener('click', () => toggle(g, new Set(list.flatMap(d => d.targets)), issuesCard(GROUPS[g], list)));
-			checksEl.appendChild(b);
+			option(groupsEl, g, `${GROUPS[g]} — ${list.length}`, !list.length);
+			marks.set(g, () => [new Set(list.flatMap(d => d.targets)), issuesCard(GROUPS[g], list)]);
 		});
-		Object.entries(data.tags).forEach(([tag, ids]) => {
-			const b = button('chip neutral', `<span class="n">${ids.length}</span>${esc(tag)}`, 'Узлы с меткой');
-			b.dataset.id = 'tag:' + tag;
-			b.addEventListener('click', () => toggle(b.dataset.id, new Set(ids.map(i => 'n:' + i)),
-				`<div class="kind">Метка</div><p><b>${esc(tag)}</b></p><ol>${ids.map(i => `<li>${esc(nodes.get('n:' + i).text)}</li>`).join('')}</ol>`));
-			checksEl.appendChild(b);
+		markSelect.appendChild(groupsEl);
+		const tags = Object.entries(data.tags);
+		if (tags.length) {
+			const tagsEl = document.createElement('optgroup'); tagsEl.label = 'Метки узлов';
+			tags.forEach(([tag, ids]) => {
+				option(tagsEl, 'tag:' + tag, `${tag} — ${ids.length}`);
+				marks.set('tag:' + tag, () => [new Set(ids.map(i => 'n:' + i)),
+					`<div class="kind">Метка</div><p><b>${esc(tag)}</b></p><ol>${ids.map(i => `<li>${esc(nodes.get('n:' + i).text)}</li>`).join('')}</ol>`]);
+			});
+			markSelect.appendChild(tagsEl);
+		}
+		markSelect.addEventListener('change', () => {
+			const value = markSelect.value;
+			if (!value) { clear(); return; }
+			if (focusId !== 'all') setFocus('all');
+			const [set, html] = marks.get(value)();
+			mark(set, html, value);
 		});
-		const reset = button('chip reset', 'Сбросить выделение'); reset.addEventListener('click', clear); checksEl.appendChild(reset);
 
 		document.querySelectorAll('.issue-item').forEach(el => el.addEventListener('click', () => {
 			const d = data.discrepancies[Number(el.dataset.index)];
