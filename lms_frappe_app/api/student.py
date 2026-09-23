@@ -9,6 +9,7 @@
 """
 
 import json
+from datetime import timedelta
 
 import frappe
 from frappe.utils import now_datetime
@@ -281,6 +282,8 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 
 	политика = политика_квиза_для_курса(ученик, курс, назначения)
 	сведения = доступные[курс]
+	перенос = _незакрытые_цели(ученик, курс, кроме=lesson)
+	сегмент = min(segment, материал.total_segments or 1)
 
 	return {
 		"session": занятие.name,
@@ -292,7 +295,7 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 		},
 		"content": {
 			"markdown": материал.сегмент(segment),
-			"segment_index": min(segment, материал.total_segments or 1),
+			"segment_index": сегмент,
 			"total_segments": материал.total_segments,
 		},
 		"media": [
@@ -300,6 +303,11 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 		],
 		"objectives": директива.get("objectives", []),
 		"directive": директива.get("directive"),
+		# Зачин и обещание — верхним уровнем, а не внутри директивы с грифом
+		# «только преподавателю»: их адресат — ученик (#238).
+		"course_promise": frappe.db.get_value("LMS Course", курс, "course_promise") or None,
+		"lesson_hook": frappe.db.get_value("Course Lesson", lesson, "lesson_hook") or None,
+		"start": _состояние_старта(ученик, курс, lesson, занятие.name, сегмент, перенос),
 		"course_objectives": курсовая.get("objectives", []),
 		"course_directive": курсовая.get("directive"),
 		"quiz": {
@@ -312,7 +320,7 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 		# другим значило бы соврать агенту про режим обращения.
 		"student_context": {
 			**_заметки(ученик, курс),
-			"carried_over": _незакрытые_цели(ученик, курс, кроме=lesson),
+			"carried_over": перенос,
 		},
 		# Подсказка «сегодня собираем резюме проекта», а не ограничение:
 		# update_artifact принимает любой ключ, и ученик волен забежать вперёд.
@@ -1114,6 +1122,44 @@ def перерыв_для_мостика() -> int:
 	таймаут закрывает занятие через шесть часов, а мостик нужен не после
 	каждого закрытия (#238)."""
 	return настройка("bridge_after_hours", ПЕРЕРЫВ_ДЛЯ_МОСТИКА)
+
+
+def _состояние_старта(
+	ученик: str, курс: str, lesson: str, занятие: str, сегмент: int, перенос: list[dict]
+) -> dict:
+	"""С чего начинать занятие: одно значение `opening` вместо пяти признаков.
+
+	Решает сервер, а не агент: разбирать признаки заново на каждом старте —
+	место для ошибки, а жалоба, с которой всё началось, была ровно на начало
+	занятия (#238). Порядок проверок — порядок приоритета:
+
+	- `next_segment` — продолжение длинного урока, говорить нечего;
+	- `repeat` — урок уже проходили, зачин и мостик лишние;
+	- `first_in_course` — других занятий по курсу нет: обещание, зачин, цели;
+	- `return` — есть незакрытое и прошлое занятие старше перерыва: мостик;
+	- `new_lesson` — всё остальное: зачин и цели.
+
+	«Другое занятие» — любое, кроме текущего: незакрытое занятие того же урока
+	переиспользуется, и продолжение не должно выглядеть повтором.
+	"""
+	прочие = frappe.get_all(
+		"Agent Learning Session",
+		filters={"student": ученик, "course": курс, "name": ("!=", занятие)},
+		fields=["lesson", "started_at", "last_activity_at"],
+		ignore_permissions=True,
+	)
+	последнее = max((з.last_activity_at or з.started_at for з in прочие if з.last_activity_at or з.started_at), default=None)
+	if сегмент > 1:
+		opening = "next_segment"
+	elif any(з.lesson == lesson for з in прочие):
+		opening = "repeat"
+	elif not прочие:
+		opening = "first_in_course"
+	elif перенос and последнее and now_datetime() - последнее > timedelta(hours=перерыв_для_мостика()):
+		opening = "return"
+	else:
+		opening = "new_lesson"
+	return {"opening": opening, "last_session_at": последнее.isoformat() if последнее else None}
 
 
 def _незакрытые_цели(ученик: str, курс: str, кроме: str) -> list[dict]:
