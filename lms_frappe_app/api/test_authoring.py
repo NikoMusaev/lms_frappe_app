@@ -9,6 +9,8 @@
 по одной последовательности, а куратор будет видеть другую.
 """
 
+import json
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -728,3 +730,134 @@ class IntegrationTestCourseRevision(IntegrationTestCase):
 		ответ = authoring.course_revision(course="такого-курса-нет")
 
 		self.assertEqual(ответ["error"]["code"], "course_not_found")
+
+
+class IntegrationTestCourseMap(IntegrationTestCase):
+	"""Карта декомпозиции на платформе: запись с версиями и сверка с курсом.
+
+	`Why:` карта — замысел курса, и первоисточник её теперь платформа: вести
+	её может любой автор, а сверку с собранным видят все авторы, а не только
+	агент со скриптом по файлам (lms-high-time/learning-services#264).
+	"""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"map-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Карта {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Рамка")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=глава, title="Риск как событие", body="# Риск")["data"]["id"]
+		authoring.set_directive(
+			lesson=self.урок, teaching_directive="Веди", objectives="Риск это событие\nЛишняя цель"
+		)
+		authoring.set_course_artifact(
+			course=self.курс,
+			artifact="register",
+			title="Реестр",
+			blocks=[{"key": "risks", "title": "Риски", "hint": "Пять записей, у каждой причина", "lesson": self.урок}],
+		)
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def данные(self, **правки) -> dict:
+		return {
+			"levels": [
+				{"key": "result", "title": "Результат"},
+				{"key": "thesis", "title": "Тезисы", "needs_lesson": True},
+			],
+			"nodes": [
+				{"id": "R", "level": "result", "text": "Живой реестр"},
+				{"id": "T1", "level": "thesis", "text": "Риск это событие", "parents": ["R"], "lesson": "u1", "objective": True},
+			],
+			"lessons": [{"key": "u1", "title": "Риск как событие", "chapter": "Рамка", "lesson": self.урок}],
+			"blocks": [{"artifact": "register", "key": "risks", "lesson": "u1", "criteria": ["пять записей"]}],
+			**правки,
+		}
+
+	def записать(self, **правки) -> dict:
+		return authoring.set_course_map(course=self.курс, **self.данные(**правки))
+
+	def test_карта_пишется_новой_версией(self):
+		первая = self.записать()["data"]
+		вторая = self.записать()["data"]
+
+		self.assertEqual((первая["version"], вторая["version"]), (1, 2))
+		self.assertEqual(frappe.db.count("Agent Course Map", {"course": self.курс, "is_active": 1}), 1)
+		self.assertEqual(вторая["counts"]["total"], 1)
+
+	def test_части_карты_приходят_строками_json(self):
+		"""Frappe отдаёт тело формы строками — как у reorder_lessons."""
+		данные = {ключ: json.dumps(значение, ensure_ascii=False) for ключ, значение in self.данные().items()}
+
+		ответ = authoring.set_course_map(course=self.курс, **данные)
+
+		self.assertTrue(ответ["ok"], ответ)
+
+	def test_неверная_карта_отклоняется_и_не_пишется(self):
+		ответ = self.записать(nodes=[{"id": "R", "level": "nope", "text": "Реестр"}])
+
+		self.assertEqual((ответ["error"]["code"], ответ["error"]["where"]), ("invalid_map", "nodes[R].level"))
+		self.assertFalse(frappe.db.exists("Agent Course Map", {"course": self.курс}))
+
+	def test_привязка_к_уроку_другого_курса_отклоняется(self):
+		другой = authoring.create_course(title=f"Другой {frappe.generate_hash(length=6)}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=другой, title="Глава")["data"]["id"]
+		чужой = authoring.add_lesson(chapter=глава, title="Чужой", body="# Чужой")["data"]["id"]
+
+		ответ = self.записать(lessons=[{"key": "u1", "title": "Риск как событие", "lesson": чужой}])
+
+		self.assertEqual((ответ["error"]["code"], ответ["error"]["where"]), ("invalid_map", "lessons[u1].lesson"))
+
+	def test_без_карты_сверки_нет(self):
+		сверка = authoring.course_map_check(course=self.курс)["data"]
+
+		self.assertIsNone(сверка["map"])
+		self.assertIsNone(сверка["counts"])
+		self.assertEqual(сверка["discrepancies"], [])
+		self.assertIsNone(authoring.course_draft(course=self.курс)["data"]["map_discrepancies"])
+
+	def test_сверка_видит_курс_на_платформе(self):
+		self.записать()
+
+		сверка = authoring.course_map_check(course=self.курс)["data"]
+
+		self.assertEqual(сверка["map"]["version"], 1)
+		self.assertEqual(сверка["matches"], {"u1": self.урок})
+		self.assertEqual(
+			сверка["platform"]["lessons"],
+			[
+				{
+					"id": self.урок,
+					"number": 1,
+					"title": "Риск как событие",
+					"chapter": "Рамка",
+					"objectives": ["Риск это событие", "Лишняя цель"],
+				}
+			],
+		)
+		self.assertEqual([(р["group"], р["code"], р.get("extra")) for р in сверка["discrepancies"]], [("objectives", "mismatch", ["Лишняя цель"])])
+		self.assertEqual(authoring.course_draft(course=self.курс)["data"]["map_discrepancies"], 1)
+
+	def test_правка_курса_видна_в_сверке_сразу(self):
+		self.записать()
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди", objectives="Риск это событие")
+
+		self.assertEqual(authoring.course_map_check(course=self.курс)["data"]["discrepancies"], [])
+		self.assertEqual(authoring.course_draft(course=self.курс)["data"]["map_discrepancies"], 0)
+
+	def test_правка_карты_двигает_ревизию(self):
+		до = authoring.course_revision(course=self.курс)["data"]["revision"]
+
+		self.записать()
+
+		self.assertGreater(authoring.course_revision(course=self.курс)["data"]["revision"], до)
+
+	def test_ученику_карта_недоступна(self):
+		self.записать()
+		frappe.set_user(создать_ученика(f"map-s-{frappe.generate_hash(length=6)}@example.com"))
+
+		with self.assertRaises(frappe.PermissionError):
+			authoring.course_map_check(course=self.курс)
+		with self.assertRaises(frappe.PermissionError):
+			authoring.set_course_map(course=self.курс, **self.данные())

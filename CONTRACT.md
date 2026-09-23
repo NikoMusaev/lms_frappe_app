@@ -1368,7 +1368,8 @@ Learning не позволяет смешивать открытые с пров
     { "code": "lesson_without_directive", "lesson": "lesson-1",
       "message": "Урок без директивы" } ] },
   "revision": "2026-09-23T14:05:11.482913",
-  "author_url": "https://lms.example.com/author?course=course-basics" } }
+  "author_url": "https://lms.example.com/author?course=course-basics",
+  "map_discrepancies": null } }
 ```
 
 `quiz` у урока — тот же состав с эталонами, что отдаёт `get_lesson`; полного
@@ -1378,6 +1379,8 @@ Learning не позволяет смешивать открытые с пров
 действующей директивы и число её целей (`null` и `0` без директивы).
 `revision` — самая свежая отметка изменения курса, та же, что у
 `course_revision`; `author_url` — страница курса в кабинете автора.
+`map_discrepancies` — сколько расхождений с картой декомпозиции нашёл
+`course_map_check`; `null`, если карты нет. Публикацию не блокирует.
 
 ## `lms_frappe_app.api.authoring.course_revision`
 
@@ -1392,6 +1395,97 @@ Learning не позволяет смешивать открытые с пров
 { "ok": true, "data": { "course": "course-basics",
   "revision": "2026-09-23T14:05:11.482913" } }
 ```
+
+**Отказы:** `course_not_found`.
+
+## `lms_frappe_app.api.authoring.set_course_map`
+
+Новая версия карты декомпозиции курса — замысла, с которым сверяется
+собранное. Каждый вызов создаёт версию; действующая одна. С курсом карта при
+записи не сверяется: её согласуют до сборки.
+
+**Параметры:** `course`, `levels`, `nodes`, `lessons`, `blocks` — списки;
+приходят массивами или строками JSON. Только `POST`.
+
+- `levels` — `[{key, title, needs_children?, needs_lesson?}]`, слева
+  направо, первый — корень. `needs_children` — у узла уровня должен быть
+  узел справа; `needs_lesson` — узлу уровня нужен урок. Флаг у последнего
+  уровня `needs_children` — отказ.
+- `nodes` — `[{id, level, text, parents?, note?, tags?, lesson?, objective?}]`.
+  `parents` — узлы соседнего левого уровня; `lesson` — ключ пункта плана;
+  `objective` — узел является целью урока.
+- `lessons` — план: `[{key, title, chapter?, lesson?}]`; `lesson` — урок
+  этого курса, к которому привязан пункт.
+- `blocks` — план блоков документа: `[{artifact, key, title?, lesson?,
+  criteria?}]`; `lesson` — ключ пункта плана, `criteria` — критерии, которые
+  должны дойти до подсказки блока.
+
+Ключи и идентификаторы — строки; целые числа принимаются и приводятся к
+строке. Неизвестное поле — отказ, а не пропуск.
+
+```json
+{ "ok": true, "data": { "id": "ACM-00003", "course": "course-basics",
+  "version": 3, "counts": { "lessons": 0, "objectives": 1, "blocks": 0,
+  "integrity": 0, "total": 1 } } }
+```
+
+`counts` — счётчики `course_map_check` сразу после записи.
+
+**Отказы:** `course_not_found`; `invalid_map` с полем `where` — где ошибка:
+`nodes[T1].parents`, `lessons[u2].lesson`, `blocks[register/risks].criteria`.
+
+## `lms_frappe_app.api.authoring.course_map_check`
+
+Действующая карта против курса на платформе.
+
+**Параметры:** `course`.
+
+```json
+{ "ok": true, "data": {
+  "course": "course-basics",
+  "map": { "id": "ACM-00003", "version": 3,
+    "created_at": "2026-09-23T14:05:11.482913",
+    "levels": [ { "key": "result", "title": "Результат",
+      "needs_children": false, "needs_lesson": false } ],
+    "nodes": [ { "id": "R", "level": "result", "text": "Живой реестр",
+      "parents": [], "note": "", "tags": [], "lesson": null,
+      "objective": false } ],
+    "lessons": [ { "key": "u1", "title": "Риск как событие",
+      "chapter": "Рамка", "lesson": "lesson-1" } ],
+    "blocks": [ { "artifact": "register", "key": "risks", "title": "",
+      "lesson": "u1", "criteria": [ "пять записей" ] } ] },
+  "platform": {
+    "lessons": [ { "id": "lesson-1", "number": 1, "title": "Риск как событие",
+      "chapter": "Рамка", "objectives": [ "Риск это событие" ] } ],
+    "blocks": [ { "artifact": "register", "key": "risks", "title": "Риски",
+      "lesson": "lesson-1", "hint": "Пять записей…" } ] },
+  "matches": { "u1": "lesson-1" },
+  "discrepancies": [ { "group": "objectives", "code": "mismatch",
+    "plan_lesson": "u1", "lesson": "lesson-1", "missing": [],
+    "extra": [ "Лишняя цель" ], "nodes": [],
+    "message": "Цели урока «Риск как событие» расходятся с картой: нет 0, лишних 1" } ],
+  "counts": { "lessons": 0, "objectives": 1, "blocks": 0, "integrity": 0,
+    "total": 1 },
+  "tags": {} } }
+```
+
+`matches` — пункт плана → урок платформы: по привязке, у непривязанного —
+по названию; пары нет — `null`. Группы и коды расхождений:
+
+- `lessons`: `missing` (пункта нет на платформе), `extra` (урока нет в карте),
+  `title`, `chapter` (`expected` — в карте, `actual` — на платформе),
+  `order` — урок сдвинут относительно карты;
+- `objectives`: `mismatch` (`missing`, `extra`, `nodes` — узлы недостающих
+  целей), `order`;
+- `blocks`: `missing` (блока нет в схеме), `extra` (блока нет в карте),
+  `lesson` (`expected`, `actual` — уроки), `criteria` (`missing` — критерии,
+  которых нет в подсказке; сравнение без регистра и лишних пробелов);
+- `integrity`: `orphan` (нет пути к первому уровню), `unexpanded`
+  (флаг `needs_children`), `no_lesson` (флаг `needs_lesson`); ссылка —
+  `node`.
+
+`tags` — узлы по меткам. Карты нет — `map: null`, `counts: null`, пустые
+`matches` и `discrepancies`; `platform` приходит всегда.
 
 **Отказы:** `course_not_found`.
 
