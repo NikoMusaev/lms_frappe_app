@@ -60,6 +60,14 @@ class IntegrationTestDeskNavigation(IntegrationTestCase):
 		self.assertIn("Agent Student Artifact", ссылки)
 		self.assertIn("Agent Course Report", ссылки)
 
+	def test_на_обзоре_есть_вход_в_кабинет_автора(self):
+		"""`Why:` в сайдбар Learning кабинет не положить — пункты сайдбара видят
+		все, и ученики тоже; workspace видят только авторские роли (#261)."""
+		content = json.loads(frappe.get_doc("Workspace", WORKSPACE).content)
+		абзацы = [блок["data"]["text"] for блок in content if блок["type"] == "paragraph"]
+
+		self.assertTrue(any('href="/author"' in текст for текст in абзацы), абзацы)
+
 	def test_на_обзоре_виден_счёт_неразобранных_репортов(self):
 		"""`Why:` репорт разбирают, только если видят, что он пришёл. Ссылка
 		в карточке ведёт в список, но молчит о том, есть ли там новое, а
