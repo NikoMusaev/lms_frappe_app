@@ -382,6 +382,19 @@ class IntegrationTestAuthoringReadBack(IntegrationTestCase):
 		self.assertEqual(директива["teaching_directive"], "Вторая редакция")
 		self.assertEqual(директива["version"], 2)
 
+	def test_у_действующей_директивы_есть_дата_версии(self):
+		"""Кабинет автора показывает, когда версия поставлена (#261)."""
+		from datetime import datetime
+
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди")
+		курс = frappe.db.get_value("Course Lesson", self.урок, "course")
+		authoring.set_course_directive(course=курс, teaching_directive="Сквозная")
+
+		урок = authoring.get_lesson(lesson=self.урок)["data"]
+
+		for директива in (урок["directive"], урок["course_directive"]):
+			self.assertIsInstance(datetime.fromisoformat(директива["created_at"]), datetime)
+
 	def test_директива_принимает_иконку_карты(self):
 		authoring.set_directive(
 			lesson=self.урок,
@@ -567,3 +580,151 @@ class IntegrationTestCourseArtifact(IntegrationTestCase):
 		)["data"]
 
 		self.assertEqual(len(frappe.get_doc("Agent Course Artifact", ответ["id"]).blocks), 2)
+
+
+class IntegrationTestAuthorMirrorFields(IntegrationTestCase):
+	"""Черновик показывает наполненность урока фактами, а не признаками.
+
+	`Why:` зеркало автора (#261) и сам агент сверяют собранное по черновику;
+	признак `has_body` не говорит ни сколько материала, ни на сколько частей
+	его режет платформа, ни какая версия директивы действует.
+	"""
+
+	def setUp(self):
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"mirror-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Зеркало {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.материал = "## Заголовок\n\n" + "\n\n".join(["текст. " * 30] * 6)
+		self.урок = authoring.add_lesson(chapter=глава, title="Урок", body=self.материал)["data"]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def урок_черновика(self) -> dict:
+		черновик = authoring.course_draft(course=self.курс)["data"]
+		return черновик["chapters"][0]["lessons"][0]
+
+	def test_длина_и_сегменты_материала(self):
+		from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
+
+		урок = self.урок_черновика()
+		self.assertEqual(урок["body_chars"], len(self.материал.strip()))
+		self.assertEqual(урок["body_segments"], 1)
+
+		frappe.db.set_single_value("Agent Learning Settings", "lesson_segment_limit", 300)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
+
+		урок = self.урок_черновика()
+		self.assertGreater(урок["body_segments"], 1)
+		self.assertEqual(урок["body_segments"], нормализовать_урок(self.урок).total_segments)
+
+	def test_версия_директивы_и_число_целей(self):
+		урок = self.урок_черновика()
+		self.assertIsNone(урок["directive_version"])
+		self.assertEqual(урок["objectives"], 0)
+
+		authoring.set_directive(lesson=self.урок, teaching_directive="Первая")
+		authoring.set_directive(lesson=self.урок, teaching_directive="Вторая", objectives="Цель один\nЦель два\n")
+
+		урок = self.урок_черновика()
+		self.assertEqual(урок["directive_version"], 2)
+		self.assertEqual(урок["objectives"], 2)
+
+	def test_порог_квиза_и_пояснения_вариантов(self):
+		authoring.add_quiz(
+			lesson=self.урок,
+			passing_percentage=60,
+			questions=[
+				{
+					"text": "Что здесь не так?",
+					"options": [
+						{"text": "Верно", "correct": True, "explanation": "Потому что."},
+						{"text": "Неверно"},
+					],
+				}
+			],
+		)
+
+		квиз = self.урок_черновика()["quiz"]
+
+		self.assertEqual(квиз["passing_percentage"], 60)
+		self.assertEqual(
+			[(в["text"], в["explanation"]) for в in квиз["questions"][0]["options"]],
+			[("Верно", "Потому что."), ("Неверно", "")],
+		)
+
+
+class IntegrationTestCourseRevision(IntegrationTestCase):
+	"""Отметка изменения курса: по ней зеркало автора узнаёт, что агент что-то
+	поменял, не перечитывая курс целиком (#261)."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		# Удаление урока Frappe Learning разрешает только модератору.
+		self.куратор = создать_куратора(f"revision-{суффикс}@example.com", роль="Moderator")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Ревизия {суффикс}", summary="к")["data"]["id"]
+		self.глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=self.глава, title="Урок", body="# Текст")["data"]["id"]
+		self.лишний = authoring.add_lesson(chapter=self.глава, title="Лишний", body="# Лишний")["data"]["id"]
+		authoring.add_quiz(
+			lesson=self.урок,
+			questions=[{"text": "Первый?", "options": [{"text": "a", "correct": True}, {"text": "b"}]}],
+		)
+		self.вопрос = authoring.get_lesson(lesson=self.урок)["data"]["quiz"]["questions"][0]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def ревизия(self) -> str:
+		return authoring.course_revision(course=self.курс)["data"]["revision"]
+
+	def test_ревизия_растёт_от_каждой_правки_курса(self):
+		правки = {
+			"update_lesson": lambda: authoring.update_lesson(lesson=self.урок, body="# Новый текст"),
+			"set_directive": lambda: authoring.set_directive(lesson=self.урок, teaching_directive="Веди"),
+			"set_course_directive": lambda: authoring.set_course_directive(
+				course=self.курс, teaching_directive="Сквозная"
+			),
+			"update_question": lambda: authoring.update_question(question=self.вопрос, text="Второй?"),
+			"set_course_artifact": lambda: authoring.set_course_artifact(
+				course=self.курс, artifact="summary", title="Резюме", blocks=[{"key": "goal", "title": "Цель"}]
+			),
+			"add_chapter": lambda: authoring.add_chapter(course=self.курс, title="Ещё глава"),
+			"remove_lesson": lambda: authoring.remove_lesson(lesson=self.лишний),
+		}
+		for имя, правка in правки.items():
+			with self.subTest(правка=имя):
+				до = self.ревизия()
+				правка()
+				self.assertGreater(self.ревизия(), до)
+
+	def test_чтение_ревизию_не_меняет(self):
+		до = self.ревизия()
+		authoring.course_draft(course=self.курс)
+		authoring.get_lesson(lesson=self.урок)
+
+		self.assertEqual(self.ревизия(), до)
+
+	def test_черновик_отдаёт_ту_же_ревизию_и_ссылку_на_зеркало(self):
+		черновик = authoring.course_draft(course=self.курс)["data"]
+
+		self.assertEqual(черновик["revision"], self.ревизия())
+		self.assertTrue(черновик["author_url"].endswith(f"/author?course={self.курс}"))
+
+	def test_ученику_ревизия_недоступна(self):
+		ученик = создать_ученика(f"revision-s-{frappe.generate_hash(length=6)}@example.com")
+		frappe.set_user(ученик)
+
+		with self.assertRaises(frappe.PermissionError):
+			authoring.course_revision(course=self.курс)
+
+	def test_неизвестный_курс_даёт_код(self):
+		ответ = authoring.course_revision(course="такого-курса-нет")
+
+		self.assertEqual(ответ["error"]["code"], "course_not_found")

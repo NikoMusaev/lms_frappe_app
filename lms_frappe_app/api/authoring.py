@@ -11,10 +11,11 @@
 """
 
 import json
+from urllib.parse import quote
 
 import frappe
 
-from lms_frappe_app.agent_learning import course_builder, directives, quiz, structure
+from lms_frappe_app.agent_learning import course_builder, directives, normalizer, quiz, structure
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
@@ -597,19 +598,76 @@ def course_draft(course: str) -> dict:
 	сведения = frappe.db.get_value(
 		"LMS Course", course, ["title", "short_introduction", "published"], as_dict=True
 	)
+	предел = normalizer.предел_сегмента()
 	return {
 		"id": course,
 		"title": сведения.title,
 		"summary": сведения.short_introduction,
 		"published": bool(сведения.published),
 		"chapters": [
-			{"id": глава["name"], "title": глава["title"], "lessons": _уроки_главы(глава["name"])}
+			{"id": глава["name"], "title": глава["title"], "lessons": _уроки_главы(глава["name"], предел)}
 			for глава in structure.главы_курса(course)
 		],
 		"directive": _действующая_директива_курса(course),
 		"artifacts": _действующие_артефакты(course),
 		"readiness": course_builder.проверить_готовность(course),
+		"revision": ревизия(course),
+		"author_url": frappe.utils.get_url(f"/author?course={quote(course)}"),
 	}
+
+
+@frappe.whitelist(methods=["GET"])
+@контракт
+def course_revision(course: str) -> dict:
+	"""Отметка последнего изменения курса.
+
+	Для опроса зеркалом автора (#261): страница спрашивает её раз в
+	несколько секунд, и перечитывать ради этого курс целиком незачем.
+	"""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+	return {"course": course, "revision": ревизия(course)}
+
+
+def ревизия(course: str) -> str:
+	"""Самая свежая отметка изменения всего, из чего собран курс.
+
+	Удаление урока или вопроса тоже двигает её: убирая строку, сохраняется
+	глава или квиз, в которых она стояла.
+	"""
+	уроки = frappe.get_all("Course Lesson", filters={"course": course}, pluck="name")
+	квизы = set(frappe.get_all("LMS Quiz", filters={"lesson": ["in", уроки]}, pluck="name")) if уроки else set()
+	квизы |= set(
+		frappe.get_all(
+			"Course Lesson", filters={"course": course, "quiz_id": ["is", "set"]}, pluck="quiz_id"
+		)
+	)
+	вопросы = (
+		frappe.get_all("LMS Quiz Question", filters={"parent": ["in", list(квизы)]}, pluck="question")
+		if квизы
+		else []
+	)
+	источники = [
+		("LMS Course", {"name": course}),
+		("Course Chapter", {"course": course}),
+		("Course Lesson", {"course": course}),
+		("Agent Course Directive", {"course": course}),
+		("Agent Course Artifact", {"course": course}),
+	]
+	if квизы:
+		источники.append(("LMS Quiz", {"name": ["in", list(квизы)]}))
+	if вопросы:
+		источники.append(("LMS Question", {"name": ["in", вопросы]}))
+	if уроки:
+		источники.append(("Agent Lesson Directive", {"lesson": ["in", уроки]}))
+	отметки = [
+		отметка
+		for doctype, фильтры in источники
+		for отметка in frappe.get_all(
+			doctype, filters=фильтры, pluck="modified", order_by="modified desc", limit=1
+		)
+	]
+	return max(отметки).isoformat()
 
 
 @frappe.whitelist()
@@ -673,22 +731,35 @@ def unpublish_course(course: str) -> dict:
 # --- вспомогательное ---
 
 
-def _уроки_главы(глава: str) -> list[dict]:
+def _уроки_главы(глава: str, предел: int) -> list[dict]:
+	"""Уроки главы с наполненностью: факты, по которым сверяют собранное.
+
+	`body_segments` считает тот же разбор, что режет урок для `start_lesson`:
+	число на экране автора обязано совпадать с тем, что получит агент.
+	"""
 	from lms_frappe_app.agent_learning import quiz
 
 	уроки = structure.уроки_главы(глава)
 	собранное = []
 	for урок in уроки:
-		сведения = frappe.db.get_value("Course Lesson", урок, ["title", "body"], as_dict=True)
+		сведения = frappe.db.get_value(
+			"Course Lesson", урок, ["title", "body", "content"], as_dict=True
+		)
 		квиз = quiz._квиз_урока(урок)
+		директива = directives.запись("Agent Lesson Directive", {"lesson": урок}, ("objectives",))
+		материал = normalizer.нормализовать(
+			title=сведения.title, content=сведения.content, body=сведения.body, предел=предел
+		)
 		собранное.append(
 			{
 				"id": урок,
 				"title": сведения.title,
 				"has_body": bool((сведения.body or "").strip()),
-				"has_directive": bool(
-					frappe.db.exists("Agent Lesson Directive", {"lesson": урок, "is_active": 1})
-				),
+				"body_chars": len((сведения.body or "").strip()),
+				"body_segments": материал.total_segments,
+				"has_directive": директива is not None,
+				"directive_version": директива.version if директива else None,
+				"objectives": len(directives.строки(директива.objectives)) if директива else 0,
 				"quiz": _вопросы_с_эталонами(квиз) if квиз else None,
 			}
 		)
@@ -707,7 +778,11 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 				"text": документ.question,
 				"type": строка.type,
 				"options": [
-					{"text": текст, "correct": bool(документ.get(f"is_correct_{номер}"))}
+					{
+						"text": текст,
+						"correct": bool(документ.get(f"is_correct_{номер}")),
+						"explanation": документ.get(f"explanation_{номер}") or "",
+					}
 					for номер, текст in course_builder.заполненные(документ, "option")
 				],
 				"answers": [
@@ -715,7 +790,11 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 				],
 			}
 		)
-	return {"id": квиз, "questions": вопросы}
+	return {
+		"id": квиз,
+		"passing_percentage": frappe.db.get_value("LMS Quiz", квиз, "passing_percentage"),
+		"questions": вопросы,
+	}
 
 
 def _действующая_директива(lesson: str) -> dict | None:
@@ -735,12 +814,13 @@ def _директива_наружу(doctype: str, владелец: dict, по�
 	разбираются на пункты — этим занят учебный поток, и разбор здесь означал
 	бы, что куратор сверяет не исходный текст.
 	"""
-	запись = directives.запись(doctype, владелец, поля)
+	запись = directives.запись(doctype, владелец, (*поля, "creation"))
 	if not запись:
 		return None
 	return {
 		"id": запись.name,
 		"version": запись.version,
+		"created_at": запись.creation.isoformat(),
 		**{поле: запись.get(поле) for поле in поля},
 	}
 

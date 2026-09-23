@@ -1318,17 +1318,25 @@ Learning не позволяет смешивать открытые с пров
   "id": "lesson-1", "title": "Списки", "chapter": "ch-1", "course": "c-1",
   "body": "## Списки\n\nСписок хранит значения по порядку.",
   "directive": { "id": "AD-00007", "version": 2,
+                 "created_at": "2026-09-23T14:05:11.482913",
                  "teaching_directive": "…", "objectives": "…" },
   "course_directive": { "id": "ACD-00001", "version": 1,
+                        "created_at": "2026-09-20T09:12:40.118204",
                         "teaching_directive": "…", "objectives": "…" },
-  "quiz": { "id": "quiz-1", "questions": [
+  "quiz": { "id": "quiz-1", "passing_percentage": 70, "questions": [
     { "id": "q-14", "text": "Что выведет цикл…", "type": "Choices",
-      "options": [ { "text": "Десять", "correct": true } ],
+      "options": [ { "text": "Десять", "correct": true,
+                     "explanation": "Цикл идёт от нуля до девяти" } ],
       "answers": [] } ] } } }
 ```
 
+У варианта `explanation` — пояснение из `add_quiz`, пустая строка, если его
+нет. Автору оно видно по роли, как и эталоны; ученику — только вместе с
+вердиктом (см. «Запрещённые поля»).
+
 Директивы приходят как есть, не разобранными на пункты: куратор сверяет тот
-самый текст, который уедет агенту ученика. Директивы нет — `null`; квиза нет —
+самый текст, который уедет агенту ученика. `created_at` — когда поставлена
+действующая версия. Директивы нет — `null`; квиза нет —
 `quiz` тоже `null`.
 
 Отдельный метод, а не поле `course_draft`: полные тексты всех уроков в одном
@@ -1348,7 +1356,9 @@ Learning не позволяет смешивать открытые с пров
   "published": false,
   "chapters": [ { "id": "ch-1", "title": "Глава", "lessons": [
     { "id": "lesson-1", "title": "Циклы", "has_body": true,
-      "has_directive": false, "quiz": null } ] } ],
+      "body_chars": 4210, "body_segments": 1,
+      "has_directive": false, "directive_version": null, "objectives": 0,
+      "quiz": null } ] } ],
   "directive": null,
   "artifacts": [ { "id": "ACA-00001", "version": 1,
     "artifact": "project_summary", "title": "Резюме проекта",
@@ -1356,11 +1366,34 @@ Learning не позволяет смешивать открытые с пров
       "title": "…", "hint": "…", "lesson": "lesson-1", "span": 1 } ] } ],
   "readiness": { "blocking": [], "warnings": [
     { "code": "lesson_without_directive", "lesson": "lesson-1",
-      "message": "Урок без директивы" } ] } } }
+      "message": "Урок без директивы" } ] },
+  "revision": "2026-09-23T14:05:11.482913",
+  "author_url": "https://lms.example.com/author?course=course-basics" } }
 ```
 
 `quiz` у урока — тот же состав с эталонами, что отдаёт `get_lesson`; полного
-текста уроков здесь нет, только `has_body`.
+текста уроков здесь нет. Наполненность — фактами: `body_chars` — длина
+материала, `body_segments` — на сколько частей урок режет `start_lesson` при
+текущем `lesson_segment_limit`, `directive_version` и `objectives` — версия
+действующей директивы и число её целей (`null` и `0` без директивы).
+`revision` — самая свежая отметка изменения курса, та же, что у
+`course_revision`; `author_url` — страница курса в кабинете автора.
+
+## `lms_frappe_app.api.authoring.course_revision`
+
+Отметка последнего изменения курса — для опроса кабинетом автора без чтения
+курса целиком. Растёт от правки курса, глав, уроков, квизов и вопросов,
+директив урока и курса, схем документа, в том числе от удаления урока или
+вопроса; от чтения не меняется. В MCP не выставляется.
+
+**Параметры:** `course`. Только `GET`.
+
+```json
+{ "ok": true, "data": { "course": "course-basics",
+  "revision": "2026-09-23T14:05:11.482913" } }
+```
+
+**Отказы:** `course_not_found`.
 
 **Отказы:** `course_not_found`.
 
