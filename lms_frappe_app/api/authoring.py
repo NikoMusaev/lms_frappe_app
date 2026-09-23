@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 import frappe
 
-from lms_frappe_app.agent_learning import course_builder, directives, normalizer, quiz, structure
+from lms_frappe_app.agent_learning import course_builder, course_map, directives, normalizer, quiz, structure
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
@@ -581,6 +581,122 @@ def remove_question(lesson: str, question: str) -> dict:
 	return {"quiz": квиз, "questions_total": len(документ.questions)}
 
 
+# --- карта декомпозиции ---
+
+#: Части карты: хранятся полями JSON и отдаются как есть.
+ЧАСТИ_КАРТЫ = ("levels", "nodes", "lessons", "blocks")
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def set_course_map(course: str, levels, nodes, lessons=None, blocks=None) -> dict:
+	"""Новая версия карты декомпозиции курса — замысла, с которым сверяется
+	собранное.
+
+	Уровни слева направо, узлы с родителями на соседнем левом уровне, план
+	уроков и план блоков документа; устройство — в `course_map`. С курсом
+	карта при записи не сверяется: её согласуют до сборки. Проверить её
+	против курса — `course_map_check`; в ответе — счётчики этой проверки.
+	"""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+	карта = course_map.нормализовать(список(levels), список(nodes), список(lessons), список(blocks))
+	уроки_курса = set(frappe.get_all("Course Lesson", filters={"course": course}, pluck="name"))
+	for пункт in карта["lessons"]:
+		if пункт["lesson"] and пункт["lesson"] not in уроки_курса:
+			raise Отказ(
+				course_map.НЕВЕРНАЯ_КАРТА,
+				"Урок не из этого курса",
+				where=f"lessons[{пункт['key']}].lesson",
+			)
+	документ = frappe.get_doc(
+		{
+			"doctype": "Agent Course Map",
+			"course": course,
+			"is_active": 1,
+			**{часть: json.dumps(карта[часть], ensure_ascii=False) for часть in ЧАСТИ_КАРТЫ},
+		}
+	).insert()
+	return {
+		"id": документ.name,
+		"course": course,
+		"version": документ.version,
+		"counts": _сверка_карты(course)["counts"],
+	}
+
+
+@frappe.whitelist()
+@контракт
+def course_map_check(course: str) -> dict:
+	"""Действующая карта против курса на платформе.
+
+	Уроки и блоки — такими, какие они есть, сопоставление пунктов плана с
+	уроками и расхождения по группам: план уроков, цели уроков, блоки
+	документа, целостность карты. Карты нет — `map: null`, это не ошибка:
+	карта необязательна.
+	"""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+	return _сверка_карты(course)
+
+
+def _сверка_карты(course: str) -> dict:
+	запись = directives.запись("Agent Course Map", {"course": course}, (*ЧАСТИ_КАРТЫ, "creation"))
+	уроки = _уроки_для_карты(course)
+	блоки = [
+		{
+			"artifact": документ["artifact"],
+			"key": блок["key"],
+			"title": блок["title"],
+			"lesson": блок["lesson"],
+			"hint": блок["hint"],
+		}
+		for документ in _действующие_артефакты(course)
+		for блок in документ["blocks"]
+	]
+	платформа = {"lessons": уроки, "blocks": блоки}
+	if not запись:
+		return {
+			"course": course,
+			"map": None,
+			"platform": платформа,
+			"matches": {},
+			"discrepancies": [],
+			"counts": None,
+			"tags": {},
+		}
+	карта = {часть: json.loads(запись.get(часть) or "[]") for часть in ЧАСТИ_КАРТЫ}
+	return {
+		"course": course,
+		"map": {
+			"id": запись.name,
+			"version": запись.version,
+			"created_at": запись.creation.isoformat(),
+			**карта,
+		},
+		"platform": платформа,
+		**course_map.сверить(карта, уроки, блоки),
+	}
+
+
+def _уроки_для_карты(course: str) -> list[dict]:
+	"""Уроки курса в порядке курса, с главой и целями действующей директивы."""
+	уроки = []
+	for глава in structure.главы_курса(course):
+		for урок in structure.уроки_главы(глава["name"]):
+			директива = directives.запись("Agent Lesson Directive", {"lesson": урок}, ("objectives",))
+			уроки.append(
+				{
+					"id": урок,
+					"number": len(уроки) + 1,
+					"title": frappe.db.get_value("Course Lesson", урок, "title"),
+					"chapter": глава["title"],
+					"objectives": directives.строки(директива.objectives) if директива else [],
+				}
+			)
+	return уроки
+
+
 # --- обзор и публикация ---
 
 
@@ -613,6 +729,7 @@ def course_draft(course: str) -> dict:
 		"readiness": course_builder.проверить_готовность(course),
 		"revision": ревизия(course),
 		"author_url": frappe.utils.get_url(f"/author?course={quote(course)}"),
+		"map_discrepancies": (_сверка_карты(course)["counts"] or {}).get("total"),
 	}
 
 
@@ -653,6 +770,7 @@ def ревизия(course: str) -> str:
 		("Course Lesson", {"course": course}),
 		("Agent Course Directive", {"course": course}),
 		("Agent Course Artifact", {"course": course}),
+		("Agent Course Map", {"course": course}),
 	]
 	if квизы:
 		источники.append(("LMS Quiz", {"name": ["in", list(квизы)]}))

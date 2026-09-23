@@ -351,6 +351,16 @@ class IntegrationTestContractExamples(IntegrationTestCase):
 		self.сверить("authoring.get_lesson", authoring.get_lesson(lesson=с_квизом))
 		self.сверить("authoring.course_draft", authoring.course_draft(course=курс))
 		self.сверить("authoring.course_revision", authoring.course_revision(course=курс))
+		self.сверить("authoring.course_map_check", authoring.course_map_check(course=курс))
+		self.сверить(
+			"authoring.set_course_map",
+			authoring.set_course_map(
+				course=курс,
+				levels=[{"key": "result", "title": "Результат"}],
+				nodes=[{"id": "R", "level": "result", "text": "Курс собран"}],
+			),
+		)
+		self.сверить("authoring.course_map_check", authoring.course_map_check(course=курс))
 		self.сверить("authoring.publish_course", authoring.publish_course(course=курс))
 		self.сверить("authoring.unpublish_course", authoring.unpublish_course(course=курс))
 		authoring.publish_course(course=курс)

@@ -1,0 +1,467 @@
+{#
+	Вкладка «Карта» кабинета автора: карта декомпозиции против собранного курса.
+
+	Столбцы — уровни карты из её данных и два столбца платформы: уроки и блоки
+	документа такими, какие они есть. Названий уровней шаблон не знает: они
+	приходят в `map_check.map.levels` (lms-high-time/learning-services#264).
+	Рисование и подсветка путей перенесены из карт декомпозиции курсов.
+#}
+<style>
+	.author-page { --edge: #b7c0c9; }
+	@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .author-page { --edge: #48535f; } }
+	:root[data-theme="dark"] .author-page { --edge: #48535f; }
+
+	.author-page .map-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+	.author-page .map-row .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); margin-right: 4px; }
+	.author-page button.chip { cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); line-height: 1.2; }
+	.author-page button.chip:hover, .author-page button.chip:focus-visible { border-color: var(--accent); outline: none; }
+	.author-page button.chip.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+	.author-page .chip.gap .n { background: var(--gap-soft); color: var(--gap); }
+	.author-page .chip.neutral .n { background: var(--ch1s); color: var(--muted); }
+	.author-page .chip.reset { border-style: dashed; color: var(--muted); }
+	.author-page .chip.focus { padding: 6px 12px; }
+	.author-page .chip.focus .n { background: none; color: var(--muted); min-width: 0; padding: 0; }
+	.author-page button.chip:disabled { cursor: default; opacity: .6; }
+
+	.author-page .map-board { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; padding: 8px 4px 4px; }
+	.author-page .map-board svg { display: block; height: auto; }
+	.author-page .col-title { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; fill: var(--muted); }
+	.author-page .col-sub { font-size: 11px; fill: var(--muted); }
+	.author-page .col-rule { stroke: var(--line); stroke-width: 1; }
+	.author-page .edge { fill: none; stroke: var(--edge); stroke-width: 1.4; transition: opacity .15s; }
+	.author-page .edge.gap { stroke: var(--gap); stroke-dasharray: 4 3; }
+	.author-page .edge.dim, .author-page .node.dim { opacity: .14; }
+	.author-page .node { cursor: pointer; transition: opacity .15s; }
+	.author-page .node:focus { outline: none; }
+	.author-page .node:focus-visible rect { stroke: var(--accent); stroke-width: 2.4; }
+	.author-page .node rect { rx: 6; ry: 6; stroke-width: 1.2; fill: var(--paper); stroke: var(--line); }
+	.author-page .node text { font-size: 12px; fill: var(--ink); }
+	.author-page .node.sel rect { stroke-width: 2.4; }
+	.author-page .node.sel text { font-weight: 600; }
+	.author-page .node.root rect { fill: var(--ink); stroke: var(--ink); }
+	.author-page .node.root text { fill: var(--paper); font-weight: 600; }
+	.author-page .node.odd rect { fill: var(--paper); stroke: var(--ink); }
+	.author-page .node.even rect { fill: var(--accent-soft); stroke: var(--accent); }
+	.author-page .node.tinted rect { fill: var(--nts, var(--paper)); stroke: var(--ntc, var(--line)); }
+	.author-page .node.block rect { fill: var(--paper); stroke: var(--ntc, var(--line)); stroke-width: 1.6; }
+	.author-page .node .num { font-family: "IBM Plex Mono", monospace; font-weight: 500; fill: var(--ntc, var(--muted)); }
+	.author-page .node.ghost rect { fill: var(--gap-soft); stroke: var(--gap); stroke-dasharray: 5 3; }
+	.author-page .node.issue rect { stroke: var(--gap); stroke-width: 2; }
+	.author-page .node .mark { font-size: 10px; fill: var(--muted); }
+	.author-page .node.issue .mark, .author-page .node.ghost .mark { fill: var(--gap); }
+
+	.author-page .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; color: var(--muted); font-size: 13px; }
+	.author-page .legend span { display: inline-flex; align-items: center; gap: 7px; }
+	.author-page .sw { width: 22px; height: 13px; border-radius: 3px; border: 1.3px solid var(--line); background: var(--paper); flex: none; }
+	.author-page .sw.ghost { border-style: dashed; border-color: var(--gap); background: var(--gap-soft); }
+	.author-page .sw.issue { border-color: var(--gap); border-width: 2px; }
+	.author-page .sw.edge-gap { height: 0; border: 0; border-top: 2px dashed var(--gap); border-radius: 0; background: none; }
+
+	/* Карта высокая — сотни узлов, — и карточка под ней оказывалась за экраном
+	   от выбранного узла. Пока что-то выбрано, карточка прилипает к низу экрана.
+	   Обёртка `map-stage` — обычный блок, а не элемент сетки страницы: у элемента
+	   сетки липкость ограничена его строкой, и карточка не сдвинулась бы. */
+	.author-page .map-stage { display: block; }
+	.author-page .map-stage > * + * { margin-top: 12px; }
+	.author-page .map-trail { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-height: 58px; }
+	.author-page .map-trail.open {
+		position: sticky; bottom: 8px; z-index: 4; max-height: 42vh; overflow: auto;
+		border-color: var(--accent); box-shadow: 0 -4px 18px rgba(0, 0, 0, .12);
+	}
+	.author-page .map-trail p { margin: 0 0 6px; }
+	.author-page .map-trail ol, .author-page .map-trail ul { margin: 0 0 6px; padding-left: 20px; }
+	.author-page .map-trail .kind { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+	.author-page .k { color: var(--muted); }
+
+	.author-page .issue-group + .issue-group { margin-top: 14px; }
+	.author-page .issue-group h3 { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+	.author-page .issue-item {
+		display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--ink);
+		background: var(--gap-soft); border: 0; border-left: 3px solid var(--gap); border-radius: 8px;
+		padding: 8px 12px; margin: 0 0 6px; cursor: pointer;
+	}
+	.author-page .issue-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	.author-page .issue-item .k { display: block; font-size: 13px; margin-top: 2px; }
+	@media (prefers-reduced-motion: reduce) { .author-page .edge, .author-page .node { transition: none; } }
+</style>
+
+{% set мк = map_check %}
+{% if not мк.map %}
+	<section class="panel">
+		<h2>Карты пока нет</h2>
+		<p class="intro">Карту декомпозиции заводит агент инструментом <code>set_course_map</code>: уровни от результата курса к тезисам, план уроков и план блоков документа. Попросите его перенести карту курса на платформу — здесь появится сверка карты с тем, что собрано.</p>
+	</section>
+{% else %}
+	{% set ГРУППЫ = {"lessons": "Уроки", "objectives": "Цели уроков", "blocks": "Блоки документа", "integrity": "Целостность карты"} %}
+	<p class="muted" style="margin: 0; font-size: 13px;">
+		Карта v{{ мк.map.version }} от {{ frappe.utils.format_datetime(мк.map.created_at, "dd.MM.yyyy HH:mm") }}
+		· уроков плана сопоставлено {{ мк.matches.values() | select | list | length }} из {{ мк.map.lessons | length }}
+	</p>
+	<div class="map-row" id="map-focus"></div>
+	<div class="map-row" id="map-checks"></div>
+	<div class="map-stage">
+	<div class="map-board" id="map-board" aria-describedby="map-legend"></div>
+	<div class="legend" id="map-legend">
+		<span><span class="sw ghost"></span>есть в карте, нет на платформе</span>
+		<span><span class="sw issue"></span>расхождение</span>
+		<span><span class="sw edge-gap"></span>связь по карте, которой на платформе нет</span>
+		<span>цвет урока — его глава; тезис окрашен цветом своего урока</span>
+	</div>
+	<div class="map-trail" id="map-trail" aria-live="polite">
+		<p class="k">Нажмите на узел — подсветятся его пути в обе стороны, а здесь появятся подробности и расхождения.</p>
+	</div>
+	</div>
+
+	<section class="panel">
+		<h2>Все расхождения <span class="muted num" style="font-weight: 400;">{{ мк.counts.total }}</span></h2>
+		{% if not мк.discrepancies %}
+			<p class="muted">Курс на платформе совпадает с картой.</p>
+		{% endif %}
+		{% for р in мк.discrepancies %}
+			{% if loop.first or р.group != мк.discrepancies[loop.index0 - 1].group %}
+				{% if not loop.first %}</div>{% endif %}
+				<div class="issue-group"><h3>{{ ГРУППЫ.get(р.group, р.group) }} <span class="muted num">{{ мк.counts[р.group] }}</span></h3>
+			{% endif %}
+			<button type="button" class="issue-item" data-index="{{ loop.index0 }}">{{ р.message | e }}
+				{% if р.missing %}<span class="k">Нет: {{ р.missing | join("; ") | e }}</span>{% endif %}
+				{% if р.extra %}<span class="k">Лишнее: {{ р.extra | join("; ") | e }}</span>{% endif %}
+			</button>
+			{% if loop.last %}</div>{% endif %}
+		{% endfor %}
+	</section>
+
+	<script type="application/json" id="map-data">{{ мк | tojson }}</script>
+	<script>
+	{% raw %}
+	(function () {
+		const data = JSON.parse(document.getElementById('map-data').textContent);
+		const map = data.map, platform = data.platform, matches = data.matches;
+		const levels = map.levels;
+		const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+		const GROUPS = { lessons: 'Уроки', objectives: 'Цели уроков', blocks: 'Блоки документа', integrity: 'Целостность карты' };
+		const MARK = {
+			lessons: { missing: 'нет на платформе', extra: 'нет в карте', title: 'название', chapter: 'глава', order: 'порядок' },
+			objectives: { mismatch: 'цели', order: 'порядок целей' },
+			blocks: { missing: 'нет в схеме', extra: 'нет в карте', lesson: 'другой урок', criteria: 'критерии' },
+			integrity: { orphan: 'нет пути', unexpanded: 'не развёрнут', no_lesson: 'урока нет' },
+		};
+
+		// ---------- граф ----------
+		// Главы дают цвет урокам; тезис и блок берут цвет своего урока.
+		const chapters = [];
+		platform.lessons.forEach(l => { if (!chapters.includes(l.chapter)) chapters.push(l.chapter); });
+		map.lessons.forEach(p => { if (p.chapter && !chapters.includes(p.chapter)) chapters.push(p.chapter); });
+		const chColor = ch => { const i = chapters.indexOf(ch); return i < 0 ? 0 : i % 5 + 1; };
+
+		const nodes = new Map(), edges = [];
+		const add = n => { n.in = []; n.out = []; n.issues = []; nodes.set(n.id, n); return n; };
+		const levelIndex = {}; levels.forEach((l, i) => { levelIndex[l.key] = i; });
+		const LESSONS = levels.length, BLOCKS = levels.length + 1;
+		const byId = {}; platform.lessons.forEach(l => { byId[l.id] = l; });
+		const lessonTarget = key => matches[key] ? 'l:' + matches[key] : 'p:' + key;
+		const blockId = b => 'b:' + b.artifact + '/' + b.key;
+
+		map.nodes.forEach((m, i) => add({ id: 'n:' + m.id, raw: m, kind: 'node', col: levelIndex[m.level], text: m.text, order: i }));
+		platform.lessons.forEach(l => add({ id: 'l:' + l.id, raw: l, kind: 'lesson', col: LESSONS, text: l.title, n: l.number, ch: chColor(l.chapter), order: l.number }));
+		map.lessons.forEach((p, i) => {
+			if (matches[p.key]) return;
+			// Урок-призрак встаёт после ближайшего предыдущего пункта плана, у
+			// которого урок на платформе есть: так он оказывается там, где задуман.
+			let after = 0;
+			for (let j = i - 1; j >= 0; j--) { const m = matches[map.lessons[j].key]; if (m) { after = byId[m].number; break; } }
+			add({ id: 'p:' + p.key, raw: p, kind: 'lesson', ghost: true, col: LESSONS, text: p.title, n: '·', ch: chColor(p.chapter), order: after + 0.5 + i / 1000 });
+		});
+		const planBlock = {}; map.blocks.forEach(b => { planBlock[b.artifact + '/' + b.key] = b; });
+		platform.blocks.forEach((b, i) => add({ id: blockId(b), raw: b, plan: planBlock[b.artifact + '/' + b.key] || null, kind: 'block', col: BLOCKS, text: b.title || b.key, order: i }));
+		map.blocks.forEach((b, i) => { if (!nodes.has(blockId(b))) add({ id: blockId(b), raw: b, plan: b, kind: 'block', ghost: true, col: BLOCKS, text: b.title || b.key, order: 1000 + i }); });
+
+		const connect = (a, b, gap) => {
+			if (!nodes.has(a) || !nodes.has(b)) return;
+			edges.push({ from: a, to: b, gap: !!gap }); nodes.get(a).out.push(b); nodes.get(b).in.push(a);
+		};
+		map.nodes.forEach(m => m.parents.forEach(p => connect('n:' + p, 'n:' + m.id)));
+		map.nodes.forEach(m => { if (m.lesson) { const t = lessonTarget(m.lesson); connect('n:' + m.id, t, t.startsWith('p:')); } });
+		platform.blocks.forEach(b => { if (b.lesson) connect('l:' + b.lesson, blockId(b)); });
+		map.blocks.forEach(b => {
+			if (!b.lesson) return;
+			const t = lessonTarget(b.lesson);
+			const actual = platform.blocks.find(x => x.artifact === b.artifact && x.key === b.key);
+			if (!actual || 'l:' + actual.lesson !== t) connect(t, blockId(b), true);
+		});
+		nodes.forEach(n => {
+			if (n.kind === 'node' && n.raw.lesson) n.ch = (nodes.get(lessonTarget(n.raw.lesson)) || {}).ch;
+			if (n.kind === 'block') {
+				const own = !n.ghost && n.raw.lesson ? nodes.get('l:' + n.raw.lesson) : n.plan && n.plan.lesson ? nodes.get(lessonTarget(n.plan.lesson)) : null;
+				n.ch = own ? own.ch : 0;
+				n.lessonNode = own;
+			}
+		});
+
+		data.discrepancies.forEach((d, i) => {
+			const ids = [];
+			if (d.node) ids.push('n:' + d.node);
+			(d.nodes || []).forEach(x => ids.push('n:' + x));
+			if (d.group === 'lessons' || d.group === 'objectives') ids.push(d.lesson ? 'l:' + d.lesson : 'p:' + d.plan_lesson);
+			if (d.key) ids.push('b:' + d.artifact + '/' + d.key);
+			d.index = i;
+			d.targets = ids.filter(id => nodes.has(id));
+			d.targets.forEach(id => nodes.get(id).issues.push(d));
+		});
+
+		function reach(id, dir) {
+			const seen = new Set(), stack = [id];
+			while (stack.length) { const c = stack.pop(); if (seen.has(c)) continue; seen.add(c); nodes.get(c)[dir].forEach(x => stack.push(x)); }
+			return seen;
+		}
+
+		// ---------- раскладка ----------
+		// Ширины подобраны так, чтобы карта из четырёх уровней с двумя столбцами
+		// платформы помещалась на широком экране без прокрутки; уже — прокрутка.
+		const PAD = 8, LINE = 14, GAP = 9, TOP = 46, COLGAP = 26;
+		const widths = levels.map((l, i) => i === 0 ? 140 : i === levels.length - 1 ? 240 : 180).concat([160, 170]);
+		const titles = levels.map(l => l.title).concat(['Уроки курса', 'Блоки документа']);
+		const subs = levels.map((l, i) => i === 0 ? 'корень карты' : '').concat(['на платформе', 'в схеме документа']);
+		const COLS = []; let cx = 12;
+		widths.forEach((w, i) => { COLS.push({ x: cx, w, title: titles[i], sub: subs[i] }); cx += w + COLGAP; });
+		const W = cx - COLGAP + 12;
+		const chVar = ch => ch ? `--nts:var(--ch${ch}s);--ntc:var(--ch${ch})` : '';
+
+		function wrap(text, width) {
+			const max = Math.max(8, Math.floor((width - 2 * PAD) / 6.6));
+			const lines = []; let cur = '';
+			text.split(/\s+/).forEach(w => {
+				const cand = cur ? cur + ' ' + w : w;
+				if (cand.length > max && cur) { lines.push(cur); cur = w; } else cur = cand;
+			});
+			if (cur) lines.push(cur);
+			return lines;
+		}
+		nodes.forEach(n => {
+			const c = COLS[n.col];
+			n.w = c.w;
+			n.numbered = n.kind === 'lesson';
+			n.lines = wrap(n.text, n.numbered ? c.w - 22 : c.w);
+			n.mark = markOf(n);
+			n.h = n.lines.length * LINE + 2 * PAD + 4 + (n.mark ? 10 : 0);
+		});
+
+		function markOf(n) {
+			if (n.issues.length) {
+				const d = n.issues[0];
+				if (d.group === 'objectives' && n.kind === 'node') return 'нет в целях';
+				return (MARK[d.group] || {})[d.code] || 'расхождение';
+			}
+			if (n.kind === 'node' && n.raw.tags.length) return n.raw.tags[0];
+			if (n.kind === 'block' && n.lessonNode) return n.lessonNode.ghost ? 'урок из плана' : 'урок ' + n.lessonNode.n;
+			return '';
+		}
+
+		function layout(set) {
+			const byCol = COLS.map((_, c) => [...nodes.values()].filter(n => n.col === c && set.has(n.id)));
+			const anchor = levels.length - 1;
+			const lessonOrder = n => { const t = n.raw.lesson ? nodes.get(lessonTarget(n.raw.lesson)) : null; return t ? t.order : 1e6; };
+			byCol[anchor].sort((a, b) => lessonOrder(a) - lessonOrder(b) || a.order - b.order);
+			let y = TOP;
+			byCol[anchor].forEach(n => { n.y = y; y += n.h + GAP; });
+			const base = y;
+			function place(list, neigh) {
+				list.forEach(n => {
+					const ys = neigh(n).filter(id => set.has(id)).map(id => nodes.get(id)).map(m => m.y + m.h / 2);
+					n.want = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : TOP;
+				});
+				list.sort((a, b) => a.want - b.want || a.order - b.order);
+				let prev = TOP;
+				list.forEach(n => { n.y = Math.max(prev, n.want - n.h / 2); prev = n.y + n.h + GAP; });
+				if (prev - GAP > base) {
+					let limit = Math.max(base, list.reduce((s, n) => s + n.h + GAP, TOP) - GAP);
+					for (let i = list.length - 1; i >= 0; i--) { const n = list[i]; n.y = Math.min(n.y, limit - n.h); limit = n.y - GAP; }
+				}
+			}
+			for (let c = anchor - 1; c >= 0; c--) place(byCol[c], n => n.out);
+			place(byCol[LESSONS], n => n.in);
+			byCol[LESSONS].sort((a, b) => a.order - b.order);
+			{ let prev = TOP; byCol[LESSONS].forEach(n => { n.y = Math.max(prev, n.y); prev = n.y + n.h + GAP; }); }
+			place(byCol[BLOCKS], n => n.in);
+			return Math.max(base, ...[...set].map(id => nodes.get(id)).map(n => n.y + n.h)) + 16;
+		}
+
+		// ---------- отрисовка ----------
+		const board = document.getElementById('map-board');
+		const trail = document.getElementById('map-trail');
+		let nodeEls = new Map(), edgeEls = [], visible = null;
+
+		function nodeClass(n) {
+			let cls = `node ${n.kind}`;
+			if (n.kind === 'node') {
+				if (n.col === 0) cls += ' root';
+				else if (n.col === levels.length - 1) cls += ' tinted';
+				else cls += n.col % 2 ? ' odd' : ' even';
+			}
+			if (n.kind === 'lesson') cls += ' tinted';
+			if (n.ghost) cls += ' ghost';
+			if (n.issues.length) cls += ' issue';
+			return cls;
+		}
+
+		function render(set) {
+			visible = set;
+			const H = layout(set);
+			let svg = `<svg width="${W}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Карта декомпозиции курса: уровни карты, уроки и блоки документа на платформе" xmlns="http://www.w3.org/2000/svg">`;
+			COLS.forEach(c => {
+				svg += `<text class="col-title" x="${c.x}" y="16">${esc(c.title.toUpperCase())}</text>`;
+				if (c.sub) svg += `<text class="col-sub" x="${c.x}" y="31">${esc(c.sub)}</text>`;
+				svg += `<line class="col-rule" x1="${c.x}" y1="37" x2="${c.x + c.w}" y2="37"/>`;
+			});
+			svg += '<g>';
+			edges.forEach(e => {
+				if (!set.has(e.from) || !set.has(e.to)) return;
+				const a = nodes.get(e.from), b = nodes.get(e.to);
+				const x1 = COLS[a.col].x + a.w, y1 = a.y + a.h / 2, x2 = COLS[b.col].x, y2 = b.y + b.h / 2, dx = (x2 - x1) * 0.5;
+				svg += `<path class="edge${e.gap ? ' gap' : ''}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}"/>`;
+			});
+			svg += '</g><g>';
+			nodes.forEach(n => {
+				if (!set.has(n.id)) return;
+				const x = COLS[n.col].x;
+				svg += `<g class="${nodeClass(n)}" data-id="${esc(n.id)}" tabindex="0" role="button" style="${chVar(n.ch)}"><rect x="${x}" y="${n.y}" width="${n.w}" height="${n.h}"/>`;
+				const tx = n.numbered ? x + 22 : x + PAD;
+				if (n.numbered) svg += `<text class="num" x="${x + PAD}" y="${n.y + PAD + 12}">${esc(n.n)}</text>`;
+				n.lines.forEach((ln, i) => { svg += `<text x="${tx}" y="${n.y + PAD + 12 + i * LINE}">${esc(ln)}</text>`; });
+				if (n.mark) svg += `<text class="mark" x="${x + n.w - PAD}" y="${n.y + n.h - 5}" text-anchor="end">${esc(n.mark)}</text>`;
+				svg += '</g>';
+			});
+			svg += '</g></svg>';
+			board.innerHTML = svg;
+			nodeEls = new Map([...board.querySelectorAll('.node')].map(el => [el.dataset.id, el]));
+			edgeEls = [...board.querySelectorAll('.edge')];
+			nodeEls.forEach((el, id) => {
+				const act = () => { highlight(new Set([...reach(id, 'in'), ...reach(id, 'out')]), new Set([id])); showNode(id); activeChip(null); };
+				el.addEventListener('click', e => { e.stopPropagation(); act(); });
+				el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } });
+			});
+		}
+
+		function highlight(set, selected) {
+			nodeEls.forEach((el, id) => { el.classList.toggle('dim', !!set && !set.has(id)); el.classList.toggle('sel', !!selected && selected.has(id)); });
+			edgeEls.forEach(el => el.classList.toggle('dim', !!set && !(set.has(el.dataset.from) && set.has(el.dataset.to))));
+		}
+		function clear() {
+			highlight(null, null); activeChip(null); trail.classList.remove('open');
+			trail.innerHTML = '<p class="k">Нажмите на узел — подсветятся его пути в обе стороны, а здесь появятся подробности и расхождения.</p>';
+		}
+		function openTrail(html) {
+			trail.innerHTML = '<p style="text-align: right; margin: 0;"><button type="button" class="chip reset" data-close>Закрыть</button></p>' + html;
+			trail.classList.add('open');
+			trail.querySelector('[data-close]').addEventListener('click', clear);
+		}
+		board.addEventListener('click', clear);
+
+		// ---------- карточка ----------
+		const issueHtml = d => `<li>${esc(d.message)}`
+			+ (d.missing && d.missing.length ? `<div class="k">Нет: ${d.missing.map(esc).join('; ')}</div>` : '')
+			+ (d.extra && d.extra.length ? `<div class="k">Лишнее: ${d.extra.map(esc).join('; ')}</div>` : '') + '</li>';
+		const lessonLabel = n => n.ghost ? `${esc(n.text)} <span class="k">(нет на платформе)</span>` : `<a href="${esc(n.raw.url)}">${esc(n.n + '. ' + n.text)}</a>`;
+		const listOf = (arr, f) => arr.length ? arr.map(f).join(', ') : '<span class="k">нет</span>';
+		const pick = (set, test) => [...set].map(i => nodes.get(i)).filter(test);
+
+		function showNode(id) {
+			const n = nodes.get(id);
+			let html = '';
+			if (n.kind === 'node') {
+				const m = n.raw;
+				html += `<div class="kind">${esc(levels[n.col].title)}${m.objective ? ' · цель урока' : ''}</div><p><b>${esc(m.text)}</b></p>`;
+				if (m.lesson) html += `<p><span class="k">Урок:</span> ${lessonLabel(nodes.get(lessonTarget(m.lesson)))}</p>`;
+				if (m.note) html += `<p><span class="k">Примечание:</span> <i>${esc(m.note)}</i></p>`;
+				if (m.tags.length) html += `<p><span class="k">Метки:</span> ${m.tags.map(esc).join(', ')}</p>`;
+				if (levels.length > 2 && n.col > 1) html += `<p><span class="k">${esc(levels[1].title)}:</span> ${listOf(pick(reach(id, 'in'), x => x.col === 1), x => esc(x.text))}</p>`;
+				if (n.col < levels.length - 1) html += `<p><span class="k">Уроки:</span> ${listOf(pick(reach(id, 'out'), x => x.kind === 'lesson').sort((a, b) => a.order - b.order), lessonLabel)}</p>`;
+			}
+			if (n.kind === 'lesson') {
+				html += `<div class="kind">Урок${n.ghost ? ' из плана карты' : ''} · ${esc(n.ghost ? n.raw.chapter || 'глава не указана' : n.raw.chapter)}</div><p><b>${n.ghost ? esc(n.text) : lessonLabel(n)}</b></p>`;
+				if (n.ghost) html += '<p class="k">Урок есть в плане карты, но на платформе его нет.</p>';
+				const goals = map.nodes.filter(m => m.objective && m.lesson && lessonTarget(m.lesson) === id);
+				html += `<p><span class="k">Цели по карте:</span></p>` + (goals.length ? `<ol>${goals.map(m => `<li>${esc(m.text)}</li>`).join('')}</ol>` : '<p class="k">нет</p>');
+				if (!n.ghost) html += `<p><span class="k">Цели на платформе:</span></p>` + (n.raw.objectives.length ? `<ol>${n.raw.objectives.map(o => `<li>${esc(o)}</li>`).join('')}</ol>` : '<p class="k">нет — у урока нет директивы или целей</p>');
+				html += `<p><span class="k">Собирает блоки:</span> ${listOf(n.out.map(i => nodes.get(i)).filter(x => x.kind === 'block'), x => esc(x.text))}</p>`;
+			}
+			if (n.kind === 'block') {
+				const b = n.ghost ? n.plan : n.raw;
+				html += `<div class="kind">Блок документа · ${esc(b.artifact)} / ${esc(b.key)}</div><p><b>${esc(n.text)}</b></p>`;
+				if (n.ghost) html += '<p class="k">Блок есть в плане карты, но в схеме документа его нет.</p>';
+				if (n.lessonNode) html += `<p><span class="k">Собирается уроком:</span> ${lessonLabel(n.lessonNode)}</p>`;
+				if (n.plan && n.plan.criteria.length) html += `<p><span class="k">Готов, когда (по карте):</span></p><ul>${n.plan.criteria.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`;
+				if (!n.ghost) html += `<p><span class="k">Подсказка агенту:</span> ${n.raw.hint ? esc(n.raw.hint) : '<span class="k">нет</span>'}</p>`;
+			}
+			if (n.issues.length) html += `<p><span class="k">Расхождения:</span></p><ul>${n.issues.map(issueHtml).join('')}</ul>`;
+			openTrail(html);
+		}
+
+		function showIssues(title, list) {
+			openTrail(`<div class="kind">Расхождения</div><p><b>${esc(title)}</b></p><ul>${list.map(issueHtml).join('')}</ul>`);
+		}
+
+		// ---------- фокус и проверки ----------
+		const focusEl = document.getElementById('map-focus');
+		const checksEl = document.getElementById('map-checks');
+		const all = new Set(nodes.keys());
+		let focusId = 'all', active = null;
+
+		function setFocus(id) {
+			focusId = id;
+			focusEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.id === id));
+			render(id === 'all' ? all : new Set([...reach(id, 'in'), ...reach(id, 'out')]));
+			clear();
+		}
+		function activeChip(id) { active = id; checksEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.id === id)); }
+		const button = (cls, html, title) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerHTML = html; if (title) b.title = title; return b; };
+
+		if (levels.length > 1) {
+			const label = document.createElement('span'); label.className = 'eyebrow'; label.textContent = 'Фокус'; focusEl.appendChild(label);
+			const mk = (id, text, n) => {
+				const b = button('chip focus', (n ? `<span class="n">${n}</span>` : '') + esc(text.length > 34 ? text.slice(0, 34).replace(/\s\S*$/, '') + '…' : text), n ? nodes.get(id).text : '');
+				b.dataset.id = id; b.addEventListener('click', () => setFocus(id)); focusEl.appendChild(b);
+			};
+			mk('all', 'Всё');
+			[...nodes.values()].filter(n => n.kind === 'node' && n.col === 1).forEach((n, i) => mk(n.id, n.text, i + 1));
+		}
+
+		const checksLabel = document.createElement('span'); checksLabel.className = 'eyebrow'; checksLabel.textContent = 'Расхождения'; checksEl.appendChild(checksLabel);
+		const select = (id, set, title, list) => {
+			if (active === id) { clear(); return; }
+			if (focusId !== 'all') setFocus('all');
+			highlight(set, set); activeChip(id); showIssues(title, list);
+		};
+		Object.keys(GROUPS).forEach(g => {
+			const list = data.discrepancies.filter(d => d.group === g);
+			const b = button(`chip ${list.length ? 'gap' : 'neutral'}`, `<span class="n">${list.length}</span>${GROUPS[g]}`);
+			b.dataset.id = g; b.disabled = !list.length;
+			b.addEventListener('click', () => select(g, new Set(list.flatMap(d => d.targets)), GROUPS[g], list));
+			checksEl.appendChild(b);
+		});
+		Object.entries(data.tags).forEach(([tag, ids]) => {
+			const b = button('chip neutral', `<span class="n">${ids.length}</span>${esc(tag)}`, 'Узлы с меткой');
+			b.dataset.id = 'tag:' + tag;
+			b.addEventListener('click', () => {
+				if (active === b.dataset.id) { clear(); return; }
+				if (focusId !== 'all') setFocus('all');
+				const set = new Set(ids.map(i => 'n:' + i)); highlight(set, set); activeChip(b.dataset.id);
+				openTrail(`<div class="kind">Метка</div><p><b>${esc(tag)}</b></p><ol>${ids.map(i => `<li>${esc(nodes.get('n:' + i).text)}</li>`).join('')}</ol>`);
+			});
+			checksEl.appendChild(b);
+		});
+		const reset = button('chip reset', 'Сбросить выделение'); reset.addEventListener('click', clear); checksEl.appendChild(reset);
+
+		document.querySelectorAll('.issue-item').forEach(el => el.addEventListener('click', () => {
+			const d = data.discrepancies[Number(el.dataset.index)];
+			if (focusId !== 'all') setFocus('all');
+			const set = new Set(d.targets); highlight(set, set); activeChip(null); showIssues(GROUPS[d.group], [d]);
+			// К узлу, а не к доске: карта высокая, и её край ничего не покажет.
+			const first = nodeEls.get(d.targets[0]);
+			if (first) first.scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+		}));
+
+		render(all);
+	})();
+	{% endraw %}
+	</script>
+{% endif %}

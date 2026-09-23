@@ -28,6 +28,9 @@ no_cache = 1
 #: Цветов глав в палитре страницы; дальше они идут по кругу.
 ЦВЕТОВ_ГЛАВ = 5
 
+#: Вкладки экрана курса: собранное и сверка с картой декомпозиции.
+СБОРКА, КАРТА = "build", "map"
+
 #: Поля директивы урока в порядке, в каком их читает агент ученика; второе
 #: значение — список ли это по строке на пункт.
 ПОЛЯ_УРОКА = (
@@ -46,13 +49,16 @@ no_cache = 1
 )
 
 
-def сведения(пользователь: str, course: str | None = None, lesson: str | None = None) -> dict:
+def сведения(
+	пользователь: str, course: str | None = None, lesson: str | None = None, view: str | None = None
+) -> dict:
 	"""Что показать на странице этому пользователю.
 
 	Без `course` — все курсы: они общие, видимость по роли, а не по
-	авторству. С `course` — экран курса, с `lesson` — ещё и урок. Неизвестный
-	курс или урок не из этого курса дают пометку, а не ошибку: ссылку могли
-	прислать до того, как агент урок перенёс или удалил.
+	авторству. С `course` — экран курса: вкладка сборки или, с `view=map`,
+	сверка с картой декомпозиции; с `lesson` — урок. Неизвестный курс или урок
+	не из этого курса дают пометку, а не ошибку: ссылку могли прислать до того,
+	как агент урок перенёс или удалил.
 	"""
 	основа = {
 		"is_guest": пользователь == "Guest",
@@ -63,6 +69,8 @@ def сведения(пользователь: str, course: str | None = None, l
 		"courses": [],
 		"course": None,
 		"lesson": None,
+		"view": СБОРКА,
+		"map_check": None,
 		"missing": False,
 	}
 	if основа["is_guest"]:
@@ -82,7 +90,19 @@ def сведения(пользователь: str, course: str | None = None, l
 	if lesson:
 		основа["lesson"] = _урок(основа["course"], lesson)
 		основа["missing"] = основа["lesson"] is None
+	elif view == КАРТА:
+		основа["view"] = КАРТА
+		основа["map_check"] = _сверка(course)
 	return основа
+
+
+def _сверка(course: str) -> dict:
+	"""Сверка с картой — ровно то, что отдаёт агенту `course_map_check`, плюс
+	ссылки на уроки кабинета: из карточки узла урок открывается целиком."""
+	сверка = authoring.course_map_check(course=course)["data"]
+	for урок in сверка["platform"]["lessons"]:
+		урок["url"] = адрес(course, урок["id"])
+	return сверка
 
 
 def адрес(course: str, lesson: str | None = None) -> str:
@@ -210,10 +230,17 @@ def _сосед(уроки: list[dict], индекс: int) -> dict | None:
 def get_context(context):
 	context.no_breadcrumbs = True
 	context.update(
-		сведения(frappe.session.user, frappe.form_dict.get("course"), frappe.form_dict.get("lesson"))
+		сведения(
+			frappe.session.user,
+			frappe.form_dict.get("course"),
+			frappe.form_dict.get("lesson"),
+			frappe.form_dict.get("view"),
+		)
 	)
 	if context.lesson:
 		context.title = f"{context.lesson['title']} — кабинет автора"
+	elif context.course and context.view == КАРТА:
+		context.title = f"{context.course['title']} — карта — кабинет автора"
 	elif context.course:
 		context.title = f"{context.course['title']} — кабинет автора"
 	else:
