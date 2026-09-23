@@ -915,6 +915,18 @@ class IntegrationTestAuthorNotes(IntegrationTestCase):
 
 		self.assertEqual(self.снимок_замечания(ид)["text"], "# Мера\n\nПример меры.")
 
+	def test_урок_с_замечаниями_удаляется_а_замечание_остаётся(self):
+		"""Замечание — не содержание курса и удалению урока не мешает: место
+		пропало, замечание осталось с пометкой «места больше нет»."""
+		frappe.set_user(создать_куратора(f"notes-mod-{frappe.generate_hash(length=6)}@example.com", роль="Moderator"))
+		ид = self.замечание(target="material")["data"]["id"]
+
+		удаление = authoring.remove_lesson(lesson=self.урок)
+
+		self.assertTrue(удаление["ok"], удаление)
+		(з,) = [з for з in self.очередь() if з["id"] == ид]
+		self.assertTrue(з["missing"])
+
 	def test_снимок_не_уходит_наружу(self):
 		"""Снимок — рабочий материал кабинета, не контракт методов."""
 		self.замечание(target="material")

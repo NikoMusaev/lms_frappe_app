@@ -310,7 +310,11 @@ before_tests = "lms_frappe_app.testing.before_tests"
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# Замечания и визиты кабинета автора — не содержание курса: удалению урока
+# они не мешают. Замечание остаётся с пометкой «места больше нет», визит —
+# пустым следом. `Why:` без этого агент не мог удалить урок, к которому
+# поставили замечание (lms-high-time/learning-services#271).
+ignore_links_on_delete = ["Agent Author Note", "Agent Author Visit"]
 
 # Request Events
 # ----------------
