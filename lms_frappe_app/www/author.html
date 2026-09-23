@@ -89,6 +89,17 @@
 		padding: 24px 16px 64px; margin: 0 -15px;
 		--ch: var(--accent); --chs: var(--accent-soft);
 	}
+	/* Тема сайта красит заголовки и ячейки таблиц своим тёмным цветом, и в
+	   тёмной теме они выходили чёрными на тёмном — заголовки из markdown
+	   материала, таблицы в нём, группы расхождений. В кабинете цвет всего
+	   текста — от наших токенов; точечные правила ниже сильнее этого. */
+	.author-page :is(h1, h2, h3, h4, h5, h6, th, td, strong, b, summary, label, blockquote, dt, dd) { color: inherit; }
+	/* `prose` — ещё и класс типографики Tailwind на сайте: он красит блок
+	   серым под светлую тему, и ячейки таблиц материала тонули в тёмной. */
+	.author-page .prose { color: var(--ink); }
+	/* md_to_html вешает на таблицы классы Bootstrap `table table-bordered`,
+	   а `.table` задаёт свой серый цвет и фон. */
+	.author-page .prose table { color: inherit; --bs-table-color: inherit; --bs-table-bg: transparent; }
 	/* Тема сайта утяжеляет текст до 420; читать длинный материал так тяжело. */
 	.author-page p, .author-page li, .author-page td, .author-page .prose { font-weight: 400; }
 	.author-page .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 20px; }
