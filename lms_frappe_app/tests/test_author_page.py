@@ -284,3 +284,132 @@ class IntegrationTestAuthorPageNotes(IntegrationTestCase):
 		с = self.сведения_для(view="map")
 
 		self.assertEqual({узел: [з["id"] for з in записи] for узел, записи in с["map_notes"].items()}, {"T1": [self.на_карте]})
+
+	def блоки(self):
+		authoring.set_course_artifact(
+			course=self.курс,
+			artifact="register",
+			title="Реестр",
+			blocks=[
+				{"key": "risks", "title": "Риски", "lesson": self.урок},
+				{"key": "other", "title": "Другое"},
+			],
+		)
+
+	def добавить(self, target: str, lesson: str | None = None) -> str:
+		return authoring.add_note(course=self.курс, target=target, lesson=lesson, text="…")["data"]["id"]
+
+	def test_указатель_замечаний_урока_с_блоками_урока(self):
+		self.блоки()
+		на_блоке = self.добавить("block.register/risks")
+		self.добавить("block.register/other")
+
+		урок = self.сведения_для(lesson=self.урок)["lesson"]
+
+		self.assertEqual(
+			[з["id"] for з in урок["notes_index"]], [self.сделано, self.ждёт_агента, на_блоке, self.принято]
+		)
+		self.assertEqual(урок["open_notes"], 3)
+		(строка,) = [у for г in self.сведения_для()["course"]["chapters"] for у in г["lessons"]]
+		self.assertEqual(строка["open_notes"], 3)
+
+	def test_указатель_подписывает_место_без_названия_урока(self):
+		self.блоки()
+		на_блоке = self.добавить("block.register/risks")
+		на_уроке = self.добавить("lesson", self.урок)
+
+		места = {з["id"]: з["place"] for з in self.сведения_для(lesson=self.урок)["lesson"]["notes_index"]}
+
+		self.assertEqual(места[self.ждёт_агента], "Директива · teaching_directive")
+		self.assertEqual(места[self.принято], "Материал")
+		self.assertEqual(места[на_уроке], "Урок целиком")
+		self.assertEqual(места[на_блоке], "Документ register · блок «Риски»")
+
+	def test_замечание_без_места_на_странице_ведёт_в_очередь(self):
+		# Поля «Вопросы к проекту» в директиве нет — места на странице тоже.
+		без_места = self.добавить("directive.probing_questions", self.урок)
+
+		по_ид = {з["id"]: з for з in self.сведения_для(lesson=self.урок)["lesson"]["notes_index"]}
+
+		self.assertTrue(по_ид[self.ждёт_агента]["here"])
+		self.assertFalse(по_ид[без_места]["here"])
+
+	def test_замечание_на_блок_с_уроком_стоит_у_блока(self):
+		self.блоки()
+		с_уроком = self.добавить("block.register/risks", self.урок)
+
+		с = self.сведения_для(lesson=self.урок)
+
+		self.assertEqual([з["id"] for з in с["course"]["notes"]["block.register/risks"]], [с_уроком])
+		self.assertIn(с_уроком, [з["id"] for з in с["lesson"]["notes_index"]])
+
+
+class IntegrationTestAuthorPageLessonMap(IntegrationTestCase):
+	"""Расхождения урока с картой — в шапке урока и меткой в таблице структуры,
+	без перехода на вкладку «Карта» (lms-high-time/learning-services#266)."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"author-lmap-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Урок и карта {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Рамка")["data"]["id"]
+		self.первый = authoring.add_lesson(chapter=глава, title="Первый", body="# Первый")["data"]["id"]
+		self.второй = authoring.add_lesson(chapter=глава, title="Второй", body="# Второй")["data"]["id"]
+		authoring.set_directive(lesson=self.первый, teaching_directive="Веди", objectives="Не та цель")
+		authoring.set_directive(lesson=self.второй, teaching_directive="Веди", objectives="Цель два")
+		authoring.set_course_artifact(
+			course=self.курс,
+			artifact="register",
+			title="Реестр",
+			blocks=[{"key": "risks", "title": "Риски", "hint": "Пять записей", "lesson": self.второй}],
+		)
+
+	def записать_карту(self):
+		authoring.set_course_map(
+			course=self.курс,
+			levels=[
+				{"key": "result", "title": "Результат"},
+				{"key": "skill", "title": "Умения", "needs_children": True},
+				{"key": "thesis", "title": "Тезисы", "needs_lesson": True},
+			],
+			nodes=[
+				{"id": "R", "level": "result", "text": "Курс"},
+				{"id": "S1", "level": "skill", "text": "Умение", "parents": ["R"]},
+				{"id": "T1", "level": "thesis", "text": "Цель один", "parents": ["S1"], "lesson": "u1", "objective": True},
+				{"id": "T2", "level": "thesis", "text": "Цель два", "parents": ["S1"], "lesson": "u2", "objective": True},
+				{"id": "T9", "level": "thesis", "text": "Сирота", "parents": [], "lesson": "u1"},
+			],
+			lessons=[{"key": "u1", "title": "Первый"}, {"key": "u2", "title": "Второй"}],
+			blocks=[{"artifact": "register", "key": "risks", "lesson": "u1"}],
+		)
+
+	def сведения_для(self, **параметры) -> dict:
+		from lms_frappe_app.www.author import сведения
+
+		return сведения(self.куратор, course=self.курс, **параметры)
+
+	def test_урок_получает_свои_расхождения_и_ссылку_на_карту(self):
+		self.записать_карту()
+
+		урок = self.сведения_для(lesson=self.первый)["lesson"]
+
+		коды = sorted((р["group"], р["code"]) for р in урок["map_issues"])
+		self.assertEqual(коды, [("blocks", "lesson"), ("integrity", "orphan"), ("objectives", "mismatch")])
+		self.assertIn("view=map", урок["map_url"])
+		self.assertIn(f"node=lesson%3A{quote(self.первый, safe='')}", урок["map_url"])
+
+	def test_таблица_структуры_метит_уроки_с_расхождениями(self):
+		self.записать_карту()
+
+		уроки = {у["id"]: у for г in self.сведения_для()["course"]["chapters"] for у in г["lessons"]}
+
+		self.assertEqual(уроки[self.первый]["map_issues"], 3)
+		self.assertEqual(уроки[self.второй]["map_issues"], 1)
+
+	def test_без_карты_у_урока_расхождений_нет(self):
+		урок = self.сведения_для(lesson=self.первый)["lesson"]
+
+		self.assertEqual(урок["map_issues"], [])
+		self.assertIsNone(урок["map_url"])

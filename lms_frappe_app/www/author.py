@@ -36,6 +36,9 @@ no_cache = 1
 #: Вкладки экрана курса: собранное, сверка с картой декомпозиции, замечания.
 СБОРКА, КАРТА, ЗАМЕЧАНИЯ = "build", "map", "notes"
 
+#: Порядок групп очереди: сначала то, что ждёт человека.
+ГРУППЫ_ОЧЕРЕДИ = ("check", "question", "agent", "accepted")
+
 #: Поля директивы урока в порядке, в каком их читает агент ученика; второе
 #: значение — список ли это по строке на пункт.
 ПОЛЯ_УРОКА = (
@@ -97,14 +100,22 @@ def сведения(
 	основа["course"] = _курс(черновик["data"])
 	замечания = _замечания(course)
 	_замечания_курса(основа["course"], замечания)
+	сверка = _сверка(course)
+	for глава in основа["course"]["chapters"]:
+		for урок in глава["lessons"]:
+			урок["map_issues"] = len(_расхождения_урока(сверка, урок["id"]))
 	if lesson:
 		основа["lesson"] = _урок(основа["course"], lesson)
 		основа["missing"] = основа["lesson"] is None
 		if основа["lesson"]:
 			_замечания_урока(основа["lesson"], замечания)
+			основа["lesson"]["map_issues"] = _расхождения_урока(сверка, lesson)
+			основа["lesson"]["map_url"] = (
+				f"{адрес(course)}&view={КАРТА}&node={quote('lesson:' + lesson, safe='')}" if сверка["map"] else None
+			)
 	elif view == КАРТА:
 		основа["view"] = КАРТА
-		основа["map_check"] = _сверка(course)
+		основа["map_check"] = сверка
 		основа["map_notes"] = _по_местам(
 			(з for з in замечания if з["target"].startswith("map.") and з["status"] != "accepted"),
 			lambda з: з["target"].partition(".")[2],
@@ -113,6 +124,30 @@ def сведения(
 		основа["view"] = ЗАМЕЧАНИЯ
 		основа["notes_queue"] = _очередь(замечания)
 	return основа
+
+
+def _расхождения_урока(сверка: dict, урок: str) -> list[dict]:
+	"""Расхождения карты, которые касаются урока: про сам урок, про блок,
+	который он собирает по плану или на деле, про узел карты с этим уроком.
+	Блок, собираемый не тем уроком, касается обоих."""
+	if not сверка["map"]:
+		return []
+	пары = сверка["matches"]
+	урок_узла = {у["id"]: пары.get(у["lesson"]) for у in сверка["map"]["nodes"] if у["lesson"]}
+	на_деле = {(б["artifact"], б["key"]): б["lesson"] for б in сверка["platform"]["blocks"]}
+	по_плану = {(б["artifact"], б["key"]): пары.get(б["lesson"]) for б in сверка["map"]["blocks"] if б["lesson"]}
+
+	def касается(р: dict) -> bool:
+		if р.get("lesson") == урок:
+			return True
+		if р["group"] == "blocks":
+			блок = (р["artifact"], р["key"])
+			return урок in (р.get("expected"), р.get("actual"), на_деле.get(блок), по_плану.get(блок))
+		if р["group"] == "integrity":
+			return урок_узла.get(р.get("node")) == урок
+		return False
+
+	return [р for р in сверка["discrepancies"] if касается(р)]
 
 
 def _замечания(course: str) -> list[dict]:
@@ -148,24 +183,82 @@ def _замечания_курса(курс: dict, замечания: list[dict
 	курс["notes_attention"] = sum(з["waiting_on"] == "author" for з in замечания)
 	курс["notes_revision"] = authoring.ревизия_замечаний(курс["id"])
 	открытые = [з for з in замечания if з["status"] != "accepted"]
+	блоки = _блоки_уроков(курс)
 	for глава in курс["chapters"]:
 		for урок in глава["lessons"]:
-			урок["open_notes"] = sum(з["lesson"] == урок["id"] for з in открытые)
-	курс["notes"] = _по_местам(
-		(з for з in замечания if not з["lesson"] and not з["target"].startswith("map.")), lambda з: з["target"]
-	)
+			урок["open_notes"] = sum(_на_уроке(з, урок["id"], блоки.get(урок["id"], set())) for з in открытые)
+	курс["notes"] = _по_местам(filter(_на_курсе, замечания), lambda з: з["target"])
+
+
+def _на_курсе(замечание: dict) -> bool:
+	"""Место замечания — на экране курса: курс, сквозная директива, блок.
+
+	Блок стоит у своего блока, даже если агент указал при нём урок: у блока
+	одно место, и на странице урока его рисует тот же макрос, что и в сборке.
+	"""
+	вид = замечание["target"].partition(".")[0]
+	return вид == "block" or (not замечание["lesson"] and вид != "map")
+
+
+def _блоки_уроков(курс: dict) -> dict[str, set[str]]:
+	"""Адреса блоков документа, которые собирает урок: `block.<документ>/<ключ>`."""
+	блоки: dict[str, set[str]] = {}
+	for документ in курс["artifacts"]:
+		for блок in документ["blocks"]:
+			if блок["lesson"]:
+				блоки.setdefault(блок["lesson"], set()).add(f"block.{документ['artifact']}/{блок['key']}")
+	return блоки
+
+
+def _на_уроке(замечание: dict, урок: str, блоки: set[str]) -> bool:
+	"""Замечание относится к странице урока: к его разделу или к блоку,
+	который урок собирает."""
+	вид = замечание["target"].partition(".")[0]
+	return замечание["target"] in блоки or (замечание["lesson"] == урок and вид in notes.С_УРОКОМ)
 
 
 def _замечания_урока(урок: dict, замечания: list[dict]) -> None:
-	свои = [з for з in замечания if з["lesson"] == урок["id"]]
-	урок["notes"] = _по_местам(свои, lambda з: з["target"])
-	урок["open_notes"] = sum(з["status"] != "accepted" for з in свои)
+	"""Замечания урока по местам и указатель: всё, что относится к уроку,
+	сначала то, что ждёт человека.
+
+	`here` — место замечания есть на странице. Нет его, когда агент убрал
+	вопрос или поле директивы: такое замечание указатель ведёт в очередь.
+	"""
+	места = {"lesson", "material"}
+	if урок["directive"]:
+		места |= {f"directive.{поле['name']}" for поле in урок["directive"]["fields"]}
+	if урок["quiz"]:
+		места |= {f"question.{вопрос['id']}" for вопрос in урок["quiz"]["questions"]}
+	блоки = {f"block.{блок['artifact']}/{блок['key']}" for блок in урок["blocks"]}
+	места |= блоки
+
+	урок["notes"] = _по_местам((з for з in замечания if з["lesson"] == урок["id"]), lambda з: з["target"])
+	# Подпись места — без названия урока: на его странице оно в каждой
+	# строке лишнее.
+	название = f"Урок {урок['number']} «{урок['title']}»"
+
+	def место(подпись: str) -> str:
+		if подпись == название:
+			return "Урок целиком"
+		if подпись.startswith(название + " · "):
+			остаток = подпись[len(название) + 3 :]
+			return остаток[:1].upper() + остаток[1:]
+		return подпись
+
+	указатель = [
+		dict(з, here=з["target"] in места, place=место(з["label"]))
+		for з in замечания
+		if _на_уроке(з, урок["id"], блоки)
+	]
+	указатель.sort(key=lambda з: ГРУППЫ_ОЧЕРЕДИ.index(notes.группа(з["status"], з["waiting_on"])))
+	урок["notes_index"] = указатель
+	урок["open_notes"] = sum(з["status"] != "accepted" for з in указатель)
 
 
 def _очередь(замечания: list[dict]) -> dict[str, list[dict]]:
 	"""Очередь по тому, что ждёт человека: проверить сделанное, ответить
 	агенту, ждать агента, принятые."""
-	очередь: dict[str, list[dict]] = {"check": [], "question": [], "agent": [], "accepted": []}
+	очередь: dict[str, list[dict]] = {группа: [] for группа in ГРУППЫ_ОЧЕРЕДИ}
 	for з in замечания:
 		очередь[notes.группа(з["status"], з["waiting_on"])].append(з)
 	return очередь
