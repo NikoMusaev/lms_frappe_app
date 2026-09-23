@@ -567,3 +567,80 @@ class IntegrationTestCourseArtifact(IntegrationTestCase):
 		)["data"]
 
 		self.assertEqual(len(frappe.get_doc("Agent Course Artifact", ответ["id"]).blocks), 2)
+
+
+class IntegrationTestAuthorMirrorFields(IntegrationTestCase):
+	"""Черновик показывает наполненность урока фактами, а не признаками.
+
+	`Why:` зеркало автора (#261) и сам агент сверяют собранное по черновику;
+	признак `has_body` не говорит ни сколько материала, ни на сколько частей
+	его режет платформа, ни какая версия директивы действует.
+	"""
+
+	def setUp(self):
+		from lms_frappe_app.tests.sample_data import политика_по_умолчанию
+
+		self.addCleanup(политика_по_умолчанию)
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"mirror-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Зеркало {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.материал = "## Заголовок\n\n" + "\n\n".join(["текст. " * 30] * 6)
+		self.урок = authoring.add_lesson(chapter=глава, title="Урок", body=self.материал)["data"]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def урок_черновика(self) -> dict:
+		черновик = authoring.course_draft(course=self.курс)["data"]
+		return черновик["chapters"][0]["lessons"][0]
+
+	def test_длина_и_сегменты_материала(self):
+		from lms_frappe_app.agent_learning.normalizer import нормализовать_урок
+
+		урок = self.урок_черновика()
+		self.assertEqual(урок["body_chars"], len(self.материал.strip()))
+		self.assertEqual(урок["body_segments"], 1)
+
+		frappe.db.set_single_value("Agent Learning Settings", "lesson_segment_limit", 300)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
+
+		урок = self.урок_черновика()
+		self.assertGreater(урок["body_segments"], 1)
+		self.assertEqual(урок["body_segments"], нормализовать_урок(self.урок).total_segments)
+
+	def test_версия_директивы_и_число_целей(self):
+		урок = self.урок_черновика()
+		self.assertIsNone(урок["directive_version"])
+		self.assertEqual(урок["objectives"], 0)
+
+		authoring.set_directive(lesson=self.урок, teaching_directive="Первая")
+		authoring.set_directive(lesson=self.урок, teaching_directive="Вторая", objectives="Цель один\nЦель два\n")
+
+		урок = self.урок_черновика()
+		self.assertEqual(урок["directive_version"], 2)
+		self.assertEqual(урок["objectives"], 2)
+
+	def test_порог_квиза_и_пояснения_вариантов(self):
+		authoring.add_quiz(
+			lesson=self.урок,
+			passing_percentage=60,
+			questions=[
+				{
+					"text": "Что здесь не так?",
+					"options": [
+						{"text": "Верно", "correct": True, "explanation": "Потому что."},
+						{"text": "Неверно"},
+					],
+				}
+			],
+		)
+
+		квиз = self.урок_черновика()["quiz"]
+
+		self.assertEqual(квиз["passing_percentage"], 60)
+		self.assertEqual(
+			[(в["text"], в["explanation"]) for в in квиз["questions"][0]["options"]],
+			[("Верно", "Потому что."), ("Неверно", "")],
+		)

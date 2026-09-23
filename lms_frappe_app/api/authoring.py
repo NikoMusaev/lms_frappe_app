@@ -14,7 +14,7 @@ import json
 
 import frappe
 
-from lms_frappe_app.agent_learning import course_builder, directives, quiz, structure
+from lms_frappe_app.agent_learning import course_builder, directives, normalizer, quiz, structure
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
@@ -597,13 +597,14 @@ def course_draft(course: str) -> dict:
 	сведения = frappe.db.get_value(
 		"LMS Course", course, ["title", "short_introduction", "published"], as_dict=True
 	)
+	предел = normalizer.предел_сегмента()
 	return {
 		"id": course,
 		"title": сведения.title,
 		"summary": сведения.short_introduction,
 		"published": bool(сведения.published),
 		"chapters": [
-			{"id": глава["name"], "title": глава["title"], "lessons": _уроки_главы(глава["name"])}
+			{"id": глава["name"], "title": глава["title"], "lessons": _уроки_главы(глава["name"], предел)}
 			for глава in structure.главы_курса(course)
 		],
 		"directive": _действующая_директива_курса(course),
@@ -673,22 +674,35 @@ def unpublish_course(course: str) -> dict:
 # --- вспомогательное ---
 
 
-def _уроки_главы(глава: str) -> list[dict]:
+def _уроки_главы(глава: str, предел: int) -> list[dict]:
+	"""Уроки главы с наполненностью: факты, по которым сверяют собранное.
+
+	`body_segments` считает тот же разбор, что режет урок для `start_lesson`:
+	число на экране автора обязано совпадать с тем, что получит агент.
+	"""
 	from lms_frappe_app.agent_learning import quiz
 
 	уроки = structure.уроки_главы(глава)
 	собранное = []
 	for урок in уроки:
-		сведения = frappe.db.get_value("Course Lesson", урок, ["title", "body"], as_dict=True)
+		сведения = frappe.db.get_value(
+			"Course Lesson", урок, ["title", "body", "content"], as_dict=True
+		)
 		квиз = quiz._квиз_урока(урок)
+		директива = directives.запись("Agent Lesson Directive", {"lesson": урок}, ("objectives",))
+		материал = normalizer.нормализовать(
+			title=сведения.title, content=сведения.content, body=сведения.body, предел=предел
+		)
 		собранное.append(
 			{
 				"id": урок,
 				"title": сведения.title,
 				"has_body": bool((сведения.body or "").strip()),
-				"has_directive": bool(
-					frappe.db.exists("Agent Lesson Directive", {"lesson": урок, "is_active": 1})
-				),
+				"body_chars": len((сведения.body or "").strip()),
+				"body_segments": материал.total_segments,
+				"has_directive": директива is not None,
+				"directive_version": директива.version if директива else None,
+				"objectives": len(directives.строки(директива.objectives)) if директива else 0,
 				"quiz": _вопросы_с_эталонами(квиз) if квиз else None,
 			}
 		)
@@ -707,7 +721,11 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 				"text": документ.question,
 				"type": строка.type,
 				"options": [
-					{"text": текст, "correct": bool(документ.get(f"is_correct_{номер}"))}
+					{
+						"text": текст,
+						"correct": bool(документ.get(f"is_correct_{номер}")),
+						"explanation": документ.get(f"explanation_{номер}") or "",
+					}
 					for номер, текст in course_builder.заполненные(документ, "option")
 				],
 				"answers": [
@@ -715,7 +733,11 @@ def _вопросы_с_эталонами(квиз: str) -> dict:
 				],
 			}
 		)
-	return {"id": квиз, "questions": вопросы}
+	return {
+		"id": квиз,
+		"passing_percentage": frappe.db.get_value("LMS Quiz", квиз, "passing_percentage"),
+		"questions": вопросы,
+	}
 
 
 def _действующая_директива(lesson: str) -> dict | None:
