@@ -11,6 +11,7 @@
 """
 
 import json
+from urllib.parse import quote
 
 import frappe
 
@@ -610,7 +611,63 @@ def course_draft(course: str) -> dict:
 		"directive": _действующая_директива_курса(course),
 		"artifacts": _действующие_артефакты(course),
 		"readiness": course_builder.проверить_готовность(course),
+		"revision": ревизия(course),
+		"author_url": frappe.utils.get_url(f"/author?course={quote(course)}"),
 	}
+
+
+@frappe.whitelist(methods=["GET"])
+@контракт
+def course_revision(course: str) -> dict:
+	"""Отметка последнего изменения курса.
+
+	Для опроса зеркалом автора (#261): страница спрашивает её раз в
+	несколько секунд, и перечитывать ради этого курс целиком незачем.
+	"""
+	_автор()
+	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
+	return {"course": course, "revision": ревизия(course)}
+
+
+def ревизия(course: str) -> str:
+	"""Самая свежая отметка изменения всего, из чего собран курс.
+
+	Удаление урока или вопроса тоже двигает её: убирая строку, сохраняется
+	глава или квиз, в которых она стояла.
+	"""
+	уроки = frappe.get_all("Course Lesson", filters={"course": course}, pluck="name")
+	квизы = set(frappe.get_all("LMS Quiz", filters={"lesson": ["in", уроки]}, pluck="name")) if уроки else set()
+	квизы |= set(
+		frappe.get_all(
+			"Course Lesson", filters={"course": course, "quiz_id": ["is", "set"]}, pluck="quiz_id"
+		)
+	)
+	вопросы = (
+		frappe.get_all("LMS Quiz Question", filters={"parent": ["in", list(квизы)]}, pluck="question")
+		if квизы
+		else []
+	)
+	источники = [
+		("LMS Course", {"name": course}),
+		("Course Chapter", {"course": course}),
+		("Course Lesson", {"course": course}),
+		("Agent Course Directive", {"course": course}),
+		("Agent Course Artifact", {"course": course}),
+	]
+	if квизы:
+		источники.append(("LMS Quiz", {"name": ["in", list(квизы)]}))
+	if вопросы:
+		источники.append(("LMS Question", {"name": ["in", вопросы]}))
+	if уроки:
+		источники.append(("Agent Lesson Directive", {"lesson": ["in", уроки]}))
+	отметки = [
+		отметка
+		for doctype, фильтры in источники
+		for отметка in frappe.get_all(
+			doctype, filters=фильтры, pluck="modified", order_by="modified desc", limit=1
+		)
+	]
+	return max(отметки).isoformat()
 
 
 @frappe.whitelist()

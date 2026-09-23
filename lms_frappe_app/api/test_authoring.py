@@ -644,3 +644,74 @@ class IntegrationTestAuthorMirrorFields(IntegrationTestCase):
 			[(в["text"], в["explanation"]) for в in квиз["questions"][0]["options"]],
 			[("Верно", "Потому что."), ("Неверно", "")],
 		)
+
+
+class IntegrationTestCourseRevision(IntegrationTestCase):
+	"""Отметка изменения курса: по ней зеркало автора узнаёт, что агент что-то
+	поменял, не перечитывая курс целиком (#261)."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		# Удаление урока Frappe Learning разрешает только модератору.
+		self.куратор = создать_куратора(f"revision-{суффикс}@example.com", роль="Moderator")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Ревизия {суффикс}", summary="к")["data"]["id"]
+		self.глава = authoring.add_chapter(course=self.курс, title="Глава")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=self.глава, title="Урок", body="# Текст")["data"]["id"]
+		self.лишний = authoring.add_lesson(chapter=self.глава, title="Лишний", body="# Лишний")["data"]["id"]
+		authoring.add_quiz(
+			lesson=self.урок,
+			questions=[{"text": "Первый?", "options": [{"text": "a", "correct": True}, {"text": "b"}]}],
+		)
+		self.вопрос = authoring.get_lesson(lesson=self.урок)["data"]["quiz"]["questions"][0]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def ревизия(self) -> str:
+		return authoring.course_revision(course=self.курс)["data"]["revision"]
+
+	def test_ревизия_растёт_от_каждой_правки_курса(self):
+		правки = {
+			"update_lesson": lambda: authoring.update_lesson(lesson=self.урок, body="# Новый текст"),
+			"set_directive": lambda: authoring.set_directive(lesson=self.урок, teaching_directive="Веди"),
+			"set_course_directive": lambda: authoring.set_course_directive(
+				course=self.курс, teaching_directive="Сквозная"
+			),
+			"update_question": lambda: authoring.update_question(question=self.вопрос, text="Второй?"),
+			"set_course_artifact": lambda: authoring.set_course_artifact(
+				course=self.курс, artifact="summary", title="Резюме", blocks=[{"key": "goal", "title": "Цель"}]
+			),
+			"add_chapter": lambda: authoring.add_chapter(course=self.курс, title="Ещё глава"),
+			"remove_lesson": lambda: authoring.remove_lesson(lesson=self.лишний),
+		}
+		for имя, правка in правки.items():
+			with self.subTest(правка=имя):
+				до = self.ревизия()
+				правка()
+				self.assertGreater(self.ревизия(), до)
+
+	def test_чтение_ревизию_не_меняет(self):
+		до = self.ревизия()
+		authoring.course_draft(course=self.курс)
+		authoring.get_lesson(lesson=self.урок)
+
+		self.assertEqual(self.ревизия(), до)
+
+	def test_черновик_отдаёт_ту_же_ревизию_и_ссылку_на_зеркало(self):
+		черновик = authoring.course_draft(course=self.курс)["data"]
+
+		self.assertEqual(черновик["revision"], self.ревизия())
+		self.assertTrue(черновик["author_url"].endswith(f"/author?course={self.курс}"))
+
+	def test_ученику_ревизия_недоступна(self):
+		ученик = создать_ученика(f"revision-s-{frappe.generate_hash(length=6)}@example.com")
+		frappe.set_user(ученик)
+
+		with self.assertRaises(frappe.PermissionError):
+			authoring.course_revision(course=self.курс)
+
+	def test_неизвестный_курс_даёт_код(self):
+		ответ = authoring.course_revision(course="такого-курса-нет")
+
+		self.assertEqual(ответ["error"]["code"], "course_not_found")
