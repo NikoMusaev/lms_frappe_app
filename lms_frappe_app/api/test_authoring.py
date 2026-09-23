@@ -18,6 +18,7 @@ from lms_frappe_app.tests.sample_data import создать_куратора, с
 from lms_frappe_app.agent_learning import quiz
 from lms_frappe_app.agent_learning import structure
 from lms_frappe_app.agent_learning.structure import уроки_главы
+from lms_frappe_app.agent_learning import snapshots
 from lms_frappe_app.api import authoring
 
 
@@ -890,6 +891,48 @@ class IntegrationTestAuthorNotes(IntegrationTestCase):
 
 	def очередь(self, **фильтры) -> list[dict]:
 		return authoring.list_notes(course=self.курс, **фильтры)["data"]["notes"]
+
+	def снимок_замечания(self, ид: str) -> dict | None:
+		return snapshots.из_json(frappe.db.get_value("Agent Author Note", ид, "baseline"))
+
+	def test_замечание_запоминает_место_каким_его_видел_человек(self):
+		"""Снимок места — «как было» для разницы, когда агент отметит
+		«сделано» (lms-high-time/learning-services#271)."""
+		на_материал = self.замечание(target="material")["data"]["id"]
+		к_курсу = self.замечание(target="course", lesson=None)["data"]["id"]
+
+		self.assertEqual(self.снимок_замечания(на_материал), {"text": "# Мера", "mode": "text"})
+		self.assertIsNone(self.снимок_замечания(к_курсу))
+
+	def test_вернуть_запоминает_место_заново(self):
+		"""Вернули — следующее «сделано» сравнивается с тем, что человек
+		видел, когда возвращал, а не с исходным текстом."""
+		ид = self.замечание(target="material")["data"]["id"]
+		authoring.update_lesson(lesson=self.урок, body="# Мера\n\nПример меры.")
+		authoring.set_note_status(note=ид, status="done", text="Добавил пример", via="agent")
+
+		authoring.set_note_status(note=ид, status="open", text="Пример не про склад")
+
+		self.assertEqual(self.снимок_замечания(ид)["text"], "# Мера\n\nПример меры.")
+
+	def test_урок_с_замечаниями_удаляется_а_замечание_остаётся(self):
+		"""Замечание — не содержание курса и удалению урока не мешает: место
+		пропало, замечание осталось с пометкой «места больше нет»."""
+		frappe.set_user(создать_куратора(f"notes-mod-{frappe.generate_hash(length=6)}@example.com", роль="Moderator"))
+		ид = self.замечание(target="material")["data"]["id"]
+
+		удаление = authoring.remove_lesson(lesson=self.урок)
+
+		self.assertTrue(удаление["ok"], удаление)
+		(з,) = [з for з in self.очередь() if з["id"] == ид]
+		self.assertTrue(з["missing"])
+
+	def test_снимок_не_уходит_наружу(self):
+		"""Снимок — рабочий материал кабинета, не контракт методов."""
+		self.замечание(target="material")
+
+		(з,) = self.очередь()
+		self.assertNotIn("baseline", з)
 
 	def test_замечание_приходит_с_адресом_и_ходом_агента(self):
 		ид = self.замечание(quote="По каждой мере три вопроса")["data"]["id"]

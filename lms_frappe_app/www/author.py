@@ -17,7 +17,7 @@ from urllib.parse import quote
 import frappe
 from frappe.utils import md_to_html, sanitize_html
 
-from lms_frappe_app.agent_learning import directives, normalizer, notes
+from lms_frappe_app.agent_learning import diffs, directives, normalizer, notes, snapshots
 from lms_frappe_app.api import authoring
 
 no_cache = 1
@@ -38,6 +38,18 @@ no_cache = 1
 
 #: Порядок групп очереди: сначала то, что ждёт человека.
 ГРУППЫ_ОЧЕРЕДИ = ("check", "question", "agent", "accepted")
+
+#: Поля директив по-человечески — в разделах урока и в разнице по местам.
+ПОДПИСИ_ПОЛЕЙ = {
+	"teaching_directive": "Как вести занятие",
+	"objectives": "Цели",
+	"probing_questions": "Вопросы к проекту",
+	"success_criteria": "Признаки успеха",
+	"common_misconceptions": "Частые заблуждения",
+	"student_profile": "Кто ученик",
+	"glossary": "Глоссарий",
+	"remember_about_student": "Что запоминать об ученике",
+}
 
 #: Поля директивы урока в порядке, в каком их читает агент ученика; второе
 #: значение — список ли это по строке на пункт.
@@ -82,6 +94,7 @@ def сведения(
 		"map_notes": {},
 		"notes_queue": None,
 		"note_methods": МЕТОДЫ_ЗАМЕЧАНИЙ,
+		"field_labels": ПОДПИСИ_ПОЛЕЙ,
 		"missing": False,
 	}
 	if основа["is_guest"]:
@@ -206,9 +219,21 @@ def _расхождения_урока(сверка: dict, урок: str) -> lis
 
 def _замечания(course: str) -> list[dict]:
 	"""Замечания курса — ровно то, что получает агент в `list_notes`, плюс
-	ссылка на место: по ней из очереди открывается урок на нужном разделе."""
+	ссылка на место: по ней из очереди открывается урок на нужном разделе.
+
+	У сделанного — `changes`: разница места со снимком, который замечание
+	запомнило, когда его ставили или возвращали. По ней «сделано» проверяют,
+	не перечитывая раздел (lms-high-time/learning-services#271).
+	"""
 	замечания = authoring.list_notes(course=course)["data"]["notes"]
+	снимки = dict(
+		frappe.get_all(
+			"Agent Author Note", filters={"course": course, "status": "done"}, fields=["name", "baseline"], as_list=True
+		)
+	)
 	for з in замечания:
+		if з["status"] == "done" and snapshots.бывает_снимок(з["target"]):
+			з["changes"] = _правки(course, з, snapshots.из_json(снимки.get(з["id"])))
 		з["anchor"] = якорь(з["target"])
 		if з["target"].startswith("map."):
 			з["url"] = f"{адрес(course)}&view={КАРТА}&node={quote(з['target'].partition('.')[2])}"
@@ -217,6 +242,32 @@ def _замечания(course: str) -> list[dict]:
 		else:
 			з["url"] = f"{адрес(course)}#{з['anchor']}"
 	return замечания
+
+
+def _правки(course: str, замечание: dict, было: dict | None) -> dict:
+	стало = None if замечание["missing"] else snapshots.снимок(course, замечание["lesson"], замечание["target"])
+	итог = diffs.сравнить(было, стало)
+	for место in итог.get("places", []):
+		снимок_места = ((стало or {}).get("places") or {}).get(место["target"]) or (
+			((было or {}).get("places") or {}).get(место["target"])
+		)
+		место["label"] = _подпись_места(место["target"], снимок_места)
+	return итог
+
+
+def _подпись_места(target: str, снимок_места: dict | None) -> str:
+	"""Место урока словами — для разницы замечания ко всему уроку."""
+	вид, _, ключ = target.partition(".")
+	первая = ((снимок_места or {}).get("text") or "").strip().split("\n")[0]
+	if вид == "material":
+		return "Материал"
+	if вид == "directive":
+		return "Директива · " + ПОДПИСИ_ПОЛЕЙ.get(ключ, ключ)
+	if вид == "question":
+		return f"Вопрос «{первая[:60]}{'…' if len(первая) > 60 else ''}»"
+	if вид == "block":
+		return f"Блок «{первая}»"
+	return target
 
 
 def якорь(target: str) -> str:

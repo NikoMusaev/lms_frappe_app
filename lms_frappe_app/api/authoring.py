@@ -15,7 +15,16 @@ from urllib.parse import quote
 
 import frappe
 
-from lms_frappe_app.agent_learning import course_builder, course_map, directives, normalizer, notes, quiz, structure
+from lms_frappe_app.agent_learning import (
+	course_builder,
+	course_map,
+	directives,
+	normalizer,
+	notes,
+	quiz,
+	snapshots,
+	structure,
+)
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
@@ -750,16 +759,20 @@ def add_note(
 	адрес = notes.разобрать_адрес(target, lesson, ПОЛЯ_ДИРЕКТИВЫ, ПОЛЯ_ДИРЕКТИВЫ_КУРСА)
 	_проверить_место_замечания(course, lesson, адрес)
 	_проверить_источник(via)
+	место = адрес["kind"] + (f".{адрес['key']}" if адрес["key"] else "")
 	документ = frappe.get_doc(
 		{
 			"doctype": "Agent Author Note",
 			"course": course,
 			"lesson": lesson,
-			"target": адрес["kind"] + (f".{адрес['key']}" if адрес["key"] else ""),
+			"target": место,
 			"status": "open",
 			"via": via,
 			"quote": (quote or "").strip(),
 			"text": _текст_замечания(text),
+			# Место, каким его видел человек: «как было» для разницы, когда
+			# агент отметит «сделано» (#271).
+			"baseline": snapshots.в_json(snapshots.снимок(course, lesson, место)),
 		}
 	).insert()
 	return {
@@ -820,6 +833,10 @@ def set_note_status(note: str, status: str, text: str | None = None, via: str = 
 	notes.проверить_переход(документ.status, status, via, text)
 	if (text or "").strip():
 		_ответить(документ, text.strip(), via)
+	if status == "open":
+		# Вернули — следующее «сделано» сравнивается с тем, что человек видел,
+		# когда возвращал: исходная правка уже проверена.
+		документ.baseline = snapshots.в_json(snapshots.снимок(документ.course, документ.lesson, документ.target))
 	документ.status = status
 	документ.save()
 	return _состояние_замечания(документ)
