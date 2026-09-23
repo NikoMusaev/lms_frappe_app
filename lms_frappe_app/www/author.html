@@ -1,5 +1,5 @@
 {% extends "templates/web.html" %}
-{% from "lms_frappe_app/templates/includes/author_notes_macros.html" import место, карточка, атрибуты, статус %}
+{% from "lms_frappe_app/templates/includes/author_notes_macros.html" import место, карточка, атрибуты, статус, кнопка_замечания %}
 
 {% block title %}{{ title }}{% endblock %}
 
@@ -23,13 +23,14 @@
 	{% set target = префикс ~ "." ~ п.name if префикс else None %}
 	{% set метка = подпись ~ " · " ~ ПОДПИСИ.get(п.name, п.name) %}
 	<div class="field"{% if target %} {{ атрибуты(target, lesson, метка) }}{% endif %}>
-		<h4>{{ ПОДПИСИ.get(п.name, п.name) }} <code>{{ п.name }}</code></h4>
+		<div class="field-head"><h4>{{ ПОДПИСИ.get(п.name, п.name) }} <code>{{ п.name }}</code></h4>
+			{% if target %}{{ кнопка_замечания(target, lesson, метка) }}{% endif %}</div>
 		{% if п["items"] is not none %}
 		<ul>{% for пункт in п["items"] %}<li>{{ пункт | e }}</li>{% endfor %}</ul>
 		{% else %}
 		<div class="prose">{{ п.html }}</div>
 		{% endif %}
-		{% if target %}{{ место(target, lesson, метка, замечания.get(target, []), якорь(target)) }}{% endif %}
+		{% if target %}{{ место(target, lesson, метка, замечания.get(target, []), якорь(target), с_кнопкой=False) }}{% endif %}
 	</div>
 	{% endfor %}
 {% endmacro %}
@@ -52,7 +53,7 @@
 				{% if б.lesson_url %}<a class="block-lesson" href="{{ б.lesson_url }}">{{ б.lesson_title | e }}</a>
 				{% else %}<span class="block-lesson gap-text">урок не назначен</span>{% endif %}
 			{% endif %}
-			{% if открытые %}<span class="note-count" title="Открытых замечаний к блоку">✎ {{ открытые | length }}</span>{% endif %}
+			<span data-live="{{ якорь(target) }}-count">{% if открытые %}<span class="note-count" title="Открытых замечаний к блоку">✎ {{ открытые | length }}</span>{% endif %}</span>
 		</summary>
 		<div class="block-body">
 			{% if б.hint %}<p class="block-hint">{{ б.hint | e }}</p>{% else %}<p class="muted">Подсказки агенту нет.</p>{% endif %}
@@ -233,6 +234,12 @@
 	.author-page details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
 	.author-page .field { margin-top: 14px; }
 	.author-page .field ul { margin: 0; padding-left: 20px; }
+	.author-page :is(.field-head, .question-head) { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+	.author-page .note-add.quiet {
+		flex: none; border: 0; padding: 0 2px; border-radius: 4px; font-size: 13px; color: var(--muted); background: none; white-space: nowrap;
+	}
+	.author-page .note-add.quiet:hover, .author-page .note-add.quiet:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+	.author-page .queue { display: flex; flex-direction: column; gap: 20px; }
 	.author-page .prose { max-width: 72ch; }
 	.author-page .prose table { border-collapse: collapse; margin: 12px 0; font-size: 14px; }
 	.author-page .prose th, .author-page .prose td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
@@ -289,6 +296,12 @@
 	.author-page .lesson-nav .n.warn { background: var(--warn-soft); color: var(--warn); }
 	.author-page .lesson-nav .n.gap, .author-page .map-count { background: var(--gap-soft); color: var(--gap); }
 	.author-page .map-count { display: inline-block; margin-left: 6px; text-decoration: none; }
+	/* Метка замечаний — в таблице структуры, у блока и в списке курсов, где
+	   стили замечаний не подключены. */
+	.author-page .note-count {
+		display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 12px;
+		font-family: "IBM Plex Mono", monospace; background: var(--warn-soft); color: var(--warn); text-decoration: none;
+	}
 	/* Якорь не должен уходить под липкую панель; её высоту скрипт кладёт в --bar. */
 	.author-page [id^="section-"], .author-page .note-place, .author-page .note-card, .author-page #map-issues {
 		scroll-margin-top: calc(var(--bar, 56px) + 12px);
@@ -312,6 +325,8 @@
 	.author-page .courses { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 	.author-page .courses a { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; color: var(--ink); text-decoration: none; }
 	.author-page .courses a:hover { border-color: var(--accent); }
+	.author-page .course-attention { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; }
+	.author-page .course-attention :is(.note-count, .map-count) { margin-left: 0; }
 
 	.author-page .pager { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
 	.author-page .facts { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -411,7 +426,7 @@
 			<a href="#section-directive">Директива</a>
 			<a href="#section-quiz">Квиз</a>
 			<a href="#section-blocks">Блоки</a>
-			<a href="#section-notes">Замечания{% if lesson.open_notes %} <span class="n warn">{{ lesson.open_notes }}</span>{% endif %}</a>
+			<a href="#section-notes">Замечания<span data-live="nav-notes">{% if lesson.open_notes %} <span class="n warn">{{ lesson.open_notes }}</span>{% endif %}</span></a>
 		</nav>
 	</div>
 	{% if lesson.map_issues %}
@@ -456,7 +471,8 @@
 			{% for в in lesson.quiz.questions %}
 			{% set target = "question." ~ в.id %}
 			<div class="question{% if в.broken %} broken{% endif %}" {{ атрибуты(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index) }}>
-				<div><span class="num muted">{{ loop.index }}.</span> {{ (в.text or "Вопрос без текста") | e }}</div>
+				<div class="question-head"><div><span class="num muted">{{ loop.index }}.</span> {{ (в.text or "Вопрос без текста") | e }}</div>
+					{{ кнопка_замечания(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index) }}</div>
 				{% if в.options %}
 				<ol type="a">
 					{% for о in в.options %}
@@ -466,7 +482,7 @@
 				</ol>
 				{% endif %}
 				{% if в.answers %}<p class="why">Верные ответы: {{ в.answers | join("; ") | e }}</p>{% endif %}
-				{{ место(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index, lesson.notes.get(target, []), якорь(target)) }}
+				{{ место(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index, lesson.notes.get(target, []), якорь(target), с_кнопкой=False) }}
 			</div>
 			{% endfor %}
 		{% else %}<p class="muted">Квиза нет.</p>{% endif %}
@@ -483,7 +499,7 @@
 		уроке их не найти глазами. Сначала то, что ждёт вас; замечание, чьего
 		места на странице больше нет, ведёт в очередь.
 	#}
-	<section class="panel" id="section-notes">
+	<section class="panel" id="section-notes" data-live="notes-index">
 		<h2>Замечания к уроку <span class="muted num">{{ lesson.open_notes }}</span></h2>
 		{% if lesson.notes_index %}
 		<ul class="note-index">
@@ -518,7 +534,7 @@
 		</p>
 	</div>
 
-	<nav class="tabs" aria-label="Вкладки курса">
+	<nav class="tabs" aria-label="Вкладки курса" data-live="tabs">
 		<a class="tab{% if view == 'build' %} active{% endif %}" href="{{ course.url }}"{% if view == 'build' %} aria-current="page"{% endif %}>Сборка</a>
 		<a class="tab{% if view == 'map' %} active{% endif %}" href="{{ course.url }}&view=map"{% if view == 'map' %} aria-current="page"{% endif %}>Карта
 			{% if course.map_discrepancies %}<span class="n">{{ course.map_discrepancies }}</span>{% endif %}</a>
@@ -532,6 +548,7 @@
 	{% set q = notes_queue %}
 	<p class="intro">Замечания к курсу. Агент берёт те, что ждут его, правит курс и отмечает «сделано»; вы принимаете или возвращаете с ответом.</p>
 	{{ место("course", None, "Курс", [], "note-course", "Замечание к курсу") }}
+	<div class="queue" data-live="queue">
 	{% for ключ, заголовок, пояснение in [
 		("check", "Проверьте", "Агент отметил «сделано»: примите или верните с ответом."),
 		("question", "Агент спрашивает", "Ответьте — и ход вернётся к агенту."),
@@ -548,10 +565,11 @@
 		<div class="notes-list">{% for з in q.accepted %}{{ карточка(з, True) }}{% endfor %}</div>
 	</details>
 	{% endif %}
+	</div>
 	{% else %}
 	{# Сначала то, что ждёт действия, потом наполненность: на телефоне сводка
 	   идёт одной строкой, и начало строки видно без прокрутки. #}
-	<div class="chips" data-scroll-row>
+	<div class="chips" data-scroll-row data-live="chips">
 		{% set c = course.counts %}
 		<a class="chip link{% if course.notes_attention %} short{% endif %}" href="{{ course.url }}&view=notes"><span class="n">{{ course.notes_attention }}</span>замечаний ждут вас</a>
 		{% if course.map_discrepancies is none %}
@@ -580,7 +598,7 @@
 		<div class="scroll">
 		<table class="structure">
 			<thead><tr><th>Урок</th><th>Материал</th><th>Директива</th><th>Квиз</th><th>Блоки документа</th></tr></thead>
-			<tbody>
+			<tbody data-live="structure">
 			{% for г in course.chapters %}
 				<tr class="chapter ch{{ г.color }}"><td colspan="5">{{ г.title | e }}</td></tr>
 				{% for у in г.lessons %}
@@ -633,6 +651,11 @@
 			<span class="status{% if к.published %} live{% endif %}">{{ "опубликован" if к.published else "черновик" }}</span>
 			<span class="muted" style="font-size: 14px;">{{ (к.summary or "") | e }}</span>
 			<span class="muted num" style="font-size: 13px;">уроков {{ к.lessons_total }}</span>
+			<span class="course-attention">
+				{% if к.notes_attention %}<span class="note-count">ждут вас {{ к.notes_attention }}</span>{% endif %}
+				{% if к.map_discrepancies %}<span class="map-count">расхождений с картой {{ к.map_discrepancies }}</span>{% endif %}
+				<span class="muted">изменён {{ frappe.utils.pretty_date(к.revision) }}</span>
+			</span>
 		</a></li>
 		{% endfor %}
 	</ul>
