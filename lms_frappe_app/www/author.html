@@ -9,16 +9,7 @@
 {% macro якорь(target) %}{{ ("note-" ~ target) | replace(".", "-") | replace("/", "-") }}{% endmacro %}
 
 {% macro поля_директивы(поля, префикс=None, lesson=None, замечания={}, подпись="") %}
-	{% set ПОДПИСИ = {
-		"teaching_directive": "Как вести занятие",
-		"objectives": "Цели",
-		"probing_questions": "Вопросы к проекту",
-		"success_criteria": "Признаки успеха",
-		"common_misconceptions": "Частые заблуждения",
-		"student_profile": "Кто ученик",
-		"glossary": "Глоссарий",
-		"remember_about_student": "Что запоминать об ученике",
-	} %}
+	{% set ПОДПИСИ = field_labels %}
 	{% for п in поля %}
 	{% set target = префикс ~ "." ~ п.name if префикс else None %}
 	{% set метка = подпись ~ " · " ~ ПОДПИСИ.get(п.name, п.name) %}
@@ -241,7 +232,9 @@
 	.author-page .note-add.quiet:hover, .author-page .note-add.quiet:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 	.author-page .queue { display: flex; flex-direction: column; gap: 20px; }
 	.author-page .prose { max-width: 72ch; }
-	.author-page .prose table { border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+	/* Широкая таблица материала прокручивается сама, а не распирает страницу
+	   урока на телефоне. */
+	.author-page .prose table { border-collapse: collapse; margin: 12px 0; font-size: 14px; display: block; max-width: 100%; overflow-x: auto; }
 	.author-page .prose th, .author-page .prose td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: top; }
 	.author-page .prose h2, .author-page .prose h3 { font-size: 17px; margin: 22px 0 8px; }
 

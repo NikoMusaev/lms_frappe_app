@@ -1,6 +1,7 @@
 # Copyright (c) 2026, NikoMusaev and Contributors
 # See license.txt
 
+import json
 from urllib.parse import quote
 
 import frappe
@@ -295,6 +296,46 @@ class IntegrationTestAuthorPageNotes(IntegrationTestCase):
 		self.assertEqual(курс["notes_attention"], 2)
 		self.assertIsNone(курс["map_discrepancies"])
 		self.assertEqual(курс["revision"], с["course"]["revision"])
+
+	def по_ид(self, ид: str) -> dict:
+		очередь = self.сведения_для(view="notes")["notes_queue"]
+		return next(з for записи in очередь.values() for з in записи if з["id"] == ид)
+
+	def test_у_сделанного_видно_что_поменялось(self):
+		"""Автор проверяет «сделано» по разнице места с момента замечания, а
+		не перечитывая раздел (lms-high-time/learning-services#271)."""
+		ид = authoring.add_note(course=self.курс, target="material", lesson=self.урок, text="Короче")["data"]["id"]
+		authoring.update_lesson(lesson=self.урок, body="# Первый\n\nТекст покороче.")
+		authoring.set_note_status(note=ид, status="done", text="Сократил", via="agent")
+
+		правки = self.по_ид(ид)["changes"]
+
+		self.assertEqual(правки["state"], "changed")
+		self.assertIn("покороче", json.dumps(правки, ensure_ascii=False))
+
+	def test_сделано_без_правки_видно_сразу(self):
+		self.assertEqual(self.по_ид(self.сделано)["changes"], {"state": "same"})
+
+	def test_у_старого_замечания_разница_недоступна(self):
+		frappe.db.set_value("Agent Author Note", self.сделано, "baseline", None)
+
+		self.assertEqual(self.по_ид(self.сделано)["changes"], {"state": "unavailable"})
+
+	def test_у_открытых_и_у_курса_целиком_разницы_нет(self):
+		authoring.set_note_status(note=self.вопрос_агента, status="done", text="Взял склад", via="agent")
+
+		self.assertNotIn("changes", self.по_ид(self.ждёт_агента))
+		self.assertNotIn("changes", self.по_ид(self.вопрос_агента))
+
+	def test_у_замечания_к_уроку_разница_по_местам(self):
+		ид = authoring.add_note(course=self.курс, target="lesson", lesson=self.урок, text="Весь урок")["data"]["id"]
+		authoring.update_lesson(lesson=self.урок, body="# Первый\n\nНовый текст.")
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди иначе")
+		authoring.set_note_status(note=ид, status="done", text="Переписал", via="agent")
+
+		места = self.по_ид(ид)["changes"]["places"]
+
+		self.assertEqual([м["label"] for м in места], ["Материал", "Директива · Как вести занятие"])
 
 	def test_карта_получает_замечания_по_узлам(self):
 		с = self.сведения_для(view="map")

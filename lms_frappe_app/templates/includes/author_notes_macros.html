@@ -15,6 +15,54 @@
 	{%- else -%}ждёт агента{%- endif -%}
 {%- endmacro %}
 
+{#
+	Разница места у «сделано» (lms-high-time/learning-services#271): удалённое
+	зачёркнуто, добавленное подчёркнуто — правка видна и без цвета. Текст —
+	исходный, как его пишет агент: разница честная, и полуизменённую разметку
+	отрисовывать не нужно.
+#}
+{% macro множ(n, формы) -%}
+	{%- set н = n % 100 -%}
+	{%- if н % 10 == 1 and н != 11 -%}{{ формы[0] }}
+	{%- elif н % 10 in [2, 3, 4] and н not in [12, 13, 14] -%}{{ формы[1] }}
+	{%- else -%}{{ формы[2] }}{%- endif -%}
+{%- endmacro %}
+
+{% macro блоки_разницы(р) %}
+	{% set формы = ["строка", "строки", "строк"] if р.mode == "lines" else ["абзац", "абзаца", "абзацев"] %}
+	{% for б in р.blocks %}
+		{% if б.kind == "same" %}<p class="d-same">{{ б.text | e }}</p>
+		{% elif б.kind == "gap" %}<details class="d-gap"><summary>… {{ б.texts | length }} {{ множ(б.texts | length, формы) }} без изменений …</summary>
+			{% for т in б.texts %}<p class="d-same">{{ т | e }}</p>{% endfor %}</details>
+		{% elif б.kind == "changed" %}<p class="d-changed">{% for знак, текст in б.parts %}{% if знак == "=" %}{{ текст | e }}{% elif знак == "-" %}<del>{{ текст | e }}</del>{% else %}<ins>{{ текст | e }}</ins>{% endif %}{% endfor %}</p>
+		{% elif б.kind == "added" %}<p class="d-added"><ins>{{ б.text | e }}</ins></p>
+		{% elif б.kind == "removed" %}<p class="d-removed"><del>{{ б.text | e }}</del></p>
+		{% endif %}
+	{% endfor %}
+{% endmacro %}
+
+{% macro текст_разницы(р) %}
+	{% if р.rewritten %}
+		<p class="note-diff-state">Переписано почти целиком — новый текст:</p>
+		<p class="d-new">{{ р.new | e }}</p>
+		<details class="d-gap"><summary>Прежний текст</summary><p class="d-same">{{ р.old | e }}</p></details>
+	{% else %}{{ блоки_разницы(р) }}{% endif %}
+{% endmacro %}
+
+{% macro правки(р) %}
+	<div class="note-diff">
+	{% if р.state == "same" %}<p class="note-diff-state">Место не менялось с момента замечания.</p>
+	{% elif р.state == "unavailable" %}<p class="note-diff-state">Разница недоступна: замечание поставлено раньше, чем кабинет начал запоминать места.</p>
+	{% elif р.state == "missing" %}<p class="note-diff-state">Места больше нет — сравнивать не с чем.</p>
+	{% else %}
+		<div class="note-diff-head">Что поменялось</div>
+		{% if р.places %}
+			{% for м in р.places %}<div class="note-diff-label">{{ м.label | e }}</div>{{ текст_разницы(м) }}{% endfor %}
+		{% else %}{{ текст_разницы(р) }}{% endif %}
+	{% endif %}
+	</div>
+{% endmacro %}
+
 {% macro карточка(з, с_адресом=False) %}
 	<article class="note-card is-{{ з.status }}{% if з.waiting_on == 'author' %} is-yours{% endif %}" id="note-card-{{ з.id }}">
 		<div class="note-head">
@@ -29,6 +77,7 @@
 		{% for о in з.replies %}
 		<div class="note-reply{% if о.via == 'agent' %} by-agent{% endif %}"><span class="muted">{{ "агент" if о.via == "agent" else (о.author_name or о.author) | e }}</span><span class="note-reply-text">{{ о.text | e }}</span></div>
 		{% endfor %}
+		{% if з.changes %}{{ правки(з.changes) }}{% endif %}
 		<div class="note-actions">
 			{% if з.status == "done" %}
 				<button type="button" class="note-btn primary" data-note-action="accept" data-note="{{ з.id }}">Принять</button>
