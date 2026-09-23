@@ -1,5 +1,5 @@
 {% extends "templates/web.html" %}
-{% from "lms_frappe_app/templates/includes/author_notes_macros.html" import место, карточка, атрибуты, статус, кнопка_замечания %}
+{% from "lms_frappe_app/templates/includes/author_notes_macros.html" import место, карточка, атрибуты, статус, кнопка_замечания, текст_разницы %}
 
 {% block title %}{{ title }}{% endblock %}
 
@@ -8,7 +8,20 @@
 
 {% macro якорь(target) %}{{ ("note-" ~ target) | replace(".", "-") | replace("/", "-") }}{% endmacro %}
 
-{% macro поля_директивы(поля, префикс=None, lesson=None, замечания={}, подпись="") %}
+{#
+	Правки места с прошлого визита автора (lms-high-time/learning-services#271):
+	метка «изменено» и разница по нажатию — над текстом раздела.
+#}
+{% macro правки_места(изменения, адрес) %}
+	{% set р = изменения.places.get(адрес) if изменения else none %}
+	{% if р %}
+	<details class="place-diff"><summary><span class="changed-mark">изменено</span> с вашего прошлого визита — показать правки</summary>
+		<div class="note-diff">{{ текст_разницы(р) }}</div>
+	</details>
+	{% endif %}
+{% endmacro %}
+
+{% macro поля_директивы(поля, префикс=None, lesson=None, замечания={}, подпись="", изменения=none) %}
 	{% set ПОДПИСИ = field_labels %}
 	{% for п in поля %}
 	{% set target = префикс ~ "." ~ п.name if префикс else None %}
@@ -16,6 +29,7 @@
 	<div class="field"{% if target %} {{ атрибуты(target, lesson, метка) }}{% endif %}>
 		<div class="field-head"><h4>{{ ПОДПИСИ.get(п.name, п.name) }} <code>{{ п.name }}</code></h4>
 			{% if target %}{{ кнопка_замечания(target, lesson, метка) }}{% endif %}</div>
+		{% if target %}{{ правки_места(изменения, target) }}{% endif %}
 		{% if п["items"] is not none %}
 		<ul>{% for пункт in п["items"] %}<li>{{ пункт | e }}</li>{% endfor %}</ul>
 		{% else %}
@@ -31,7 +45,7 @@
 	замечания; подсказка агенту и замечания — по нажатию. Десять карточек во
 	всю ширину занимали экран, а сверяют блоки чаще всего по строке.
 #}
-{% macro блоки_документа(блоки, со_ссылкой, замечания={}) %}
+{% macro блоки_документа(блоки, со_ссылкой, замечания={}, изменения=none) %}
 	{% for б in блоки %}
 	{% set target = "block." ~ б.artifact ~ "/" ~ б.key %}
 	{% set метка = "Документ · блок «" ~ б.title ~ "»" %}
@@ -45,8 +59,10 @@
 				{% else %}<span class="block-lesson gap-text">урок не назначен</span>{% endif %}
 			{% endif %}
 			<span data-live="{{ якорь(target) }}-count">{% if открытые %}<span class="note-count" title="Открытых замечаний к блоку">✎ {{ открытые | length }}</span>{% endif %}</span>
+			{% if изменения and изменения.places.get(target) %}<span class="changed-mark">изменено</span>{% endif %}
 		</summary>
 		<div class="block-body">
+			{{ правки_места(изменения, target) }}
 			{% if б.hint %}<p class="block-hint">{{ б.hint | e }}</p>{% else %}<p class="muted">Подсказки агенту нет.</p>{% endif %}
 			{{ место(target, None, метка, замечания.get(target, []), якорь(target)) }}
 		</div>
@@ -300,6 +316,16 @@
 		scroll-margin-top: calc(var(--bar, 56px) + 12px);
 	}
 	.author-page .panel-foot { margin: 10px 0 0; font-size: 14px; }
+	.author-page .changes-panel { border-color: var(--accent); }
+	.author-page .changes-panel p { margin: 0; }
+	.author-page .changed-mark {
+		display: inline-block; padding: 0 6px; margin-left: 6px; border-radius: 999px; font-size: 12px; text-decoration: none;
+		font-family: "IBM Plex Mono", monospace; background: var(--accent-soft); color: var(--accent);
+	}
+	.author-page summary .changed-mark { margin-left: 0; margin-right: 4px; }
+	.author-page .place-diff { margin: 2px 0 8px; }
+	.author-page .place-diff > summary { font-size: 13px; }
+	.author-page .changes-panel .place-diff { margin: 8px 0 0; }
 	.author-page .issues .k { display: block; font-size: 13px; color: var(--muted); }
 	.author-page a.tile.link { background: none; border: 1px solid var(--line); color: var(--accent); text-decoration: none; }
 	.author-page a.tile.link:hover { border-color: var(--accent); }
@@ -435,10 +461,22 @@
 		<p class="panel-foot"><a href="{{ lesson.map_url }}">Открыть урок на карте</a></p>
 	</section>
 	{% endif %}
+	{% if lesson.changes %}
+	<section class="panel changes-panel" id="changes">
+		<p>С вашего прошлого визита ({{ frappe.utils.format_datetime(lesson.changes.since, "dd.MM, HH:mm") }}) изменились:
+			{% for п in lesson.changes.summary %}<a href="#{{ п.anchor }}">{{ п.text }}</a>{{ "." if loop.last else ", " }}{% endfor %}</p>
+		{% for адрес, р in lesson.changes.places.items() if р.gone %}
+		<details class="place-diff"><summary><span class="changed-mark">убрано</span> {{ р.label | e }}</summary>
+			<div class="note-diff">{{ текст_разницы(р) }}</div>
+		</details>
+		{% endfor %}
+	</section>
+	{% endif %}
 	{{ место("lesson", lesson.id, метка_урока, lesson.notes.get("lesson", []), "note-lesson", "Замечание к уроку") }}
 
 	<section class="panel" id="section-material" {{ атрибуты("material", lesson.id, метка_урока ~ " · материал") }}>
 		<h2>Материал</h2>
+		{{ правки_места(lesson.changes, "material") }}
 		{{ место("material", lesson.id, метка_урока ~ " · материал", lesson.notes.get("material", []), "note-material") }}
 		{% if lesson.segments_html %}
 			{% for сегмент in lesson.segments_html %}
@@ -454,7 +492,7 @@
 
 	<section class="panel" id="section-directive">
 		<h2>Директива{% if lesson.directive %} <span class="muted num">v{{ lesson.directive.version }} от {{ frappe.utils.format_datetime(lesson.directive.created_at, "dd.MM.yyyy HH:mm") }}</span>{% endif %}</h2>
-		{% if lesson.directive %}{{ поля_директивы(lesson.directive.fields, "directive", lesson.id, lesson.notes, метка_урока ~ " · директива") }}
+		{% if lesson.directive %}{{ поля_директивы(lesson.directive.fields, "directive", lesson.id, lesson.notes, метка_урока ~ " · директива", lesson.changes) }}
 		{% else %}<p class="gap-text">Директивы нет — агент ученика поведёт урок только по материалу.</p>{% endif %}
 	</section>
 
@@ -466,6 +504,7 @@
 			<div class="question{% if в.broken %} broken{% endif %}" {{ атрибуты(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index) }}>
 				<div class="question-head"><div><span class="num muted">{{ loop.index }}.</span> {{ (в.text or "Вопрос без текста") | e }}</div>
 					{{ кнопка_замечания(target, lesson.id, метка_урока ~ " · вопрос " ~ loop.index) }}</div>
+				{{ правки_места(lesson.changes, target) }}
 				{% if в.options %}
 				<ol type="a">
 					{% for о in в.options %}
@@ -483,7 +522,7 @@
 
 	<section id="section-blocks">
 		<h2>Блоки документа</h2>
-		{% if lesson.blocks %}<div class="blocks">{{ блоки_документа(lesson.blocks, False, course.notes) }}</div>
+		{% if lesson.blocks %}<div class="blocks">{{ блоки_документа(lesson.blocks, False, course.notes, lesson.changes) }}</div>
 		{% else %}<p class="muted">Урок не собирает ни одного блока документа.</p>{% endif %}
 	</section>
 
@@ -511,6 +550,7 @@
 		{% endif %}
 	</section>
 	<div class="quiet" id="author-quiet"></div>
+	<script type="application/json" id="lesson-config">{{ {"lesson": lesson.id, "seen": seen_method} | tojson }}</script>
 
 {% elif course %}
 	<div class="crumbs"><a href="{{ page_url }}">Все курсы</a></div>
@@ -598,7 +638,8 @@
 				<tr class="lesson ch{{ г.color }}">
 					<td class="title"><span class="num muted">{{ у.number }}.</span> <a href="{{ у.url }}">{{ у.title | e }}</a>
 						{% if у.open_notes %}<a class="note-count" href="{{ у.url }}#section-notes" title="Открытых замечаний к уроку">✎ {{ у.open_notes }}</a>{% endif %}
-						{% if у.map_issues %}<a class="map-count" href="{{ у.url }}#map-issues" title="Расхождений с картой">карта {{ у.map_issues }}</a>{% endif %}</td>
+						{% if у.map_issues %}<a class="map-count" href="{{ у.url }}#map-issues" title="Расхождений с картой">карта {{ у.map_issues }}</a>{% endif %}
+						{% if у.changed_since_visit %}<a class="changed-mark" href="{{ у.url }}#changes" title="Изменён после вашего последнего визита">изменён</a>{% endif %}</td>
 					<td data-label="Материал"><span class="tile num{% if not у.has_body %} empty{% elif у.body_segments > 1 %} split{% endif %}"
 						{% if у.body_segments > 1 %}title="Платформа режет урок на {{ у.body_segments }} части"{% endif %}>
 						{% if у.has_body %}{{ число(у.body_chars) }}{% if у.body_segments > 1 %} · {{ у.body_segments }} сегм.{% endif %}{% else %}нет{% endif %}</span></td>
@@ -747,6 +788,18 @@
 		ряд.addEventListener("scroll", отметить, { passive: true });
 		addEventListener("resize", отметить);
 	});
+
+	// Открыли урок — визит: снимок его мест станет базой отметок «изменено»
+	// в следующий раз. Ответ не ждём: отметки этой страницы уже посчитаны.
+	const урок = document.getElementById("lesson-config");
+	const заметки = document.getElementById("note-config");
+	if (урок && заметки) {
+		const { lesson, seen } = JSON.parse(урок.textContent);
+		fetch("/api/method/" + seen, {
+			method: "POST", credentials: "same-origin", body: new URLSearchParams({ lesson }),
+			headers: { "X-Frappe-CSRF-Token": JSON.parse(заметки.textContent).csrf, Accept: "application/json" },
+		}).catch(() => {});
+	}
 
 	const панель = document.getElementById("lesson-bar");
 	if (!панель) return;

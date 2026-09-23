@@ -12,13 +12,15 @@
 вопросов — страница не знает и не показывает: это закрытая часть (спека, §3).
 """
 
+from datetime import timedelta
 from urllib.parse import quote
 
 import frappe
-from frappe.utils import md_to_html, sanitize_html
+from frappe.utils import get_datetime, md_to_html, now_datetime, sanitize_html
 
 from lms_frappe_app.agent_learning import diffs, directives, normalizer, notes, snapshots
-from lms_frappe_app.api import authoring
+from lms_frappe_app.agent_learning.errors import УРОК_НЕ_НАЙДЕН, Отказ
+from lms_frappe_app.api import authoring, контракт
 
 no_cache = 1
 
@@ -38,6 +40,11 @@ no_cache = 1
 
 #: Порядок групп очереди: сначала то, что ждёт человека.
 ГРУППЫ_ОЧЕРЕДИ = ("check", "question", "agent", "accepted")
+
+#: Сеанс чтения: заход в урок позже этого после прошлого — новый визит.
+#: Внутри сеанса отметки «изменено» считаются от визита до него, так что
+#: перезагрузка и возврат к уроку их не сбрасывают.
+СЕАНС = timedelta(minutes=30)
 
 #: Поля директив по-человечески — в разделах урока и в разнице по местам.
 ПОДПИСИ_ПОЛЕЙ = {
@@ -95,6 +102,7 @@ def сведения(
 		"notes_queue": None,
 		"note_methods": МЕТОДЫ_ЗАМЕЧАНИЙ,
 		"field_labels": ПОДПИСИ_ПОЛЕЙ,
+		"seen_method": "lms_frappe_app.www.author.mark_lesson_seen",
 		"missing": False,
 	}
 	if основа["is_guest"]:
@@ -114,14 +122,17 @@ def сведения(
 	замечания = _замечания(course)
 	_замечания_курса(основа["course"], замечания)
 	сверка = _сверка(course)
+	изменены = _изменены_после_визита(пользователь, course)
 	for глава in основа["course"]["chapters"]:
 		for урок in глава["lessons"]:
 			урок["map_issues"] = len(_расхождения_урока(сверка, урок["id"]))
+			урок["changed_since_visit"] = урок["id"] in изменены
 	if lesson:
 		основа["lesson"] = _урок(основа["course"], lesson)
 		основа["missing"] = основа["lesson"] is None
 		if основа["lesson"]:
 			_замечания_урока(основа["lesson"], замечания)
+			основа["lesson"]["changes"] = _изменения_урока(пользователь, course, lesson)
 			основа["lesson"]["map_issues"] = _расхождения_урока(сверка, lesson)
 			основа["lesson"]["map_url"] = (
 				f"{адрес(course)}&view={КАРТА}&node={quote('lesson:' + lesson, safe='')}" if сверка["map"] else None
@@ -191,6 +202,115 @@ def _ждут_автора(курсы: list[str]) -> dict[str, int]:
 		if notes.ждёт(з.status, з.via, ответы) == "author":
 			счёт[з.course] = счёт.get(з.course, 0) + 1
 	return счёт
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def mark_lesson_seen(lesson: str) -> dict:
+	"""Автор открыл урок: снимок его мест — база отметок «изменено» в
+	следующий визит (lms-high-time/learning-services#271).
+
+	Зовёт страница урока после загрузки: GET-страница в базу не пишет. Снимок
+	снимает сервер. Заход после перерыва больше `СЕАНС` сдвигает базу: прошлый
+	визит становится «визитом до сеанса».
+	"""
+	authoring._автор()
+	course = frappe.db.get_value("Course Lesson", lesson, "course")
+	if not course:
+		raise Отказ(УРОК_НЕ_НАЙДЕН, "Урока нет", lesson=lesson)
+	сейчас = now_datetime()
+	снимок = snapshots.в_json(snapshots.снимок(course, lesson, "lesson"))
+	имя = frappe.db.get_value("Agent Author Visit", {"author": frappe.session.user, "lesson": lesson})
+	if имя:
+		визит = frappe.get_doc("Agent Author Visit", имя)
+		if сейчас - get_datetime(визит.last_at) > СЕАНС:
+			визит.baseline, визит.baseline_at = визит.last, визит.last_at
+		визит.last, визит.last_at = снимок, сейчас
+		визит.save(ignore_permissions=True)
+	else:
+		frappe.get_doc(
+			{
+				"doctype": "Agent Author Visit",
+				"author": frappe.session.user,
+				"course": course,
+				"lesson": lesson,
+				"last": снимок,
+				"last_at": сейчас,
+			}
+		).insert(ignore_permissions=True)
+	return {"lesson": lesson, "seen_at": сейчас.isoformat()}
+
+
+def _изменения_урока(пользователь: str, course: str, lesson: str) -> dict | None:
+	"""Что изменилось в уроке с прошлого визита автора: разница по местам и
+	сводка по разделам. Первый визит — без отметок."""
+	визит = frappe.db.get_value(
+		"Agent Author Visit",
+		{"author": пользователь, "lesson": lesson},
+		["last", "last_at", "baseline", "baseline_at"],
+		as_dict=True,
+	)
+	if not визит or not визит.last_at:
+		return None
+	if now_datetime() - get_datetime(визит.last_at) > СЕАНС:
+		база, когда = визит.last, визит.last_at
+	else:
+		база, когда = визит.baseline, визит.baseline_at
+	if not база:
+		return None
+	стало = snapshots.снимок(course, lesson, "lesson")
+	итог = diffs.сравнить(snapshots.из_json(база), стало)
+	if итог["state"] != "changed":
+		return None
+	прежние = snapshots.из_json(база)["places"]
+	места = {
+		м["target"]: {
+			**м,
+			"label": _подпись_места(м["target"], стало["places"].get(м["target"]) or прежние.get(м["target"])),
+			# Места больше нет на странице — его разница показывается в сводке.
+			"gone": м["target"] not in стало["places"],
+		}
+		for м in итог["places"]
+	}
+	return {"since": когда, "places": места, "summary": _сводка_изменений(места)}
+
+
+def _сводка_изменений(места: dict) -> list[dict]:
+	"""«материал, директива — 2 поля, квиз — 1 вопрос» — со ссылками на разделы."""
+	сводка = []
+	for вид, раздел, подпись, формы in (
+		("material", "section-material", "материал", None),
+		("directive", "section-directive", "директива", ("поле", "поля", "полей")),
+		("question", "section-quiz", "квиз", ("вопрос", "вопроса", "вопросов")),
+		("block", "section-blocks", "блоки документа", ("блок", "блока", "блоков")),
+	):
+		сколько = sum(адрес.partition(".")[0] == вид for адрес in места)
+		if сколько:
+			текст = подпись if not формы else f"{подпись} — {сколько} {_множ(сколько, формы)}"
+			сводка.append({"anchor": раздел, "text": текст})
+	return сводка
+
+
+def _множ(n: int, формы: tuple[str, str, str]) -> str:
+	if n % 10 == 1 and n % 100 != 11:
+		return формы[0]
+	if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+		return формы[1]
+	return формы[2]
+
+
+def _изменены_после_визита(пользователь: str, course: str) -> set[str]:
+	"""Уроки, в которых что-то поменялось после последнего визита автора.
+	Сравниваются снимки, а не время правок: отметка в таблице совпадает с тем,
+	что покажет сам урок. Уроки, которые автор не открывал, не отмечаются —
+	иначе новый курс весь стал бы «изменён»."""
+	return {
+		визит.lesson
+		for визит in frappe.get_all(
+			"Agent Author Visit", filters={"author": пользователь, "course": course}, fields=["lesson", "last"]
+		)
+		if snapshots.снимок(course, визит.lesson, "lesson") != snapshots.из_json(визит.last)
+	}
 
 
 def _расхождения_урока(сверка: dict, урок: str) -> list[dict]:

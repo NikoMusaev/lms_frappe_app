@@ -479,3 +479,91 @@ class IntegrationTestAuthorPageLessonMap(IntegrationTestCase):
 
 		self.assertEqual(урок["map_issues"], [])
 		self.assertIsNone(урок["map_url"])
+
+
+class IntegrationTestAuthorPageVisits(IntegrationTestCase):
+	"""Отметки «изменено с вашего прошлого визита»: у урока — что именно, в
+	таблице структуры — какие уроки (lms-high-time/learning-services#271)."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"author-visit-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Визиты {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Рамка")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=глава, title="Первый", body="# Первый\n\nТекст.")["data"]["id"]
+		self.второй = authoring.add_lesson(chapter=глава, title="Второй", body="# Второй")["data"]["id"]
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди")
+
+	def сведения_для(self, **параметры) -> dict:
+		from lms_frappe_app.www.author import сведения
+
+		return сведения(self.куратор, course=self.курс, **параметры)
+
+	def отметить(self, урок: str | None = None) -> dict:
+		from lms_frappe_app.www.author import mark_lesson_seen
+
+		return mark_lesson_seen(lesson=урок or self.урок)
+
+	def сдвинуть_визит(self, минут: int) -> None:
+		"""Визит был `минут` назад — как будто автор ушёл и вернулся."""
+		имя = frappe.db.get_value("Agent Author Visit", {"author": self.куратор, "lesson": self.урок})
+		когда = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-минут)
+		frappe.db.set_value("Agent Author Visit", имя, "last_at", когда, update_modified=False)
+
+	def поправить(self) -> None:
+		authoring.update_lesson(lesson=self.урок, body="# Первый\n\nНовый текст.")
+
+	def test_первый_визит_без_отметок(self):
+		self.assertTrue(self.отметить()["ok"])
+
+		self.assertIsNone(self.сведения_для(lesson=self.урок)["lesson"]["changes"])
+
+	def test_после_перерыва_видно_что_изменилось(self):
+		self.отметить()
+		self.сдвинуть_визит(45)
+		self.поправить()
+
+		изменения = self.сведения_для(lesson=self.урок)["lesson"]["changes"]
+
+		self.assertEqual(list(изменения["places"]), ["material"])
+		self.assertEqual([пункт["text"] for пункт in изменения["summary"]], ["материал"])
+		self.assertIsNotNone(изменения["since"])
+
+	def test_внутри_сеанса_отметки_не_сбрасываются(self):
+		"""Открыл урок после перерыва и перезагрузил через пять минут —
+		отметки те же: база — визит до сеанса."""
+		self.отметить()
+		self.сдвинуть_визит(45)
+		self.поправить()
+		self.отметить()
+		self.сдвинуть_визит(5)
+
+		изменения = self.сведения_для(lesson=self.урок)["lesson"]["changes"]
+
+		self.assertEqual(list(изменения["places"]), ["material"])
+
+	def test_следующий_сеанс_считается_от_этого_визита(self):
+		self.отметить()
+		self.сдвинуть_визит(45)
+		self.поправить()
+		self.отметить()
+		self.сдвинуть_визит(45)
+
+		self.assertIsNone(self.сведения_для(lesson=self.урок)["lesson"]["changes"])
+
+	def test_таблица_метит_уроки_изменённые_после_визита(self):
+		self.отметить()
+		self.поправить()
+
+		уроки = {у["id"]: у for г in self.сведения_для()["course"]["chapters"] for у in г["lessons"]}
+
+		self.assertTrue(уроки[self.урок]["changed_since_visit"])
+		self.assertFalse(уроки[self.второй]["changed_since_visit"])
+
+	def test_ученику_отметка_закрыта(self):
+		frappe.set_user(создать_ученика(f"author-visit-s-{frappe.generate_hash(length=6)}@example.com"))
+
+		with self.assertRaises(frappe.PermissionError):
+			self.отметить()
