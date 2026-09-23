@@ -5,6 +5,10 @@
 	документа такими, какие они есть. Названий уровней шаблон не знает: они
 	приходят в `map_check.map.levels` (lms-high-time/learning-services#264).
 	Рисование и подсветка путей перенесены из карт декомпозиции курсов.
+
+	Граф широкий и на телефоне читается только прокруткой вбок, поэтому там по
+	умолчанию дерево: уровни карты вложенными списками, у узла — урок и метки
+	(lms-high-time/learning-services#266).
 #}
 <style>
 	.author-page { --edge: #b7c0c9; }
@@ -12,6 +16,17 @@
 	:root[data-theme="dark"] .author-page { --edge: #48535f; }
 
 	.author-page .map-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+	.author-page .map-stage [hidden], .author-page .map-row [hidden] { display: none; }
+	.author-page .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--paper); }
+	.author-page .seg button { font: inherit; font-size: 14px; color: var(--muted); background: none; border: 0; padding: 5px 14px; cursor: pointer; }
+	.author-page .seg button + button { border-left: 1px solid var(--line); }
+	.author-page .seg button[aria-pressed="true"] { color: var(--ink); background: var(--accent-soft); font-weight: 500; }
+	.author-page .map-select { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; margin: 0; font-size: 14px; }
+	.author-page .map-select select {
+		font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+		border-radius: 8px; padding: 5px 8px; min-width: 0; max-width: min(460px, 100%); text-overflow: ellipsis;
+	}
+	.author-page .map-select select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 	.author-page .map-row .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); margin-right: 4px; }
 	.author-page button.chip { cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); line-height: 1.2; }
 	.author-page button.chip:hover, .author-page button.chip:focus-visible { border-color: var(--accent); outline: none; }
@@ -19,8 +34,6 @@
 	.author-page .chip.gap .n { background: var(--gap-soft); color: var(--gap); }
 	.author-page .chip.neutral .n { background: var(--ch1s); color: var(--muted); }
 	.author-page .chip.reset { border-style: dashed; color: var(--muted); }
-	.author-page .chip.focus { padding: 6px 12px; }
-	.author-page .chip.focus .n { background: none; color: var(--muted); min-width: 0; padding: 0; }
 	.author-page button.chip:disabled { cursor: default; opacity: .6; }
 
 	.author-page .map-board { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; padding: 8px 4px 4px; }
@@ -86,6 +99,39 @@
 	.author-page .issue-row .note-add { margin-top: 6px; white-space: nowrap; }
 	.author-page .node .note-dot { fill: var(--warn); stroke: var(--paper); stroke-width: 1.5; }
 	.author-page .issue-item .k { display: block; font-size: 13px; margin-top: 2px; }
+
+	/* Дерево: те же узлы, вложенными списками. Строка — узел, у тезиса —
+	   урок цветом главы; расхождение — красной меткой. */
+	.author-page .map-tree { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 12px 14px; }
+	.author-page .map-tree .tree-legend { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+	.author-page .map-tree ul { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 1px solid var(--line); margin-left: 6px; }
+	.author-page .map-tree > ul { padding-left: 0; border-left: 0; margin-left: 0; }
+	.author-page .map-tree h3 { font-size: 14px; font-weight: 600; margin: 14px 0 4px; }
+	.author-page .tree-row {
+		display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 4px 6px 4px 20px;
+		border-radius: 6px; position: relative; list-style: none;
+	}
+	.author-page .tree-row::-webkit-details-marker { display: none; }
+	.author-page .tree-row::before { content: "•"; position: absolute; left: 6px; color: var(--muted); }
+	.author-page summary.tree-row { cursor: pointer; }
+	.author-page summary.tree-row::before { content: "▸"; color: var(--ink); }
+	.author-page details[open] > summary.tree-row::before { content: "▾"; }
+	.author-page .tree-row.sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+	.author-page .tree-node { font: inherit; font-size: 14px; color: var(--ink); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+	.author-page .tree-node:hover { text-decoration: underline; text-underline-offset: 2px; }
+	.author-page .tree-node:focus-visible, .author-page .tree-lesson:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	.author-page .lvl0 > .tree-row .tree-node, .author-page .lvl0 > details > .tree-row .tree-node { font-weight: 600; }
+	.author-page .lvl1 > details > .tree-row .tree-node { font-weight: 500; }
+	.author-page .tree-meta { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+	.author-page .tree-lesson {
+		font: inherit; font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink); cursor: pointer;
+		background: var(--nts, var(--ch1s)); border: 1px solid transparent; border-radius: 6px; padding: 0 6px;
+	}
+	.author-page .tree-lesson.ghost { background: var(--gap-soft); color: var(--gap); border: 1px dashed var(--gap); }
+	.author-page .tree-lesson.issue { border-color: var(--gap); }
+	.author-page .tree-mark, .author-page .tree-count { font-size: 12px; color: var(--muted); }
+	.author-page .tree-mark.issue, .author-page .tree-count.gap { color: var(--gap); }
+	.author-page .tree-note { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 0 6px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
 	@media (prefers-reduced-motion: reduce) { .author-page .edge, .author-page .node { transition: none; } }
 </style>
 
@@ -101,10 +147,17 @@
 		Карта v{{ мк.map.version }} от {{ frappe.utils.format_datetime(мк.map.created_at, "dd.MM.yyyy HH:mm") }}
 		· уроков плана сопоставлено {{ мк.matches.values() | select | list | length }} из {{ мк.map.lessons | length }}
 	</p>
-	<div class="map-row" id="map-focus"></div>
+	<div class="map-row" id="map-focus">
+		<div class="seg" role="group" aria-label="Вид карты">
+			<button type="button" data-layout="graph" aria-pressed="true">Граф</button>
+			<button type="button" data-layout="tree" aria-pressed="false">Дерево</button>
+		</div>
+		<label class="map-select" id="map-focus-label" hidden><span class="eyebrow">Фокус</span><select id="map-focus-select"></select></label>
+	</div>
 	<div class="map-row" id="map-checks"></div>
 	<div class="map-stage">
 	<div class="map-board" id="map-board" aria-describedby="map-legend"></div>
+	<div class="map-tree" id="map-tree" hidden></div>
 	<div class="legend" id="map-legend">
 		<span><span class="sw ghost"></span>есть в карте, нет на платформе</span>
 		<span><span class="sw issue"></span>расхождение</span>
@@ -260,12 +313,13 @@
 			n.h = n.lines.length * LINE + 2 * PAD + 4 + (n.mark ? 10 : 0);
 		});
 
+		function issueMark(n) {
+			const d = n.issues[0];
+			if (d.group === 'objectives' && n.kind === 'node') return 'нет в целях';
+			return (MARK[d.group] || {})[d.code] || 'расхождение';
+		}
 		function markOf(n) {
-			if (n.issues.length) {
-				const d = n.issues[0];
-				if (d.group === 'objectives' && n.kind === 'node') return 'нет в целях';
-				return (MARK[d.group] || {})[d.code] || 'расхождение';
-			}
+			if (n.issues.length) return issueMark(n);
 			if (n.kind === 'node' && n.raw.tags.length) return n.raw.tags[0];
 			if (n.kind === 'block' && n.lessonNode) return n.lessonNode.ghost ? 'урок из плана' : 'урок ' + n.lessonNode.n;
 			return '';
@@ -302,8 +356,13 @@
 
 		// ---------- отрисовка ----------
 		const board = document.getElementById('map-board');
+		const tree = document.getElementById('map-tree');
+		const legend = document.getElementById('map-legend');
 		const trail = document.getElementById('map-trail');
-		let nodeEls = new Map(), edgeEls = [], visible = null;
+		let nodeEls = new Map(), edgeEls = [], treeRows = [];
+		// Граф на телефоне читается только прокруткой вбок — там по умолчанию дерево.
+		let view = matchMedia('(max-width: 720px)').matches ? 'tree' : 'graph';
+		let focusId = 'all', active = null, chosen = null;
 
 		function nodeClass(n) {
 			let cls = `node ${n.kind}`;
@@ -318,8 +377,7 @@
 			return cls;
 		}
 
-		function render(set) {
-			visible = set;
+		function renderGraph(set) {
 			const H = layout(set);
 			let svg = `<svg width="${W}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Карта декомпозиции курса: уровни карты, уроки и блоки документа на платформе" xmlns="http://www.w3.org/2000/svg">`;
 			COLS.forEach(c => {
@@ -351,26 +409,159 @@
 			nodeEls = new Map([...board.querySelectorAll('.node')].map(el => [el.dataset.id, el]));
 			edgeEls = [...board.querySelectorAll('.edge')];
 			nodeEls.forEach((el, id) => {
-				const act = () => { highlight(new Set([...reach(id, 'in'), ...reach(id, 'out')]), new Set([id])); showNode(id); activeChip(null); };
-				el.addEventListener('click', e => { e.stopPropagation(); act(); });
-				el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } });
+				el.addEventListener('click', e => { e.stopPropagation(); choose(id); });
+				el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(id); } });
 			});
 		}
+		board.addEventListener('click', clear);
 
-		function highlight(set, selected) {
-			nodeEls.forEach((el, id) => { el.classList.toggle('dim', !!set && !set.has(id)); el.classList.toggle('sel', !!selected && selected.has(id)); });
-			edgeEls.forEach(el => el.classList.toggle('dim', !!set && !(set.has(el.dataset.from) && set.has(el.dataset.to))));
+		// ---------- дерево ----------
+		// Те же узлы карты вложенными списками: от корня к последнему уровню.
+		// Узел с двумя родителями стоит под обоими — как и в графе, где к нему
+		// ведут две связи.
+		const kids = new Map();
+		map.nodes.forEach(m => m.parents.forEach(p => {
+			if (!kids.has('n:' + p)) kids.set('n:' + p, []);
+			kids.get('n:' + p).push('n:' + m.id);
+		}));
+		const LAST = levels.length - 1;
+		const leafTitle = (levels[LAST].title || '').toLowerCase();
+		const below = new Map();
+		function under(id) {
+			if (!below.has(id)) {
+				const set = new Set([id]);
+				(kids.get(id) || []).forEach(c => under(c).forEach(x => set.add(x)));
+				below.set(id, set);
+			}
+			return below.get(id);
 		}
+
+		function treeRow(n, tag, extra) {
+			const m = n.raw;
+			let meta = '';
+			if (m.lesson) {
+				const l = nodes.get(lessonTarget(m.lesson));
+				if (l) meta += `<button type="button" class="tree-lesson${l.ghost ? ' ghost' : ''}${l.issues.length ? ' issue' : ''}" data-id="${esc(l.id)}" style="${chVar(l.ch)}"`
+					+ ` title="${esc(l.text + (l.issues.length ? ' — расхождений у урока: ' + l.issues.length : ''))}">${l.ghost ? 'урок из плана' : 'урок ' + esc(l.n)}</button>`;
+			}
+			if (n.issues.length) meta += `<span class="tree-mark issue">${esc(issueMark(n))}</span>`;
+			m.tags.forEach(t => { meta += `<span class="tree-mark">${esc(t)}</span>`; });
+			if (n.notes.length) meta += `<span class="tree-note" title="Открытых замечаний к узлу">✎ ${n.notes.length}</span>`;
+			meta += extra || '';
+			return `<${tag} class="tree-row" data-id="${esc(n.id)}"><button type="button" class="tree-node" data-id="${esc(n.id)}">${esc(n.text)}</button>`
+				+ (meta ? `<span class="tree-meta">${meta}</span>` : '') + `</${tag}>`;
+		}
+
+		// `only` — единственная ветка под корнем, когда выбран фокус.
+		function branch(id, depth, openLevel1, only) {
+			const n = nodes.get(id);
+			const children = (kids.get(id) || []).filter(c => !only || c === only);
+			const cls = `tree-item lvl${Math.min(n.col, 3)}`;
+			if (!children.length) return `<li class="${cls}">${treeRow(n, 'div')}</li>`;
+			const leaves = [...under(id)].filter(x => nodes.get(x).col === LAST).length;
+			// Расхождения — по путям вниз, как их подсветил бы граф: у узлов
+			// ветки, у их уроков и у блоков этих уроков.
+			const issues = new Set([...reach(id, 'out')].flatMap(x => nodes.get(x).issues.map(d => d.index))).size;
+			const extra = (leaves ? `<span class="tree-count">${esc(leafTitle)}: ${leaves}</span>` : '')
+				+ (issues ? `<span class="tree-count gap">расхождений: ${issues}</span>` : '');
+			const open = depth !== 1 || openLevel1;
+			return `<li class="${cls}"><details${open ? ' open' : ''}>${treeRow(n, 'summary', extra)}`
+				+ `<ul>${children.map(c => branch(c, depth + 1, openLevel1, null)).join('')}</ul></details></li>`;
+		}
+
+		function renderTree() {
+			const roots = [...nodes.values()].filter(n => n.kind === 'node' && n.col === 0).map(n => n.id);
+			// Большая карта открывается обзором: ветки второго уровня свёрнуты.
+			const openLevel1 = focusId !== 'all' || map.nodes.length <= 30;
+			let html = `<p class="tree-legend">${levels.map(l => esc(l.title)).join(' → ')}. У узла — урок, метки и расхождения; нажмите на узел — подробности внизу.</p>`;
+			if (focusId === 'all') {
+				html += `<ul>${roots.map(id => branch(id, 0, openLevel1, null)).join('')}</ul>`;
+				const seen = new Set(); roots.forEach(r => under(r).forEach(x => seen.add(x)));
+				const orphans = [...nodes.values()].filter(n => n.kind === 'node' && !seen.has(n.id));
+				const tops = orphans.filter(n => !n.raw.parents.some(p => orphans.some(o => o.raw.id === p)));
+				if (tops.length) html += `<h3>Без пути к корню</h3><ul>${tops.map(n => branch(n.id, 0, true, null)).join('')}</ul>`;
+			} else {
+				const parents = roots.filter(r => (kids.get(r) || []).includes(focusId));
+				html += `<ul>${parents.length ? parents.map(id => branch(id, 0, true, focusId)).join('') : branch(focusId, 0, true, null)}</ul>`;
+			}
+			tree.innerHTML = html;
+			treeRows = [...tree.querySelectorAll('.tree-row')];
+		}
+		tree.addEventListener('click', e => {
+			const btn = e.target.closest('.tree-node, .tree-lesson');
+			if (!btn) return;
+			// Узел с детьми по нажатию на текст ещё и раскрывается: в треугольник
+			// на телефоне не попасть.
+			const row = btn.closest('.tree-row');
+			if (btn.classList.contains('tree-node') && row.tagName === 'SUMMARY') row.parentElement.open = true;
+			choose(btn.dataset.id);
+		});
+
+		// ---------- выбор ----------
+		function highlight(set, selected) {
+			if (view === 'graph') {
+				nodeEls.forEach((el, id) => { el.classList.toggle('dim', !!set && !set.has(id)); el.classList.toggle('sel', !!selected && selected.has(id)); });
+				edgeEls.forEach(el => el.classList.toggle('dim', !!set && !(set.has(el.dataset.from) && set.has(el.dataset.to))));
+				return;
+			}
+			// В дереве путь к узлу виден и так: выбранное отмечается и раскрывается.
+			treeRows.forEach(el => {
+				const on = !!selected && selected.has(el.dataset.id);
+				el.classList.toggle('sel', on);
+				if (on) for (let d = el.closest('details'); d; d = d.parentElement.closest('details')) d.open = true;
+			});
+		}
+		const smooth = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+		function scrollToNode(id) {
+			const el = view === 'graph' ? id && nodeEls.get(id) : tree.querySelector('.tree-row.sel');
+			if (el) el.scrollIntoView({ block: 'center', inline: 'center', behavior: smooth() });
+			else (view === 'graph' ? board : tree).scrollIntoView({ block: 'start', behavior: smooth() });
+		}
+
+		// Выбранный узел живёт в адресе (`&node=T1_4`, `&node=lesson:<id>`):
+		// ссылку на него можно дать в чате или из замечания.
+		const PREFIX = { l: 'lesson:', p: 'plan:', b: 'block:' };
+		function remember(id) {
+			const url = new URL(location.href);
+			if (id) url.searchParams.set('node', id.startsWith('n:') ? id.slice(2) : PREFIX[id[0]] + id.slice(2));
+			else url.searchParams.delete('node');
+			history.replaceState(history.state, '', url);
+		}
+		function fromParam(value) {
+			if (!value) return null;
+			if (nodes.has('n:' + value)) return 'n:' + value;
+			const kind = Object.keys(PREFIX).find(k => value.startsWith(PREFIX[k]));
+			const id = kind && kind + ':' + value.slice(PREFIX[kind].length);
+			return id && nodes.has(id) ? id : null;
+		}
+
+		function choose(id, scroll) {
+			chosen = id;
+			// Урока в дереве нет — отмечаются его тезисы.
+			const own = view === 'tree' && /^[lp]:/.test(id) ? map.nodes.filter(m => m.lesson && lessonTarget(m.lesson) === id).map(m => 'n:' + m.id) : [];
+			highlight(new Set([...reach(id, 'in'), ...reach(id, 'out')]), new Set([id, ...own]));
+			showNode(id); activeChip(null); remember(id);
+			if (scroll) scrollToNode(id);
+		}
+		// Подсветить набор узлов без выбора одного: группа расхождений, метка.
+		function mark(set, html, chip) {
+			chosen = null; remember(null);
+			highlight(set, set); activeChip(chip); openTrail(html);
+		}
+		const hint = () => view === 'graph'
+			? 'Нажмите на узел — подсветятся его пути в обе стороны, а здесь появятся подробности и расхождения.'
+			: 'Нажмите на узел или урок — здесь появятся подробности и расхождения.';
 		function clear() {
+			chosen = null;
 			highlight(null, null); activeChip(null); trail.classList.remove('open');
-			trail.innerHTML = '<p class="k">Нажмите на узел — подсветятся его пути в обе стороны, а здесь появятся подробности и расхождения.</p>';
+			trail.innerHTML = `<p class="k">${hint()}</p>`;
+			remember(null);
 		}
 		function openTrail(html) {
 			trail.innerHTML = '<p style="text-align: right; margin: 0;"><button type="button" class="chip reset" data-close>Закрыть</button></p>' + html;
 			trail.classList.add('open');
 			trail.querySelector('[data-close]').addEventListener('click', clear);
 		}
-		board.addEventListener('click', clear);
 
 		// ---------- карточка ----------
 		const issueHtml = d => `<li>${esc(d.message)}`
@@ -414,7 +605,7 @@
 			}
 			const place = notePlace(n);
 			html += `<p><button type="button" class="note-add" data-note-target="${esc(place.target)}" data-note-lesson="${esc(place.lesson || '')}" data-note-label="${esc(place.label)}" data-note-quote="${esc(place.quote || '')}">Замечание</button>`
-				+ (n.kind === 'lesson' && !n.ghost ? ` <a href="${esc(n.raw.url)}#note-lesson">замечания урока</a>` : '') + '</p>';
+				+ (n.kind === 'lesson' && !n.ghost ? ` <a href="${esc(n.raw.url)}#section-notes">замечания урока</a>` : '') + '</p>';
 			openTrail(html);
 		}
 
@@ -428,57 +619,64 @@
 			return { target: 'block.' + b.artifact + '/' + b.key, label: 'Документ · блок «' + n.text + '»' };
 		}
 
-		function showIssues(title, list) {
-			openTrail(`<div class="kind">Расхождения</div><p><b>${esc(title)}</b></p><ul>${list.map(issueHtml).join('')}</ul>`);
-		}
+		const issuesCard = (title, list) => `<div class="kind">Расхождения</div><p><b>${esc(title)}</b></p><ul>${list.map(issueHtml).join('')}</ul>`;
 
-		// ---------- фокус и проверки ----------
-		const focusEl = document.getElementById('map-focus');
+		// ---------- вид, фокус и проверки ----------
 		const checksEl = document.getElementById('map-checks');
+		const focusSelect = document.getElementById('map-focus-select');
 		const all = new Set(nodes.keys());
-		let focusId = 'all', active = null;
 
-		function setFocus(id) {
-			focusId = id;
-			focusEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.id === id));
-			render(id === 'all' ? all : new Set([...reach(id, 'in'), ...reach(id, 'out')]));
-			clear();
+		function draw() {
+			if (view === 'graph') renderGraph(focusId === 'all' ? all : new Set([...reach(focusId, 'in'), ...reach(focusId, 'out')]));
+			else renderTree();
 		}
+		function setFocus(id) {
+			focusId = id; focusSelect.value = id;
+			draw(); clear();
+		}
+		const segButtons = [...document.querySelectorAll('#map-focus .seg button')];
+		function setView(next) {
+			view = next;
+			segButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.layout === next)));
+			board.hidden = legend.hidden = next !== 'graph';
+			tree.hidden = next !== 'tree';
+			const keep = chosen;
+			draw();
+			if (keep) choose(keep, true); else clear();
+		}
+		segButtons.forEach(b => b.addEventListener('click', () => { if (b.dataset.layout !== view) setView(b.dataset.layout); }));
+
 		function activeChip(id) { active = id; checksEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.id === id)); }
 		const button = (cls, html, title) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerHTML = html; if (title) b.title = title; return b; };
 
+		// Фокус — одним списком: ряд чипов с десятком длинных названий занимал
+		// на телефоне полэкрана.
 		if (levels.length > 1) {
-			const label = document.createElement('span'); label.className = 'eyebrow'; label.textContent = 'Фокус'; focusEl.appendChild(label);
-			const mk = (id, text, n) => {
-				const b = button('chip focus', (n ? `<span class="n">${n}</span>` : '') + esc(text.length > 34 ? text.slice(0, 34).replace(/\s\S*$/, '') + '…' : text), n ? nodes.get(id).text : '');
-				b.dataset.id = id; b.addEventListener('click', () => setFocus(id)); focusEl.appendChild(b);
-			};
-			mk('all', 'Всё');
-			[...nodes.values()].filter(n => n.kind === 'node' && n.col === 1).forEach((n, i) => mk(n.id, n.text, i + 1));
+			const cut = t => t.length > 60 ? t.slice(0, 60).replace(/\s\S*$/, '') + '…' : t;
+			[['all', 'Вся карта']].concat([...nodes.values()].filter(n => n.kind === 'node' && n.col === 1).map((n, i) => [n.id, (i + 1) + '. ' + cut(n.text)]))
+				.forEach(([value, text]) => { const o = document.createElement('option'); o.value = value; o.textContent = text; focusSelect.appendChild(o); });
+			document.getElementById('map-focus-label').hidden = false;
+			focusSelect.addEventListener('change', () => setFocus(focusSelect.value));
 		}
 
 		const checksLabel = document.createElement('span'); checksLabel.className = 'eyebrow'; checksLabel.textContent = 'Расхождения'; checksEl.appendChild(checksLabel);
-		const select = (id, set, title, list) => {
+		const toggle = (id, set, html) => {
 			if (active === id) { clear(); return; }
 			if (focusId !== 'all') setFocus('all');
-			highlight(set, set); activeChip(id); showIssues(title, list);
+			mark(set, html, id);
 		};
 		Object.keys(GROUPS).forEach(g => {
 			const list = data.discrepancies.filter(d => d.group === g);
 			const b = button(`chip ${list.length ? 'gap' : 'neutral'}`, `<span class="n">${list.length}</span>${GROUPS[g]}`);
 			b.dataset.id = g; b.disabled = !list.length;
-			b.addEventListener('click', () => select(g, new Set(list.flatMap(d => d.targets)), GROUPS[g], list));
+			b.addEventListener('click', () => toggle(g, new Set(list.flatMap(d => d.targets)), issuesCard(GROUPS[g], list)));
 			checksEl.appendChild(b);
 		});
 		Object.entries(data.tags).forEach(([tag, ids]) => {
 			const b = button('chip neutral', `<span class="n">${ids.length}</span>${esc(tag)}`, 'Узлы с меткой');
 			b.dataset.id = 'tag:' + tag;
-			b.addEventListener('click', () => {
-				if (active === b.dataset.id) { clear(); return; }
-				if (focusId !== 'all') setFocus('all');
-				const set = new Set(ids.map(i => 'n:' + i)); highlight(set, set); activeChip(b.dataset.id);
-				openTrail(`<div class="kind">Метка</div><p><b>${esc(tag)}</b></p><ol>${ids.map(i => `<li>${esc(nodes.get('n:' + i).text)}</li>`).join('')}</ol>`);
-			});
+			b.addEventListener('click', () => toggle(b.dataset.id, new Set(ids.map(i => 'n:' + i)),
+				`<div class="kind">Метка</div><p><b>${esc(tag)}</b></p><ol>${ids.map(i => `<li>${esc(nodes.get('n:' + i).text)}</li>`).join('')}</ol>`));
 			checksEl.appendChild(b);
 		});
 		const reset = button('chip reset', 'Сбросить выделение'); reset.addEventListener('click', clear); checksEl.appendChild(reset);
@@ -486,24 +684,16 @@
 		document.querySelectorAll('.issue-item').forEach(el => el.addEventListener('click', () => {
 			const d = data.discrepancies[Number(el.dataset.index)];
 			if (focusId !== 'all') setFocus('all');
-			const set = new Set(d.targets); highlight(set, set); activeChip(null); showIssues(GROUPS[d.group], [d]);
+			mark(new Set(d.targets), issuesCard(GROUPS[d.group], [d]), null);
 			// К узлу, а не к доске: карта высокая, и её край ничего не покажет.
-			const first = nodeEls.get(d.targets[0]);
-			if (first) first.scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+			scrollToNode(d.targets[0]);
 		}));
 
-		render(all);
-
-		// Узел в адресе (`&node=T1_4`) — ссылка из замечания или из чата
+		// Узел из адреса — ссылка из замечания, из урока или из чата
 		// открывает карту уже на нём.
-		const fromUrl = new URLSearchParams(location.search).get('node');
-		if (fromUrl && nodes.has('n:' + fromUrl)) {
-			const id = 'n:' + fromUrl;
-			highlight(new Set([...reach(id, 'in'), ...reach(id, 'out')]), new Set([id]));
-			showNode(id);
-			const el = nodeEls.get(id);
-			if (el) el.scrollIntoView({ block: 'center', inline: 'center' });
-		}
+		const start = fromParam(new URLSearchParams(location.search).get('node'));
+		setView(view);
+		if (start) choose(start, true);
 	})();
 	{% endraw %}
 	</script>

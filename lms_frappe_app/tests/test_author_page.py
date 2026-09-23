@@ -285,6 +285,64 @@ class IntegrationTestAuthorPageNotes(IntegrationTestCase):
 
 		self.assertEqual({узел: [з["id"] for з in записи] for узел, записи in с["map_notes"].items()}, {"T1": [self.на_карте]})
 
+	def блоки(self):
+		authoring.set_course_artifact(
+			course=self.курс,
+			artifact="register",
+			title="Реестр",
+			blocks=[
+				{"key": "risks", "title": "Риски", "lesson": self.урок},
+				{"key": "other", "title": "Другое"},
+			],
+		)
+
+	def добавить(self, target: str, lesson: str | None = None) -> str:
+		return authoring.add_note(course=self.курс, target=target, lesson=lesson, text="…")["data"]["id"]
+
+	def test_указатель_замечаний_урока_с_блоками_урока(self):
+		self.блоки()
+		на_блоке = self.добавить("block.register/risks")
+		self.добавить("block.register/other")
+
+		урок = self.сведения_для(lesson=self.урок)["lesson"]
+
+		self.assertEqual(
+			[з["id"] for з in урок["notes_index"]], [self.сделано, self.ждёт_агента, на_блоке, self.принято]
+		)
+		self.assertEqual(урок["open_notes"], 3)
+		(строка,) = [у for г in self.сведения_для()["course"]["chapters"] for у in г["lessons"]]
+		self.assertEqual(строка["open_notes"], 3)
+
+	def test_указатель_подписывает_место_без_названия_урока(self):
+		self.блоки()
+		на_блоке = self.добавить("block.register/risks")
+		на_уроке = self.добавить("lesson", self.урок)
+
+		места = {з["id"]: з["place"] for з in self.сведения_для(lesson=self.урок)["lesson"]["notes_index"]}
+
+		self.assertEqual(места[self.ждёт_агента], "Директива · teaching_directive")
+		self.assertEqual(места[self.принято], "Материал")
+		self.assertEqual(места[на_уроке], "Урок целиком")
+		self.assertEqual(места[на_блоке], "Документ register · блок «Риски»")
+
+	def test_замечание_без_места_на_странице_ведёт_в_очередь(self):
+		# Поля «Вопросы к проекту» в директиве нет — места на странице тоже.
+		без_места = self.добавить("directive.probing_questions", self.урок)
+
+		по_ид = {з["id"]: з for з in self.сведения_для(lesson=self.урок)["lesson"]["notes_index"]}
+
+		self.assertTrue(по_ид[self.ждёт_агента]["here"])
+		self.assertFalse(по_ид[без_места]["here"])
+
+	def test_замечание_на_блок_с_уроком_стоит_у_блока(self):
+		self.блоки()
+		с_уроком = self.добавить("block.register/risks", self.урок)
+
+		с = self.сведения_для(lesson=self.урок)
+
+		self.assertEqual([з["id"] for з in с["course"]["notes"]["block.register/risks"]], [с_уроком])
+		self.assertIn(с_уроком, [з["id"] for з in с["lesson"]["notes_index"]])
+
 
 class IntegrationTestAuthorPageLessonMap(IntegrationTestCase):
 	"""Расхождения урока с картой — в шапке урока и меткой в таблице структуры,
