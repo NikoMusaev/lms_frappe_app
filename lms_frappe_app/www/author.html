@@ -83,6 +83,7 @@
 	/* Тема сайта утяжеляет текст до 420; читать длинный материал так тяжело. */
 	.author-page p, .author-page li, .author-page td, .author-page .prose { font-weight: 400; }
 	.author-page .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 20px; }
+	.author-page .wrap.wide { max-width: 1320px; }
 	/* Элемент сетки по умолчанию не уже своего содержимого: широкая таблица
 	   структуры растягивала всю страницу за экран телефона. */
 	.author-page .wrap > * { min-width: 0; }
@@ -126,6 +127,20 @@
 		font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500; background: var(--accent-soft); color: var(--accent);
 	}
 	.author-page .chip.short .n { background: var(--gap-soft); color: var(--gap); }
+	.author-page a.chip.link { color: var(--ink); text-decoration: none; }
+	.author-page a.chip.link:hover { border-color: var(--accent); }
+
+	.author-page .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+	.author-page .tab {
+		display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; margin-bottom: -1px;
+		color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent;
+	}
+	.author-page .tab:hover { color: var(--ink); }
+	.author-page .tab.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 500; }
+	.author-page .tab .n {
+		min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center;
+		font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--gap-soft); color: var(--gap);
+	}
 
 	.author-page .issues { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 	.author-page .issues li { padding: 8px 12px; border-radius: 8px; border-left: 3px solid; }
@@ -192,7 +207,7 @@
 </style>
 
 <div class="author-page">
-<div class="wrap">
+<div class="wrap{% if view == 'map' and course and not lesson %} wide{% endif %}">
 
 {% if is_guest %}
 	<div class="panel">
@@ -292,11 +307,25 @@
 		</p>
 	</div>
 
+	<nav class="tabs" aria-label="Вкладки курса">
+		<a class="tab{% if view != 'map' %} active{% endif %}" href="{{ course.url }}"{% if view != 'map' %} aria-current="page"{% endif %}>Сборка</a>
+		<a class="tab{% if view == 'map' %} active{% endif %}" href="{{ course.url }}&view=map"{% if view == 'map' %} aria-current="page"{% endif %}>Карта
+			{% if course.map_discrepancies %}<span class="n">{{ course.map_discrepancies }}</span>{% endif %}</a>
+	</nav>
+
+	{% if view == "map" %}
+	{% include "lms_frappe_app/templates/includes/author_map.html" %}
+	{% else %}
 	<div class="chips">
 		{% set c = course.counts %}
 		<span class="chip{% if c.with_body < c.lessons %} short{% endif %}"><span class="n">{{ c.with_body }}/{{ c.lessons }}</span>с материалом</span>
 		<span class="chip{% if c.with_directive < c.lessons %} short{% endif %}"><span class="n">{{ c.with_directive }}/{{ c.lessons }}</span>с директивой</span>
 		<span class="chip{% if c.with_quiz < c.lessons %} short{% endif %}"><span class="n">{{ c.with_quiz }}/{{ c.lessons }}</span>с квизом</span>
+		{% if course.map_discrepancies is none %}
+		<a class="chip link" href="{{ course.url }}&view=map">карты нет</a>
+		{% else %}
+		<a class="chip link{% if course.map_discrepancies %} short{% endif %}" href="{{ course.url }}&view=map"><span class="n">{{ course.map_discrepancies }}</span>расхождений с картой</a>
+		{% endif %}
 	</div>
 
 	<section class="panel">
@@ -349,6 +378,7 @@
 		<details><summary>Показать поля</summary>{{ поля_директивы(course.directive_fields) }}</details>
 		{% else %}<p class="gap-text">Сквозной директивы нет.</p>{% endif %}
 	</section>
+	{% endif %}
 	<div class="quiet" id="author-quiet"></div>
 
 {% else %}

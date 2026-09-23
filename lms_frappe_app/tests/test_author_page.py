@@ -146,3 +146,57 @@ class IntegrationTestAuthorPage(IntegrationTestCase):
 
 		self.assertTrue(self.сведения_для(self.куратор, course=чужой_курс, lesson=self.уроки[0])["missing"])
 		self.assertTrue(self.сведения_для(self.куратор, course="такого-курса-нет")["missing"])
+
+
+class IntegrationTestAuthorPageMap(IntegrationTestCase):
+	"""Вкладка «Карта»: карта декомпозиции против собранного курса
+	(lms-high-time/learning-services#264)."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"author-map-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Карта {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Рамка")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=глава, title="Первый", body="# Первый")["data"]["id"]
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди", objectives="Цель один")
+
+	def сведения_для(self, **параметры) -> dict:
+		from lms_frappe_app.www.author import сведения
+
+		return сведения(self.куратор, course=self.курс, **параметры)
+
+	def test_вкладка_карта_отдаёт_сверку_со_ссылками_на_уроки(self):
+		authoring.set_course_map(
+			course=self.курс,
+			levels=[{"key": "result", "title": "Результат"}, {"key": "thesis", "title": "Тезисы"}],
+			nodes=[
+				{"id": "R", "level": "result", "text": "Курс собран"},
+				{"id": "T1", "level": "thesis", "text": "Цель два", "parents": ["R"], "lesson": "u1", "objective": True},
+			],
+			lessons=[{"key": "u1", "title": "Первый", "chapter": "Рамка"}],
+		)
+
+		с = self.сведения_для(view="map")
+
+		self.assertEqual(с["view"], "map")
+		self.assertEqual(с["map_check"]["map"]["version"], 1)
+		(урок,) = с["map_check"]["platform"]["lessons"]
+		self.assertIn(f"lesson={quote(self.урок)}", урок["url"])
+		self.assertEqual(с["course"]["map_discrepancies"], с["map_check"]["counts"]["total"])
+		self.assertEqual(с["course"]["map_discrepancies"], 1)
+
+	def test_без_карты_вкладка_знает_что_её_нет(self):
+		с = self.сведения_для(view="map")
+
+		self.assertIsNone(с["map_check"]["map"])
+		self.assertIsNone(с["course"]["map_discrepancies"])
+
+	def test_без_вкладки_и_с_неизвестной_показывается_сборка(self):
+		for вид in (None, "что-то"):
+			with self.subTest(вид=вид):
+				с = self.сведения_для(view=вид)
+
+				self.assertEqual(с["view"], "build")
+				self.assertIsNone(с["map_check"])
