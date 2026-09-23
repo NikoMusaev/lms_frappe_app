@@ -8,7 +8,8 @@
  "engine": "InnoDB",
  "field_order": [
   "objective",
-  "status"
+  "status",
+  "resume_from"
  ],
  "fields": [
   {
@@ -26,6 +27,12 @@
    "label": "Как прошло",
    "options": "covered\ntouched\nskipped",
    "reqd": 1
+  },
+  {
+   "fieldname": "resume_from",
+   "fieldtype": "Small Text",
+   "label": "С чего продолжать",
+   "description": "Одна фраза агента к незакрытой цели: с чего продолжать на следующем занятии"
   }
  ],
  "grid_page_length": 50,

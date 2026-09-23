@@ -1,0 +1,24 @@
+[
+ {
+  "doctype": "Custom Field",
+  "name": "Course Lesson-lesson_hook",
+  "dt": "Course Lesson",
+  "fieldname": "lesson_hook",
+  "fieldtype": "Small Text",
+  "label": "Зачин урока",
+  "insert_after": "title",
+  "module": "Agent Learning",
+  "description": "Зачем эта тема ученику сейчас — две-три фразы. Звучит в начале непройденного урока."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "LMS Course-course_promise",
+  "dt": "LMS Course",
+  "fieldname": "course_promise",
+  "fieldtype": "Small Text",
+  "label": "Обещание курса",
+  "insert_after": "short_introduction",
+  "module": "Agent Learning",
+  "description": "Что человек получит к концу курса — так, чтобы это можно было проверить. Звучит на первом занятии по курсу."
+ }
+]

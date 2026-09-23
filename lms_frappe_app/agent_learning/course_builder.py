@@ -143,6 +143,8 @@ def _проверить_количество(элементы: list) -> None:
 БЕЗ_ДИРЕКТИВЫ_КУРСА = "course_without_directive"
 БЕЗ_КВИЗОВ = "course_without_quiz"
 БЕЗ_БЛОКОВ = "artifact_without_blocks"
+БЕЗ_ОБЕЩАНИЯ = "course_without_promise"
+БЕЗ_ЗАЧИНА = "lesson_without_hook"
 
 
 def проверить_готовность(курс: str) -> dict:
@@ -175,6 +177,16 @@ def проверить_готовность(курс: str) -> dict:
 			}
 		)
 
+	# Предупреждением, а не отказом: курсы, опубликованные до этих полей,
+	# иначе разом перестали бы публиковаться (#238).
+	if not frappe.db.get_value("LMS Course", курс, "course_promise"):
+		стоит_знать.append(
+			{
+				"code": БЕЗ_ОБЕЩАНИЯ,
+				"message": "Без обещания курса агенту нечем начать первое занятие — зачем курс и что человек получит",
+			}
+		)
+
 	уроки = уроки_курса(курс)
 	if not уроки:
 		мешает.append({"code": ПУСТОЙ_КУРС, "message": "В курсе нет ни одного урока"})
@@ -188,6 +200,15 @@ def проверить_готовность(курс: str) -> dict:
 		if квиз:
 			с_квизом += 1
 			мешает += _беды_квиза(квиз, урок)
+
+		if not (frappe.db.get_value("Course Lesson", урок, "lesson_hook") or "").strip():
+			стоит_знать.append(
+				{
+					"code": БЕЗ_ЗАЧИНА,
+					"lesson": урок,
+					"message": "Урок без зачина: агент начнёт с вопросов, не сказав, зачем тема ученику",
+				}
+			)
 
 		if not frappe.db.exists("Agent Lesson Directive", {"lesson": урок, "is_active": 1}):
 			стоит_знать.append(

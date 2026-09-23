@@ -9,6 +9,7 @@
 """
 
 import json
+from datetime import timedelta
 
 import frappe
 from frappe.utils import now_datetime
@@ -281,6 +282,8 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 
 	политика = политика_квиза_для_курса(ученик, курс, назначения)
 	сведения = доступные[курс]
+	перенос = _незакрытые_цели(ученик, курс, кроме=lesson)
+	сегмент = min(segment, материал.total_segments or 1)
 
 	return {
 		"session": занятие.name,
@@ -292,7 +295,7 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 		},
 		"content": {
 			"markdown": материал.сегмент(segment),
-			"segment_index": min(segment, материал.total_segments or 1),
+			"segment_index": сегмент,
 			"total_segments": материал.total_segments,
 		},
 		"media": [
@@ -300,6 +303,11 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 		],
 		"objectives": директива.get("objectives", []),
 		"directive": директива.get("directive"),
+		# Зачин и обещание — верхним уровнем, а не внутри директивы с грифом
+		# «только преподавателю»: их адресат — ученик (#238).
+		"course_promise": frappe.db.get_value("LMS Course", курс, "course_promise") or None,
+		"lesson_hook": frappe.db.get_value("Course Lesson", lesson, "lesson_hook") or None,
+		"start": _состояние_старта(ученик, курс, lesson, занятие.name, сегмент, перенос),
 		"course_objectives": курсовая.get("objectives", []),
 		"course_directive": курсовая.get("directive"),
 		"quiz": {
@@ -312,7 +320,7 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 		# другим значило бы соврать агенту про режим обращения.
 		"student_context": {
 			**_заметки(ученик, курс),
-			"carried_over": _незакрытые_цели(ученик, курс, кроме=lesson),
+			"carried_over": перенос,
 		},
 		# Подсказка «сегодня собираем резюме проекта», а не ограничение:
 		# update_artifact принимает любой ключ, и ученик волен забежать вперёд.
@@ -539,7 +547,15 @@ def report_outcomes(session: str, outcomes) -> dict:
 				objective=цель,
 				status=статус,
 			)
-		сданные[цель] = статус
+		продолжить = (пункт.get("resume_from") or "").strip()
+		if len(продолжить) > ДЛИНА_ПРОДОЛЖЕНИЯ:
+			raise Отказ(
+				ЦЕЛИ_НЕ_СОВПАЛИ,
+				f"«С чего продолжать» — одна фраза, не длиннее {ДЛИНА_ПРОДОЛЖЕНИЯ} знаков",
+				objective=цель,
+				field="resume_from",
+			)
+		сданные[цель] = (статус, продолжить or None)
 
 	if set(сданные) != set(цели):
 		raise Отказ(
@@ -553,7 +569,8 @@ def report_outcomes(session: str, outcomes) -> dict:
 	# том же порядке, в каком автор задумывал урок.
 	занятие.outcomes = []
 	for цель in цели:
-		занятие.append("outcomes", {"objective": цель, "status": сданные[цель]})
+		статус, продолжить = сданные[цель]
+		занятие.append("outcomes", {"objective": цель, "status": статус, "resume_from": продолжить})
 	занятие.save(ignore_permissions=True)
 	занятие.записать_событие(СОБЫТИЕ_ОТМЕТКА, "отчёт по целям урока")
 
@@ -1087,11 +1104,62 @@ def _заметки(ученик: str, course: str | None) -> dict:
 #: значение для настройки `carry_over_depth`. Считаются разные уроки, а не
 #: занятия: урок, пройденный дважды, входит в глубину один раз.
 ГЛУБИНА_ПЕРЕНОСА = 3
+#: «С чего продолжать» — одна фраза к незакрытой цели, а не конспект занятия:
+#: пересказ целиком способен вернуть объяснение, которое ученика запутало (#238).
+ДЛИНА_ПРОДОЛЖЕНИЯ = 500
+#: Сколько часов с прошлого занятия по курсу, чтобы начать с мостика, а не с
+#: зачина; запасное значение для настройки `bridge_after_hours` (#238).
+ПЕРЕРЫВ_ДЛЯ_МОСТИКА = 24
 
 
 def глубина_переноса() -> int:
 	"""Глубина переноса из настроек платформы; при пустой настройке — запасная."""
 	return настройка("carry_over_depth", ГЛУБИНА_ПЕРЕНОСА)
+
+
+def перерыв_для_мостика() -> int:
+	"""Перерыв для мостика из настроек; отдельно от `session_timeout_hours`:
+	таймаут закрывает занятие через шесть часов, а мостик нужен не после
+	каждого закрытия (#238)."""
+	return настройка("bridge_after_hours", ПЕРЕРЫВ_ДЛЯ_МОСТИКА)
+
+
+def _состояние_старта(
+	ученик: str, курс: str, lesson: str, занятие: str, сегмент: int, перенос: list[dict]
+) -> dict:
+	"""С чего начинать занятие: одно значение `opening` вместо пяти признаков.
+
+	Решает сервер, а не агент: разбирать признаки заново на каждом старте —
+	место для ошибки, а жалоба, с которой всё началось, была ровно на начало
+	занятия (#238). Порядок проверок — порядок приоритета:
+
+	- `next_segment` — продолжение длинного урока, говорить нечего;
+	- `repeat` — урок уже проходили, зачин и мостик лишние;
+	- `first_in_course` — других занятий по курсу нет: обещание, зачин, цели;
+	- `return` — есть незакрытое и прошлое занятие старше перерыва: мостик;
+	- `new_lesson` — всё остальное: зачин и цели.
+
+	«Другое занятие» — любое, кроме текущего: незакрытое занятие того же урока
+	переиспользуется, и продолжение не должно выглядеть повтором.
+	"""
+	прочие = frappe.get_all(
+		"Agent Learning Session",
+		filters={"student": ученик, "course": курс, "name": ("!=", занятие)},
+		fields=["lesson", "started_at", "last_activity_at"],
+		ignore_permissions=True,
+	)
+	последнее = max((з.last_activity_at or з.started_at for з in прочие if з.last_activity_at or з.started_at), default=None)
+	if сегмент > 1:
+		opening = "next_segment"
+	elif any(з.lesson == lesson for з in прочие):
+		opening = "repeat"
+	elif not прочие:
+		opening = "first_in_course"
+	elif перенос and последнее and now_datetime() - последнее > timedelta(hours=перерыв_для_мостика()):
+		opening = "return"
+	else:
+		opening = "new_lesson"
+	return {"opening": opening, "last_session_at": последнее.isoformat() if последнее else None}
 
 
 def _незакрытые_цели(ученик: str, курс: str, кроме: str) -> list[dict]:
@@ -1120,7 +1188,7 @@ def _незакрытые_цели(ученик: str, курс: str, кроме:
 				"parenttype": "Agent Learning Session",
 				"status": ("in", ("touched", "skipped")),
 			},
-			fields=["objective", "status"],
+			fields=["objective", "status", "resume_from"],
 			order_by="idx asc",
 			ignore_permissions=True,
 		):
@@ -1128,6 +1196,7 @@ def _незакрытые_цели(ученик: str, курс: str, кроме:
 				{
 					"objective": строка.objective,
 					"status": строка.status,
+					"resume_from": строка.resume_from or None,
 					"lesson": занятие.lesson,
 					"when": занятие.finished_at.isoformat() if занятие.finished_at else None,
 				}
