@@ -382,6 +382,19 @@ class IntegrationTestAuthoringReadBack(IntegrationTestCase):
 		self.assertEqual(директива["teaching_directive"], "Вторая редакция")
 		self.assertEqual(директива["version"], 2)
 
+	def test_у_действующей_директивы_есть_дата_версии(self):
+		"""Кабинет автора показывает, когда версия поставлена (#261)."""
+		from datetime import datetime
+
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди")
+		курс = frappe.db.get_value("Course Lesson", self.урок, "course")
+		authoring.set_course_directive(course=курс, teaching_directive="Сквозная")
+
+		урок = authoring.get_lesson(lesson=self.урок)["data"]
+
+		for директива in (урок["directive"], урок["course_directive"]):
+			self.assertIsInstance(datetime.fromisoformat(директива["created_at"]), datetime)
+
 	def test_директива_принимает_иконку_карты(self):
 		authoring.set_directive(
 			lesson=self.урок,

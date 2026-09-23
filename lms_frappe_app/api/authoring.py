@@ -814,12 +814,13 @@ def _директива_наружу(doctype: str, владелец: dict, по�
 	разбираются на пункты — этим занят учебный поток, и разбор здесь означал
 	бы, что куратор сверяет не исходный текст.
 	"""
-	запись = directives.запись(doctype, владелец, поля)
+	запись = directives.запись(doctype, владелец, (*поля, "creation"))
 	if not запись:
 		return None
 	return {
 		"id": запись.name,
 		"version": запись.version,
+		"created_at": запись.creation.isoformat(),
 		**{поле: запись.get(поле) for поле in поля},
 	}
 
