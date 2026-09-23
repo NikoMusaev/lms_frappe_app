@@ -1,0 +1,132 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "AAN-.#####",
+ "creation": "2026-09-23 21:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "course",
+  "lesson",
+  "target",
+  "status",
+  "via",
+  "sb_note",
+  "quote",
+  "text",
+  "replies"
+ ],
+ "fields": [
+  {
+   "fieldname": "course",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Курс",
+   "options": "LMS Course",
+   "reqd": 1
+  },
+  {
+   "fieldname": "lesson",
+   "fieldtype": "Link",
+   "label": "Урок",
+   "options": "Course Lesson"
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Место",
+   "reqd": 1,
+   "description": "course, course_directive.<поле>, lesson, material, directive.<поле>, question.<id>, block.<документ>/<ключ>, map.<узел>"
+  },
+  {
+   "default": "open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Статус",
+   "options": "open\ndone\naccepted"
+  },
+  {
+   "default": "author",
+   "fieldname": "via",
+   "fieldtype": "Select",
+   "label": "Кто написал",
+   "options": "author\nagent"
+  },
+  {
+   "fieldname": "sb_note",
+   "fieldtype": "Section Break",
+   "label": "Замечание"
+  },
+  {
+   "fieldname": "quote",
+   "fieldtype": "Small Text",
+   "label": "Цитата"
+  },
+  {
+   "fieldname": "text",
+   "fieldtype": "Small Text",
+   "label": "Текст",
+   "reqd": 1
+  },
+  {
+   "fieldname": "replies",
+   "fieldtype": "Table",
+   "label": "Ответы",
+   "options": "Agent Note Reply"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-09-23 21:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Agent Learning",
+ "name": "Agent Author Note",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Course Creator",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Moderator",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "target",
+ "track_changes": 1
+}

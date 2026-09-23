@@ -200,3 +200,87 @@ class IntegrationTestAuthorPageMap(IntegrationTestCase):
 
 				self.assertEqual(с["view"], "build")
 				self.assertIsNone(с["map_check"])
+
+
+class IntegrationTestAuthorPageNotes(IntegrationTestCase):
+	"""Замечания в кабинете: очередь по тому, что ждёт человека, замечания
+	урока по местам, счётчики и ссылки на места (lms-high-time/learning-services#266)."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"author-notes-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Замечания {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Рамка")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=глава, title="Первый", body="# Первый\n\nТекст.")["data"]["id"]
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди")
+		authoring.add_quiz(
+			lesson=self.урок,
+			questions=[{"text": "Что не так?", "options": [{"text": "a", "correct": True}, {"text": "b"}]}],
+		)
+		вопрос = authoring.get_lesson(lesson=self.урок)["data"]["quiz"]["questions"][0]["id"]
+
+		def замечание(target, lesson=None, **правки):
+			return authoring.add_note(course=self.курс, target=target, lesson=lesson, text="Замечание", **правки)["data"]["id"]
+
+		self.ждёт_агента = замечание("directive.teaching_directive", self.урок)
+		self.сделано = замечание(f"question.{вопрос}", self.урок)
+		authoring.set_note_status(note=self.сделано, status="done", text="Поправил", via="agent")
+		self.вопрос_агента = замечание("course", via="agent")
+		self.принято = замечание("material", self.урок)
+		authoring.set_note_status(note=self.принято, status="accepted")
+		self.на_карте = замечание("map.T1")
+
+	def сведения_для(self, **параметры) -> dict:
+		from lms_frappe_app.www.author import сведения
+
+		return сведения(self.куратор, course=self.курс, **параметры)
+
+	def test_очередь_по_тому_что_ждёт_человека(self):
+		с = self.сведения_для(view="notes")
+
+		self.assertEqual(с["view"], "notes")
+		очередь = {группа: [з["id"] for з in записи] for группа, записи in с["notes_queue"].items()}
+		self.assertEqual(
+			очередь,
+			{
+				"check": [self.сделано],
+				"question": [self.вопрос_агента],
+				"agent": [self.ждёт_агента, self.на_карте],
+				"accepted": [self.принято],
+			},
+		)
+		self.assertEqual(с["course"]["notes_attention"], 2)
+
+	def test_ссылки_ведут_на_место(self):
+		с = self.сведения_для(view="notes")
+		по_ид = {з["id"]: з for записи in с["notes_queue"].values() for з in записи}
+
+		урок = по_ид[self.ждёт_агента]["url"]
+		self.assertIn(f"lesson={quote(self.урок)}", урок)
+		self.assertTrue(урок.endswith("#note-directive-teaching_directive"))
+		self.assertIn("view=map", по_ид[self.на_карте]["url"])
+		self.assertIn("node=T1", по_ид[self.на_карте]["url"])
+		self.assertTrue(по_ид[self.вопрос_агента]["url"].endswith("#note-course"))
+
+	def test_урок_показывает_свои_замечания_по_местам(self):
+		с = self.сведения_для(lesson=self.урок)
+
+		замечания = с["lesson"]["notes"]
+		self.assertEqual([з["id"] for з in замечания["directive.teaching_directive"]], [self.ждёт_агента])
+		self.assertEqual([з["id"] for з in замечания["material"]], [self.принято])
+		self.assertEqual(с["lesson"]["open_notes"], 2)
+
+	def test_в_таблице_структуры_открытые_замечания_урока(self):
+		с = self.сведения_для()
+
+		(урок,) = [у for г in с["course"]["chapters"] for у in г["lessons"]]
+		self.assertEqual(урок["open_notes"], 2)
+		self.assertIsNotNone(с["course"]["notes_revision"])
+		self.assertEqual([з["id"] for з in с["course"]["notes"]["course"]], [self.вопрос_агента])
+
+	def test_карта_получает_замечания_по_узлам(self):
+		с = self.сведения_для(view="map")
+
+		self.assertEqual({узел: [з["id"] for з in записи] for узел, записи in с["map_notes"].items()}, {"T1": [self.на_карте]})

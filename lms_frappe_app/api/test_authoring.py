@@ -861,3 +861,153 @@ class IntegrationTestCourseMap(IntegrationTestCase):
 			authoring.course_map_check(course=self.курс)
 		with self.assertRaises(frappe.PermissionError):
 			authoring.set_course_map(course=self.курс, **self.данные())
+
+
+class IntegrationTestAuthorNotes(IntegrationTestCase):
+	"""Замечания автора: место, цикл «сделано → принято», чей ход
+	(lms-high-time/learning-services#266)."""
+
+	def setUp(self):
+		суффикс = frappe.generate_hash(length=6)
+		self.куратор = создать_куратора(f"notes-{суффикс}@example.com")
+		frappe.set_user(self.куратор)
+		self.курс = authoring.create_course(title=f"Замечания {суффикс}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=self.курс, title="Рамка")["data"]["id"]
+		self.урок = authoring.add_lesson(chapter=глава, title="Ответ и мера", body="# Мера")["data"]["id"]
+		authoring.set_directive(lesson=self.урок, teaching_directive="Веди")
+		authoring.add_quiz(
+			lesson=self.урок,
+			questions=[{"text": "Что здесь не так?", "options": [{"text": "a", "correct": True}, {"text": "b"}]}],
+		)
+		self.вопрос = authoring.get_lesson(lesson=self.урок)["data"]["quiz"]["questions"][0]["id"]
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def замечание(self, target="directive.teaching_directive", **правки) -> dict:
+		параметры = {"course": self.курс, "target": target, "text": "Слишком допрос", "lesson": self.урок, **правки}
+		return authoring.add_note(**параметры)
+
+	def очередь(self, **фильтры) -> list[dict]:
+		return authoring.list_notes(course=self.курс, **фильтры)["data"]["notes"]
+
+	def test_замечание_приходит_с_адресом_и_ходом_агента(self):
+		ид = self.замечание(quote="По каждой мере три вопроса")["data"]["id"]
+
+		(з,) = self.очередь()
+		self.assertEqual(з["id"], ид)
+		self.assertEqual((з["status"], з["via"], з["waiting_on"]), ("open", "author", "agent"))
+		self.assertEqual(з["label"], "Урок 1 «Ответ и мера» · директива · teaching_directive")
+		self.assertEqual(з["quote"], "По каждой мере три вопроса")
+		self.assertFalse(з["missing"])
+		self.assertEqual(з["replies"], [])
+
+	def test_адреса_курса_вопроса_блока_и_карты(self):
+		self.замечание(target="course", lesson=None)
+		self.замечание(target=f"question.{self.вопрос}")
+		self.замечание(target="block.Register/RISKS", lesson=None)
+		self.замечание(target="map.T9", lesson=None)
+
+		подписи = {з["target"]: (з["label"], з["missing"]) for з in self.очередь()}
+		self.assertEqual(подписи["course"], ("Курс", False))
+		self.assertEqual(подписи[f"question.{self.вопрос}"], ("Урок 1 «Ответ и мера» · вопрос «Что здесь не так?»", False))
+		self.assertEqual(подписи["block.register/risks"], ("Документ register · блок «risks»", True))
+		self.assertEqual(подписи["map.T9"], ("Карта · узел T9", True))
+
+	def test_неверное_место_отклоняется(self):
+		другой = authoring.create_course(title=f"Другой {frappe.generate_hash(length=6)}", summary="к")["data"]["id"]
+		глава = authoring.add_chapter(course=другой, title="Глава")["data"]["id"]
+		чужой = authoring.add_lesson(chapter=глава, title="Чужой", body="# Чужой")["data"]["id"]
+
+		for правки, место in (
+			({"lesson": чужой}, "lesson"),
+			({"target": "question.QTS-нет-такого"}, "target"),
+			({"target": "directive.nope"}, "target"),
+			({"target": "material", "lesson": None}, "lesson"),
+		):
+			with self.subTest(правки=правки):
+				ответ = self.замечание(**правки)
+				self.assertEqual((ответ["error"]["code"], ответ["error"]["where"]), ("invalid_target", место))
+		self.assertEqual(self.очередь(), [])
+
+	def test_пустое_замечание_отклоняется(self):
+		ответ = self.замечание(text="  ")
+
+		self.assertEqual((ответ["error"]["code"], ответ["error"]["where"]), ("invalid_note", "text"))
+
+	def test_цикл_сделано_принято_и_возврат(self):
+		ид = self.замечание()["data"]["id"]
+
+		сделано = authoring.set_note_status(note=ид, status="done", text="Добавил пример меры", via="agent")["data"]
+		self.assertEqual((сделано["status"], сделано["waiting_on"]), ("done", "author"))
+
+		возврат = authoring.set_note_status(note=ид, status="open", text="Пример всё ещё про кафе")["data"]
+		self.assertEqual((возврат["status"], возврат["waiting_on"]), ("open", "agent"))
+
+		authoring.set_note_status(note=ид, status="done", text="Заменил на склад", via="agent")
+		принято = authoring.set_note_status(note=ид, status="accepted")["data"]
+		self.assertEqual((принято["status"], принято["waiting_on"]), ("accepted", None))
+
+		(з,) = self.очередь()
+		self.assertEqual(
+			[(о["via"], о["text"]) for о in з["replies"]],
+			[("agent", "Добавил пример меры"), ("author", "Пример всё ещё про кафе"), ("agent", "Заменил на склад")],
+		)
+
+	def test_агент_не_принимает_автор_не_отмечает_сделанным(self):
+		ид = self.замечание()["data"]["id"]
+
+		for параметры in (
+			{"status": "accepted", "via": "agent"},
+			{"status": "done", "text": "Сам поправил"},
+			{"status": "done", "via": "agent"},
+		):
+			with self.subTest(**параметры):
+				ответ = authoring.set_note_status(note=ид, **параметры)
+				self.assertEqual(ответ["error"]["code"], "invalid_transition")
+
+	def test_вопрос_агента_ждёт_автора_а_ответ_возвращает_ход(self):
+		ид = self.замечание(via="agent", text="Какой пример меры взять для кафе?")["data"]["id"]
+		self.assertEqual(self.очередь()[0]["waiting_on"], "author")
+
+		ответ = authoring.reply_note(note=ид, text="Возьми склад")["data"]
+
+		self.assertEqual((ответ["status"], ответ["waiting_on"]), ("open", "agent"))
+
+	def test_черновик_считает_замечания_которые_ждут_агента(self):
+		первое = self.замечание()["data"]["id"]
+		self.замечание(target="material")
+		self.замечание(via="agent", text="Вопрос автору")
+		authoring.set_note_status(note=первое, status="done", text="Сделал", via="agent")
+
+		self.assertEqual(authoring.course_draft(course=self.курс)["data"]["open_notes"], 1)
+
+	def test_замечания_двигают_свою_метку_а_не_метку_курса(self):
+		до = authoring.course_revision(course=self.курс)["data"]
+		self.assertIsNone(до["notes_revision"])
+
+		ид = self.замечание()["data"]["id"]
+		после_записи = authoring.course_revision(course=self.курс)["data"]
+		authoring.reply_note(note=ид, text="Уточню: шаг 3")
+		после_ответа = authoring.course_revision(course=self.курс)["data"]
+
+		self.assertEqual(после_записи["revision"], до["revision"])
+		self.assertIsNotNone(после_записи["notes_revision"])
+		self.assertGreater(после_ответа["notes_revision"], после_записи["notes_revision"])
+
+	def test_фильтр_по_статусу_и_уроку(self):
+		ид = self.замечание()["data"]["id"]
+		self.замечание(target="course", lesson=None)
+		authoring.set_note_status(note=ид, status="accepted")
+
+		self.assertEqual([з["target"] for з in self.очередь(status="open")], ["course"])
+		self.assertEqual([з["id"] for з in self.очередь(lesson=self.урок)], [ид])
+
+	def test_ученику_замечания_недоступны(self):
+		ид = self.замечание()["data"]["id"]
+		frappe.set_user(создать_ученика(f"notes-s-{frappe.generate_hash(length=6)}@example.com"))
+
+		with self.assertRaises(frappe.PermissionError):
+			authoring.list_notes(course=self.курс)
+		with self.assertRaises(frappe.PermissionError):
+			authoring.reply_note(note=ид, text="Я ученик")

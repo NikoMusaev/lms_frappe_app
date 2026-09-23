@@ -1,0 +1,66 @@
+{#
+	Замечания автора в кабинете: карточка, место с кнопкой, атрибуты для
+	цитаты из выделения (lms-high-time/learning-services#266). Макросы без
+	контекста страницы: всё, что нужно, приходит аргументами.
+#}
+
+{% macro атрибуты(target, lesson, label) -%}
+	data-note-target="{{ target | e }}" data-note-lesson="{{ (lesson or '') | e }}" data-note-label="{{ label | e }}"
+{%- endmacro %}
+
+{% macro статус(з) -%}
+	{%- if з.status == "accepted" -%}принято
+	{%- elif з.status == "done" -%}сделано — проверьте
+	{%- elif з.waiting_on == "author" -%}агент спрашивает
+	{%- else -%}ждёт агента{%- endif -%}
+{%- endmacro %}
+
+{% macro карточка(з, с_адресом=False) %}
+	<article class="note-card is-{{ з.status }}{% if з.waiting_on == 'author' %} is-yours{% endif %}" id="note-card-{{ з.id }}">
+		<div class="note-head">
+			<span class="note-status">{{ статус(з) }}</span>
+			<span class="muted">{{ "агент" if з.via == "agent" else (з.author_name or з.author) | e }} · {{ frappe.utils.format_datetime(з.created_at, "dd.MM HH:mm") }}</span>
+		</div>
+		{% if с_адресом %}
+		<a class="note-place-link{% if з.missing %} gone{% endif %}" href="{{ з.url }}">{{ з.label | e }}{% if з.missing %} — места больше нет{% endif %}</a>
+		{% endif %}
+		{% if з.quote %}<blockquote class="note-quote">{{ з.quote | e }}</blockquote>{% endif %}
+		<p class="note-text">{{ з.text | e }}</p>
+		{% for о in з.replies %}
+		<div class="note-reply{% if о.via == 'agent' %} by-agent{% endif %}"><span class="muted">{{ "агент" if о.via == "agent" else (о.author_name or о.author) | e }}</span><span class="note-reply-text">{{ о.text | e }}</span></div>
+		{% endfor %}
+		<div class="note-actions">
+			{% if з.status == "done" %}
+				<button type="button" class="note-btn primary" data-note-action="accept" data-note="{{ з.id }}">Принять</button>
+				<button type="button" class="note-btn" data-note-action="return" data-note="{{ з.id }}" data-note-text="{{ з.text | e }}">Вернуть…</button>
+			{% elif з.status == "open" and з.waiting_on == "author" %}
+				<button type="button" class="note-btn primary" data-note-action="reply" data-note="{{ з.id }}" data-note-text="{{ з.text | e }}">Ответить…</button>
+			{% elif з.status == "open" %}
+				<button type="button" class="note-btn" data-note-action="reply" data-note="{{ з.id }}" data-note-text="{{ з.text | e }}">Дополнить…</button>
+				<button type="button" class="note-btn" data-note-action="accept" data-note="{{ з.id }}">Снять</button>
+			{% else %}
+				<button type="button" class="note-btn" data-note-action="return" data-note="{{ з.id }}" data-note-text="{{ з.text | e }}">Вернуть…</button>
+			{% endif %}
+		</div>
+	</article>
+{% endmacro %}
+
+{#
+	Место на странице: якорь, кнопка «Замечание» и замечания этого места.
+	Принятые свёрнуты: они история, а не работа.
+#}
+{% macro место(target, lesson, label, замечания, якорь, кнопка="Замечание") %}
+	{% set открытые = замечания | rejectattr("status", "equalto", "accepted") | list %}
+	{% set принятые = замечания | selectattr("status", "equalto", "accepted") | list %}
+	<div class="note-place" id="{{ якорь }}">
+		<button type="button" class="note-add" {{ атрибуты(target, lesson, label) }}>{{ кнопка }}</button>
+		<div class="notes-list" data-for="{{ (lesson or '') | e }}|{{ target | e }}">
+			{% for з in открытые %}{{ карточка(з) }}{% endfor %}
+		</div>
+		{% if принятые %}
+		<details class="notes-accepted"><summary>Принятые · {{ принятые | length }}</summary>
+			{% for з in принятые %}{{ карточка(з) }}{% endfor %}
+		</details>
+		{% endif %}
+	</div>
+{% endmacro %}

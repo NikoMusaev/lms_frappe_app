@@ -1369,7 +1369,7 @@ Learning не позволяет смешивать открытые с пров
       "message": "Урок без директивы" } ] },
   "revision": "2026-09-23T14:05:11.482913",
   "author_url": "https://lms.example.com/author?course=course-basics",
-  "map_discrepancies": null } }
+  "map_discrepancies": null, "open_notes": 2 } }
 ```
 
 `quiz` у урока — тот же состав с эталонами, что отдаёт `get_lesson`; полного
@@ -1381,6 +1381,7 @@ Learning не позволяет смешивать открытые с пров
 `course_revision`; `author_url` — страница курса в кабинете автора.
 `map_discrepancies` — сколько расхождений с картой декомпозиции нашёл
 `course_map_check`; `null`, если карты нет. Публикацию не блокирует.
+`open_notes` — сколько замечаний автора ждёт агента (см. `list_notes`).
 
 ## `lms_frappe_app.api.authoring.course_revision`
 
@@ -1393,10 +1394,100 @@ Learning не позволяет смешивать открытые с пров
 
 ```json
 { "ok": true, "data": { "course": "course-basics",
-  "revision": "2026-09-23T14:05:11.482913" } }
+  "revision": "2026-09-23T14:05:11.482913",
+  "notes_revision": "2026-09-23T15:40:02.118305" } }
 ```
 
+`notes_revision` — самая свежая отметка замечаний автора: растёт от нового
+замечания, ответа и смены статуса; `null`, если замечаний нет. `revision` от
+замечаний не меняется — замечание не правка курса.
+
 **Отказы:** `course_not_found`.
+
+## `lms_frappe_app.api.authoring.add_note`
+
+Замечание автора на месте курса. Петля «увидел → агент поправил → принял»:
+человек ставит замечание в кабинете, агент правит курс и отмечает «сделано»,
+человек принимает.
+
+**Параметры:** `course`, `target`, `text`, `quote`, `lesson`, `via`. Только
+`POST`.
+
+- `target` — место: `course`, `course_directive.<поле>`, `lesson`, `material`,
+  `directive.<поле>`, `question.<id>`, `block.<документ>/<ключ>`, `map.<узел>`.
+  Месту внутри урока нужен `lesson`; `course` и `course_directive` урока не
+  принимают. Вопрос проверяется по квизу урока; блок и узел карты — только по
+  форме: они могут быть задуманы, но ещё не собраны.
+- `quote` — выделенный текст, необязательный.
+- `via` — кто пишет: `author` (по умолчанию) или `agent`. Признак для
+  очереди, а не защита: писать могут только авторские роли.
+
+```json
+{ "ok": true, "data": { "id": "AAN-00012", "course": "course-basics",
+  "lesson": "lesson-4", "target": "directive.teaching_directive",
+  "status": "open", "waiting_on": "agent" } }
+```
+
+**Отказы:** `course_not_found`; `invalid_target` с полем `where` (`target`
+или `lesson`); `invalid_note` с `where` — пустой `text` или неизвестный `via`.
+
+## `lms_frappe_app.api.authoring.list_notes`
+
+Замечания курса с нитью ответов, старые сверху.
+
+**Параметры:** `course`, `status` (`open`, `done`, `accepted`), `lesson`.
+
+```json
+{ "ok": true, "data": { "course": "course-basics", "notes": [
+  { "id": "AAN-00012", "lesson": "lesson-4", "target": "directive.teaching_directive",
+    "label": "Урок 4 «Ответ и мера» · директива · teaching_directive",
+    "missing": false, "quote": "По каждой мере три вопроса…",
+    "text": "Слишком допрос: дай пример меры", "via": "author",
+    "author": "curator@example.com", "author_name": "Куратор",
+    "status": "done", "waiting_on": "author",
+    "created_at": "2026-09-23T15:40:02.118305", "updated_at": "2026-09-23T15:52:40.004411",
+    "replies": [ { "via": "agent", "author": "curator@example.com",
+      "author_name": "Куратор", "text": "Добавил пример меры для склада",
+      "created_at": "2026-09-23T15:52:40.001037" } ] } ] } }
+```
+
+`label` — место словами по курсу, каким он есть сейчас; `missing` — места
+больше нет. `waiting_on` — чей ход: `done` ждёт автора; открытое — того, кто
+не сказал последнего слова: вопрос агента ждёт автора, замечание автора —
+агента; у принятого — `null`.
+
+**Отказы:** `course_not_found`; `invalid_note` с `where: status`.
+
+## `lms_frappe_app.api.authoring.reply_note`
+
+Ответ в нить замечания; статус не меняется.
+
+**Параметры:** `note`, `text`, `via`. Только `POST`.
+
+```json
+{ "ok": true, "data": { "id": "AAN-00012", "status": "open",
+  "waiting_on": "author", "replies": 1 } }
+```
+
+**Отказы:** `note_not_found`; `invalid_note` с `where`.
+
+## `lms_frappe_app.api.authoring.set_note_status`
+
+Сменить статус замечания. `text` уходит ответом в нить.
+
+**Параметры:** `note`, `status`, `text`, `via`. Только `POST`.
+
+- `open` → `done` — агент (`via=agent`), с `text`: что поменял;
+- `done` → `accepted` и `open` → `accepted` — автор: принять или снять своё;
+- `done` → `open` и `accepted` → `open` — автор, с `text`: что не так.
+
+```json
+{ "ok": true, "data": { "id": "AAN-00012", "status": "done",
+  "waiting_on": "author", "replies": 1 } }
+```
+
+**Отказы:** `note_not_found`; `invalid_transition` — переход недопустим, не
+тому, кто его делает, или без обязательного текста.
 
 ## `lms_frappe_app.api.authoring.set_course_map`
 

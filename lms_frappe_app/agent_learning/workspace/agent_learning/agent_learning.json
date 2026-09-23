@@ -17,7 +17,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Курс",
-   "link_count": 5,
+   "link_count": 6,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -67,6 +67,16 @@
    "label": "Репорты о курсе",
    "link_count": 0,
    "link_to": "Agent Course Report",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Замечания авторов",
+   "link_count": 0,
+   "link_to": "Agent Author Note",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -168,7 +178,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-09-23 20:00:00.000000",
+ "modified": "2026-09-23 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Learning",
