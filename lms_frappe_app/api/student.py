@@ -685,11 +685,19 @@ def complete_lesson(session: str) -> dict:
 @frappe.whitelist(methods=["POST"])
 @контракт
 def request_quiz(session: str) -> dict:
-	"""Создаёт попытку и отдаёт первый вопрос."""
+	"""Создаёт попытку и отдаёт первый вопрос.
+
+	`touched_objectives` — цели, которые отчёт занятия отметил `touched`, в
+	порядке директивы; пустой список, если таких нет. Квиз они не закрывают.
+	"""
 	занятие = _своё_занятие(session)
 	_требовать_отчёт(занятие)
 	_требовать_покрытие(занятие)
-	return quiz.начать_попытку(session)
+	ответ = quiz.начать_попытку(session)
+	ответ["touched_objectives"] = [
+		с.objective for с in занятие.outcomes if с.status == "touched"
+	]
+	return ответ
 
 
 @frappe.whitelist(methods=["POST"])

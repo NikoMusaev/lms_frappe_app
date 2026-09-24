@@ -665,10 +665,12 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 
 		сдать_отчёт(занятие)
 
-		self.assertTrue(student.request_quiz(занятие)["ok"])
+		ответ = student.request_quiz(занятие)
+		self.assertTrue(ответ["ok"])
+		self.assertEqual(ответ["data"]["touched_objectives"], [])
 
-	def test_задетая_вскользь_цель_квиз_не_блокирует(self):
-		"""`touched` — разобранная тема, пусть и коротко."""
+	def test_задетая_вскользь_цель_квиз_не_блокирует_и_называется(self):
+		"""`touched` квиз не закрывает, но агент узнаёт о таких целях из ответа."""
 		занятие = self._урок_с_квизом()
 		student.report_outcomes(
 			занятие,
@@ -678,7 +680,11 @@ class IntegrationTestStudentAPI(IntegrationTestCase):
 			],
 		)
 
-		self.assertTrue(student.request_quiz(занятие)["ok"])
+		ответ = student.request_quiz(занятие)
+
+		self.assertTrue(ответ["ok"])
+		self.assertTrue(ответ["data"]["question"])
+		self.assertEqual(ответ["data"]["touched_objectives"], ["Уметь читать код"])
 
 	def test_после_отчёта_урок_закрывается(self):
 		занятие = student.start_lesson()["data"]["session"]
