@@ -156,11 +156,15 @@ def создать_менеджера(почта: str, organization: str) -> str
 
 def создать_вопрос(
 	текст: str,
-	варианты: list[tuple[str, bool]] | None = None,
+	варианты: list[tuple] | None = None,
 	возможные_ответы: list[str] | None = None,
 	пояснение: str | None = None,
 ) -> str:
-	"""Вопрос с вариантами (Choices) или со свободным вводом (User Input)."""
+	"""Вопрос с вариантами (Choices) или со свободным вводом (User Input).
+
+	Вариант — `(текст, верный)` или `(текст, верный, пояснение)`. `пояснение`
+	без своего у варианта достаётся верным вариантам.
+	"""
 	поля = {"doctype": "LMS Question", "question": текст}
 	if возможные_ответы is not None:
 		поля["type"] = "User Input"
@@ -168,13 +172,14 @@ def создать_вопрос(
 			поля[f"possibility_{номер}"] = ответ
 	else:
 		поля["type"] = "Choices"
-		верных = sum(1 for _, верный in варианты or [] if верный)
+		верных = sum(1 for вариант in варианты or [] if вариант[1])
 		поля["multiple"] = int(верных > 1)
-		for номер, (вариант, верный) in enumerate(варианты or [], start=1):
+		for номер, (вариант, верный, *своё) in enumerate(варианты or [], start=1):
 			поля[f"option_{номер}"] = вариант
 			поля[f"is_correct_{номер}"] = int(верный)
-			if верный and пояснение:
-				поля[f"explanation_{номер}"] = пояснение
+			пояснение_варианта = своё[0] if своё else (пояснение if верный else None)
+			if пояснение_варианта:
+				поля[f"explanation_{номер}"] = пояснение_варианта
 	return frappe.get_doc(поля).insert(ignore_permissions=True).name
 
 
