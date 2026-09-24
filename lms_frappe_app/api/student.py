@@ -114,6 +114,7 @@ def лимит_заметок() -> int:
 АРТЕФАКТ_НЕ_НАЙДЕН = "artifact_not_found"
 БЛОК_НЕ_НАЙДЕН = "artifact_block_not_found"
 ПУСТОЙ_БЛОК = "artifact_content_required"
+ОЧИСТКА_С_ТЕКСТОМ = "artifact_clear_with_content"
 
 
 @frappe.whitelist()
@@ -484,14 +485,22 @@ def artifact(course: str, artifact: str | None = None) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @контракт
-def update_artifact(course: str, artifact: str, key: str, content: str) -> dict:
-	"""Записывает блок артефакта целиком.
+def update_artifact(
+	course: str, artifact: str, key: str, content: str | None = None, clear: bool = False
+) -> dict:
+	"""Записывает блок артефакта целиком — или очищает его.
 
 	Замещение, а не дописывание: ученик уточняет уже сказанное, и склейка
 	превратила бы документ в стенограмму разговора. Сервер проверяет только
 	форму — документ и блок есть в схеме, текст непуст; отвечает ли текст
 	подсказке автора, смотрит агент: артефакт на зачёт не влияет, и
 	подыгрывать здесь нечему.
+
+	`clear` удаляет блок из документа ученика; текст при этом не передаётся.
+	`Why:` при смене проекта агенту нечем было убрать старый текст — он висел,
+	пока не находилось, чем его заменить (репорт 8qse4ii3dc). Очистка — только
+	явным флагом: пустой `content` без него по-прежнему отказ, иначе случайная
+	пустая запись стирала бы блок.
 	"""
 	ученик = текущий_пользователь()
 	_требовать_доступ_к_курсу(ученик, course)
@@ -501,6 +510,16 @@ def update_artifact(course: str, artifact: str, key: str, content: str) -> dict:
 		raise Отказ(
 			БЛОК_НЕ_НАЙДЕН, "В этом документе нет такого блока", artifact=схема.slug, key=key
 		)
+	# Флаг приходит и булевым из JSON, и строкой из формы.
+	if clear in (True, 1, "1", "true"):
+		if (content or "").strip():
+			raise Отказ(
+				ОЧИСТКА_С_ТЕКСТОМ,
+				"Очистка блока не принимает текст: либо content, либо clear",
+				artifact=схема.slug,
+				key=ключ,
+			)
+		return _очистить_блок(ученик, course, схема, ключ)
 	if not (content or "").strip():
 		raise Отказ(ПУСТОЙ_БЛОК, "Блок записывается непустым", artifact=схема.slug, key=ключ)
 
@@ -521,6 +540,22 @@ def update_artifact(course: str, artifact: str, key: str, content: str) -> dict:
 	документ.schema_version = схема.name
 	документ.save(ignore_permissions=True)
 
+	заполнено = _заполненность(схема, _содержимое(документ))
+	return {"artifact": схема.slug, "key": ключ, **заполнено}
+
+
+def _очистить_блок(ученик: str, course: str, схема, ключ: str) -> dict:
+	"""Удаляет строку блока из документа ученика; ответ — как у записи.
+
+	Блока нет или документ ещё не заводился — очищать нечего, и это не отказ:
+	результат тот же, что после удаления.
+	"""
+	документ = _экземпляр(ученик, course, схема.slug)
+	строка = next((с for с in документ.blocks if с.block_key == ключ), None) if документ else None
+	if строка:
+		документ.remove(строка)
+		документ.schema_version = схема.name
+		документ.save(ignore_permissions=True)
 	заполнено = _заполненность(схема, _содержимое(документ))
 	return {"artifact": схема.slug, "key": ключ, **заполнено}
 

@@ -753,7 +753,8 @@ ISO 8601 со смещением часового пояса сайта; при 
 
 Записывает блок документа целиком.
 
-**Параметры:** `course`, `artifact`, `key`, `content` (markdown).
+**Параметры:** `course`, `artifact`, `key`, `content` (markdown), `clear`
+(необязательный, по умолчанию `false`).
 
 ```json
 { "ok": true, "data": { "artifact": "project_summary", "key": "goal_and_benefits",
@@ -768,8 +769,15 @@ ISO 8601 со смещением часового пояса сайта; при 
 Отвечает ли текст подсказке автора, смотрит агент: артефакт **на зачёт не
 влияет**, зачёт ставит сервер по квизу, и подыгрывать здесь нечему.
 
+`clear: true` очищает блок: его строка удаляется из документа ученика, и в
+`artifact` он снова приходит пустым, с подсказкой автора. `content` при этом
+пуст или не передаётся. Ответ тот же, что у записи; очистка блока, которого
+нет, — не отказ. Пустой `content` без `clear` — по-прежнему
+`artifact_content_required`: случайная пустая запись блок не стирает.
+
 **Отказы:** `not_enrolled`, `organization_suspended`, `artifact_not_found`,
-`artifact_block_not_found`, `artifact_content_required`.
+`artifact_block_not_found`, `artifact_content_required`,
+`artifact_clear_with_content` — `clear` вместе с непустым `content`.
 
 Документ ученика видит только сам ученик: руководителю он не отдаётся ни
 методом отчётности, ни прямым чтением записи. `Why:` артефакт — рабочий

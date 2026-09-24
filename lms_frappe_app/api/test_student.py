@@ -1225,11 +1225,54 @@ class IntegrationTestArtifacts(IntegrationTestCase):
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.БЛОК_НЕ_НАЙДЕН)
 
-	def test_пустой_блок_отклоняется(self):
+	def test_пустой_блок_отклоняется_и_не_стирает_записанное(self):
+		student.update_artifact(self.курс, "summary", "goal", "Открыть кофейню")
+
 		ответ = student.update_artifact(self.курс, "summary", "goal", "   ")
 
 		self.assertFalse(ответ["ok"])
 		self.assertEqual(ответ["error"]["code"], student.ПУСТОЙ_БЛОК)
+		блоки = student.artifact(self.курс, "summary")["data"]["blocks"]
+		self.assertEqual(блоки[0]["content"], "Открыть кофейню")
+
+	def test_очистка_удаляет_блок(self):
+		student.update_artifact(self.курс, "summary", "goal", "Старый проект")
+		student.update_artifact(self.курс, "summary", "sponsor", "Марина")
+
+		ответ = student.update_artifact(self.курс, "summary", "Goal", clear=True)["data"]
+
+		self.assertEqual(
+			ответ, {"artifact": "summary", "key": "goal", "blocks_total": 2, "blocks_filled": 1}
+		)
+		документ = frappe.get_doc(
+			"Agent Student Artifact",
+			{"student": self.ученик, "course": self.курс, "artifact": "summary"},
+		)
+		self.assertEqual([б.block_key for б in документ.blocks], ["sponsor"])
+
+	def test_очистка_пустого_блока_не_отказ(self):
+		# Документ ещё не заводился: очищать нечего, и ответ тот же, что после
+		# удаления, — а экземпляр ради этого не создаётся.
+		ответ = student.update_artifact(self.курс, "summary", "goal", "", clear="true")
+
+		self.assertTrue(ответ["ok"])
+		self.assertEqual(ответ["data"]["blocks_filled"], 0)
+		self.assertFalse(
+			frappe.db.exists(
+				"Agent Student Artifact",
+				{"student": self.ученик, "course": self.курс, "artifact": "summary"},
+			)
+		)
+
+	def test_очистка_с_текстом_отклоняется(self):
+		student.update_artifact(self.курс, "summary", "goal", "Старый проект")
+
+		ответ = student.update_artifact(self.курс, "summary", "goal", "Новый проект", clear=True)
+
+		self.assertFalse(ответ["ok"])
+		self.assertEqual(ответ["error"]["code"], student.ОЧИСТКА_С_ТЕКСТОМ)
+		блоки = student.artifact(self.курс, "summary")["data"]["blocks"]
+		self.assertEqual(блоки[0]["content"], "Старый проект")
 
 	def test_блок_исчезнувший_из_схемы_не_теряет_содержимого(self):
 		"""Автор правит схему — труд ученика остаётся."""
