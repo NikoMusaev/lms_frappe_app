@@ -16,7 +16,9 @@
   "text",
   "status",
   "resolution",
-  "duplicate_of"
+  "duplicate_of",
+  "resolved_at",
+  "student_notified_at"
  ],
  "fields": [
   {
@@ -92,20 +94,35 @@
    "reqd": 1
   },
   {
+   "description": "Ученик видит этот текст в своих репортах и на следующем занятии курса",
    "fieldname": "resolution",
    "fieldtype": "Small Text",
-   "label": "Что сделали"
+   "label": "Ответ ученику (он его увидит)"
   },
   {
    "fieldname": "duplicate_of",
    "fieldtype": "Link",
    "label": "Дубль",
    "options": "Agent Course Report"
+  },
+  {
+   "description": "Когда репорт получил итог: исправлен, отклонён или признан дублем. Ставится сам и снимается, если репорт снова в работе",
+   "fieldname": "resolved_at",
+   "fieldtype": "Datetime",
+   "label": "Итог подведён",
+   "read_only": 1
+  },
+  {
+   "description": "Когда агент ученика получил итог на занятии. Пусто — ученик об итоге ещё не знает",
+   "fieldname": "student_notified_at",
+   "fieldtype": "Datetime",
+   "label": "Ученик узнал об итоге",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-09-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Course Report",

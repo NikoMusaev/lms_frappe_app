@@ -143,6 +143,30 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		# пояснения делает `проверить`.
 		self.assertFalse(ответ["data"]["verdict"]["correct"])
 
+	def test_репорты_ученику_без_занятия_вопроса_и_владельца(self):
+		"""Ученик видит свои репорты и их итог, но не внутреннюю привязку:
+		занятие — устройство платформы, идентификатор вопроса квиза ученику ни
+		о чём не говорит, а `owner` у перенесённого репорта — сотрудник."""
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson(lesson=self.урок)["data"]["session"]
+		репорт = student.report_issue(
+			занятие, kind="quiz_question_issue", text="Вопрос двусмысленный", question=self.вопрос
+		)["data"]["report"]
+		frappe.set_user("Administrator")
+		frappe.get_doc("Agent Course Report", репорт).update(
+			{"status": "Fixed", "resolution": "Переписали вопрос"}
+		).save(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+		запрещённые = (ТЕКСТ_ПОЯСНЕНИЯ, self.вопрос, занятие, "Administrator")
+
+		мои = student.my_reports()
+		проверить_ответ(self, мои, "my_reports", запрещённые_тексты=запрещённые)
+		итоги = student.start_lesson(lesson=self.урок)["data"]["student_context"]["closed_reports"]
+		проверить_ответ(self, итоги, "closed_reports", запрещённые_тексты=запрещённые)
+
+		self.assertEqual([р["id"] for р in мои["data"]["reports"]], [репорт])
+		self.assertEqual([р["id"] for р in итоги], [репорт])
+
 	def test_зачин_и_обещание_адресованы_ученику_а_не_утечка(self):
 		"""Зачин урока и обещание курса — для ученика, в отличие от директивы
 		с грифом `teacher_only`. Лежат верхним уровнем ответа и проверку утечек

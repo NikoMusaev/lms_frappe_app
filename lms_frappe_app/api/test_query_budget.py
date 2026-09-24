@@ -47,7 +47,9 @@ from lms_frappe_app.testing import сколько_запросов
 	"course_outline": 13,
 	# +3 за начало занятия (#238): зачин урока, обещание курса и прочие
 	# занятия ученика по курсу — по ним сервер решает, с чего начинать.
-	"start_lesson": 28,
+	# +1 за итоги репортов (learning-services#286): одна выборка, пока
+	# нового итога нет.
+	"start_lesson": 29,
 	"submit_answer": 15,
 	"student_detail": 12,
 }

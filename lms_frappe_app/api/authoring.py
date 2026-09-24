@@ -28,7 +28,13 @@ from lms_frappe_app.agent_learning import (
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
 )
-from lms_frappe_app.agent_learning.constants import ВИДЫ_РЕПОРТОВ, ИМЯ_ВИДА_РЕПОРТА
+from lms_frappe_app.agent_learning.constants import (
+	ВИДЫ_РЕПОРТОВ,
+	ИМЯ_ВИДА_РЕПОРТА,
+	ИМЯ_СТАТУСА_РЕПОРТА,
+	ОТКРЫТЫЕ_РЕПОРТЫ,
+	СТАТУСЫ_РЕПОРТОВ,
+)
 from lms_frappe_app.agent_learning.errors import (
 	НЕИЗВЕСТНЫЙ_ВИД_РЕПОРТА,
 	Отказ,
@@ -1349,6 +1355,32 @@ def _должен_существовать(doctype: str, имя: str, код: st
 #: предела однажды поднимет весь курс целиком.
 РЕПОРТОВ_ЗА_РАЗ = 50
 
+РЕПОРТ_НЕ_НАЙДЕН = "report_not_found"
+НЕИЗВЕСТНЫЙ_СТАТУС_РЕПОРТА = "unknown_report_status"
+НЕДОПУСТИМЫЙ_ПЕРЕХОД_РЕПОРТА = "invalid_report_transition"
+НУЖЕН_ОТВЕТ_УЧЕНИКУ = "report_resolution_required"
+НУЖЕН_ОРИГИНАЛ = "duplicate_of_required"
+НЕВЕРНЫЙ_ОРИГИНАЛ = "invalid_duplicate_of"
+
+#: Фильтр `course_reports` по статусу: всё, что ждёт разбора.
+ФИЛЬТР_ОТКРЫТЫХ = "open"
+
+#: Куда можно перевести репорт. Открытый — в любой другой статус; закрытый —
+#: только обратно в работу. `Why:` итог уже ушёл ученику, и замена одного
+#: итога другим молча переписала бы то, что он прочёл; переоткрытие же честно
+#: говорит «разбираемся заново», а новый итог дойдёт до него снова.
+ПЕРЕХОДЫ_РЕПОРТА = {
+	"new": frozenset({"in_progress", "fixed", "rejected", "duplicate"}),
+	"in_progress": frozenset({"new", "fixed", "rejected", "duplicate"}),
+	"fixed": frozenset({"in_progress"}),
+	"rejected": frozenset({"in_progress"}),
+	"duplicate": frozenset({"in_progress"}),
+}
+
+#: Итоги, которые ученику нужно объяснить словами: «исправили» и «не будем»
+#: без ответа — пустой звук. Дубль отвечает ответом оригинала.
+С_ОТВЕТОМ = frozenset({"fixed", "rejected"})
+
 
 @frappe.whitelist()
 @контракт
@@ -1357,8 +1389,11 @@ def course_reports(
 	kind: str | None = None,
 	lesson: str | None = None,
 	limit: int | None = None,
+	status: str | None = None,
 ) -> dict:
 	"""Репорты агентов по курсу: что мешает курсу работать.
+
+	`status` — статус наружу или `open`: всё, что ждёт разбора.
 
 	`Why:` без чтения механизм разомкнут — `report_issue` умел только
 	записывать, и обратная связь о курсе, который не работает, лежала мёртвым
@@ -1385,11 +1420,25 @@ def course_reports(
 		фильтры["kind"] = значение
 	if lesson:
 		фильтры["lesson"] = lesson
+	if status:
+		фильтры["status"] = ("in", _статусы_фильтра(status))
 
 	записи = frappe.get_all(
 		"Agent Course Report",
 		filters=фильтры,
-		fields=["name", "kind", "lesson", "objective", "question", "text", "creation", "lesson_directive"],
+		fields=[
+			"name",
+			"kind",
+			"lesson",
+			"objective",
+			"question",
+			"text",
+			"creation",
+			"lesson_directive",
+			"status",
+			"resolution",
+			"resolved_at",
+		],
 		order_by="creation desc",
 		limit=min(int(limit or РЕПОРТОВ_ЗА_РАЗ), РЕПОРТОВ_ЗА_РАЗ),
 	)
@@ -1407,10 +1456,103 @@ def course_reports(
 				"text": з.text,
 				"reported_at": з.creation.isoformat() if з.creation else None,
 				"directive_version": версии.get(з.lesson_directive),
+				"status": ИМЯ_СТАТУСА_РЕПОРТА.get(з.status, з.status),
+				"resolution": з.resolution or None,
+				"resolved_at": з.resolved_at.isoformat() if з.resolved_at else None,
 			}
 			for з in записи
 		],
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def resolve_report(
+	report: str,
+	status: str,
+	resolution: str | None = None,
+	duplicate_of: str | None = None,
+) -> dict:
+	"""Сменить статус репорта и ответить ученику.
+
+	`resolution` — ответ, который увидит ученик: в `my_reports` и на ближайшем
+	занятии курса. Он пишется заново при каждой смене статуса: не передан —
+	ответа нет, и переоткрытый репорт не показывает ученику прежний итог как
+	действующий. `duplicate_of` — репорт того же курса, дублем которого
+	признан этот; без своего ответа ученик видит ответ оригинала.
+
+	Переходы — `ПЕРЕХОДЫ_РЕПОРТА`; дату итога ставит сама запись.
+	"""
+	_автор()
+	if not frappe.db.exists("Agent Course Report", report):
+		raise Отказ(РЕПОРТ_НЕ_НАЙДЕН, "Репорта нет", id=report)
+	стало = (status or "").strip().lower()
+	if стало not in СТАТУСЫ_РЕПОРТОВ:
+		raise Отказ(
+			НЕИЗВЕСТНЫЙ_СТАТУС_РЕПОРТА,
+			"Статус репорта: " + ", ".join(СТАТУСЫ_РЕПОРТОВ),
+			status=status,
+		)
+
+	документ = frappe.get_doc("Agent Course Report", report)
+	было = ИМЯ_СТАТУСА_РЕПОРТА.get(документ.status, документ.status)
+	if стало not in ПЕРЕХОДЫ_РЕПОРТА.get(было, ()):
+		raise Отказ(
+			НЕДОПУСТИМЫЙ_ПЕРЕХОД_РЕПОРТА,
+			f"Из «{было}» в «{стало}» перейти нельзя",
+			status=было,
+			allowed=sorted(ПЕРЕХОДЫ_РЕПОРТА.get(было, ())),
+		)
+	ответ = (resolution or "").strip()
+	if стало in С_ОТВЕТОМ and not ответ:
+		raise Отказ(НУЖЕН_ОТВЕТ_УЧЕНИКУ, "Напишите ученику, что сделали", status=стало)
+	оригинал = _оригинал_дубля(документ, duplicate_of) if стало == "duplicate" else None
+
+	документ.status = СТАТУСЫ_РЕПОРТОВ[стало]
+	документ.resolution = ответ or None
+	документ.duplicate_of = оригинал
+	документ.save()
+	return {
+		"id": документ.name,
+		"status": стало,
+		"resolution": документ.resolution or None,
+		"resolved_at": документ.resolved_at.isoformat() if документ.resolved_at else None,
+		"duplicate_of": документ.duplicate_of or None,
+	}
+
+
+def _статусы_фильтра(status: str) -> list[str]:
+	"""Значения Select для фильтра по статусу наружу."""
+	имя = status.strip().lower()
+	if имя == ФИЛЬТР_ОТКРЫТЫХ:
+		return list(ОТКРЫТЫЕ_РЕПОРТЫ)
+	if имя not in СТАТУСЫ_РЕПОРТОВ:
+		raise Отказ(
+			НЕИЗВЕСТНЫЙ_СТАТУС_РЕПОРТА,
+			"Статус репорта: " + ", ".join((ФИЛЬТР_ОТКРЫТЫХ, *СТАТУСЫ_РЕПОРТОВ)),
+			status=status,
+		)
+	return [СТАТУСЫ_РЕПОРТОВ[имя]]
+
+
+def _оригинал_дубля(документ, duplicate_of: str | None) -> str:
+	"""Репорт, дублем которого признан `документ`, — или отказ.
+
+	Оригинал — из того же курса и не сам репорт: ответ оригинала уходит
+	ученику, и ссылка на чужой курс показала бы ему ответ о курсе, которого
+	он не проходил.
+	"""
+	оригинал = (duplicate_of or "").strip()
+	if not оригинал:
+		raise Отказ(НУЖЕН_ОРИГИНАЛ, "Укажите репорт, дублем которого признан этот")
+	if оригинал == документ.name:
+		raise Отказ(НЕВЕРНЫЙ_ОРИГИНАЛ, "Репорт не может быть дублем самого себя", duplicate_of=оригинал)
+	курс = frappe.db.get_value("Agent Course Report", оригинал, "course")
+	if not курс:
+		raise Отказ(НЕВЕРНЫЙ_ОРИГИНАЛ, "Такого репорта нет", duplicate_of=оригинал)
+	if курс != документ.course:
+		raise Отказ(НЕВЕРНЫЙ_ОРИГИНАЛ, "Оригинал — репорт другого курса", duplicate_of=оригинал)
+	return оригинал
 
 
 def _версии_директив(имена: list[str]) -> dict[str, int]:
