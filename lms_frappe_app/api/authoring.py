@@ -1350,7 +1350,7 @@ def _должен_существовать(doctype: str, имя: str, код: st
 РЕПОРТОВ_ЗА_РАЗ = 50
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist()
 @контракт
 def course_reports(
 	course: str,
