@@ -48,21 +48,26 @@ from lms_frappe_app.tests.sample_data import (
 
 
 def методы_кода() -> set[str]:
-	"""Полные имена whitelisted-методов всех модулей `api/`.
+	"""Полные имена whitelisted-методов всех модулей `api/`."""
+	return set(функции_кода())
+
+
+def функции_кода() -> dict:
+	"""Whitelisted-методы всех модулей `api/`: полное имя → функция.
 
 	Берётся реестр Frappe, а не разбор текста: whitelisted метод — тот, что
 	лежит в `frappe.whitelisted` после импорта модуля, и именно он доступен
 	снаружи. Отбор по `__module__` отсекает методы, импортированные в модуль
 	из соседнего: считать их дважды нельзя.
 	"""
-	найденные = set()
+	найденные = {}
 	for модуль in _модули_api():
 		for имя, значение in vars(модуль).items():
 			if not callable(значение) or значение not in frappe.whitelisted:
 				continue
 			if getattr(значение, "__module__", None) != модуль.__name__:
 				continue
-			найденные.add(f"{модуль.__name__}.{имя}")
+			найденные[f"{модуль.__name__}.{имя}"] = значение
 	return найденные
 
 
@@ -140,6 +145,67 @@ class IntegrationTestContractCoverage(IntegrationTestCase):
 			повторы,
 			"У метода больше одного раздела — две копии описания разъедутся:\n"
 			+ "\n".join(повторы),
+		)
+
+
+#: Пометка в разделе метода, которого зовёт страница, а не агент. Остальным
+#: контракт обещает POST — раздел «Транспорт».
+ТОЛЬКО_GET = "Только `GET`"
+
+
+def методы_только_get() -> set[str]:
+	"""Методы, в разделе которых стоит пометка «Только `GET`»."""
+	найденные = set()
+	метод = None
+	for строка in КОНТРАКТ.read_text(encoding="utf-8").splitlines():
+		if строка.startswith("## "):
+			имена = ИМЯ_МЕТОДА.findall(строка)
+			метод = имена[0] if имена else None
+		elif метод and ТОЛЬКО_GET in строка:
+			найденные.add(метод)
+	return найденные
+
+
+class IntegrationTestContractTransport(IntegrationTestCase):
+	"""Метод принимает тот глагол, который обещает контракт.
+
+	MCP-клиент зовёт Frappe только POST. Метод с `methods=["GET"]` отвечает
+	на него 403, и агент говорит куратору «нет доступа к этим данным» — так
+	`course_reports` с появления не отдал ни одного репорта
+	(lms-high-time/learning-services#281). Глагол не видит ни один слой:
+	здесь метод зовут из Python, в тестах MCP клиент подменён.
+	"""
+
+	def setUp(self):
+		self.функции = функции_кода()
+		self.только_get = методы_только_get()
+
+	def глаголы(self, имя: str) -> set[str]:
+		return set(frappe.allowed_http_methods_for_whitelisted_func[self.функции[имя]])
+
+	def test_метод_принимает_post(self):
+		без_post = sorted(
+			имя
+			for имя in self.функции
+			if имя not in self.только_get and "POST" not in self.глаголы(имя)
+		)
+		self.assertFalse(
+			без_post,
+			"Метод не принимает POST, а MCP зовёт только им — агент получит 403. "
+			"Уберите ограничение глагола или, если метод зовёт страница, а не "
+			f"агент, пометьте его раздел CONTRACT.md «{ТОЛЬКО_GET}»:\n" + "\n".join(без_post),
+		)
+
+	def test_пометка_только_get_правдива(self):
+		расходятся = sorted(
+			имя
+			for имя in self.только_get
+			if имя in self.функции and self.глаголы(имя) != {"GET"}
+		)
+		self.assertFalse(
+			расходятся,
+			f"Раздел помечен «{ТОЛЬКО_GET}», а метод принимает и другие глаголы — "
+			"поправьте пометку или декоратор:\n" + "\n".join(расходятся),
 		)
 
 
