@@ -2,10 +2,12 @@
 # See license.txt
 
 import json
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_to_date, now_datetime
+from frappe.utils import add_to_date, get_system_timezone, now_datetime
 
 from lms_frappe_app.agent_learning.access import НЕ_ЗАЧИСЛЕН, ОРГАНИЗАЦИЯ_ПРИОСТАНОВЛЕНА
 from lms_frappe_app.agent_learning.quiz import (
@@ -21,6 +23,7 @@ from lms_frappe_app.agent_learning.quiz import (
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.tests.sample_data import (
 	добавить_в_организацию,
+	политика_по_умолчанию,
 	создать_занятие,
 	создать_вопрос,
 	создать_занятие,
@@ -32,6 +35,8 @@ from lms_frappe_app.tests.sample_data import (
 )
 
 ЭТАЛОННЫЕ_ПОЛЯ = ("is_correct", "possibility", "explanation_")
+ПОЯСНЕНИЕ_ВЕРНОГО = "Потому что счётчик начинается с нуля"
+ПОЯСНЕНИЕ_НЕВЕРНОГО = "Один — это число проходов, а не последнее значение"
 
 
 class IntegrationTestQuiz(IntegrationTestCase):
@@ -41,10 +46,11 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		суффикс = frappe.generate_hash(length=6)
 		self.ученик = создать_ученика(f"q-{суффикс}@example.com")
 		self.урок = создать_урок(f"Урок {суффикс}")
+		# У первого неверного варианта своё пояснение, у третьего — нет.
 		self.вопрос_выбор = создать_вопрос(
 			"Что выведет цикл?",
-			варианты=[("раз", False), ("два", True), ("три", False)],
-			пояснение="Потому что счётчик начинается с нуля",
+			варианты=[("раз", False, ПОЯСНЕНИЕ_НЕВЕРНОГО), ("два", True), ("три", False)],
+			пояснение=ПОЯСНЕНИЕ_ВЕРНОГО,
 		)
 		self.вопрос_ввод = создать_вопрос(
 			"Как называется оператор повторения?", возможные_ответы=["цикл", "loop"]
@@ -57,6 +63,18 @@ class IntegrationTestQuiz(IntegrationTestCase):
 
 	def начать(self):
 		return начать_попытку(self.занятие)
+
+	def назначить_политику(self, **поля):
+		"""Курс урока назначается организацией с этой политикой квиза."""
+		организация = создать_организацию(f"Политика {frappe.generate_hash(length=6)}", **поля)
+		добавить_в_организацию(self.ученик, организация)
+		frappe.get_doc(
+			{
+				"doctype": "Course Allocation",
+				"organization": организация,
+				"course": frappe.db.get_value("LMS Quiz", self.квиз, "course"),
+			}
+		).insert(ignore_permissions=True)
 
 	def пройти_целиком(self, верно_выбор=True, верно_ввод=True):
 		начало = self.начать()
@@ -94,8 +112,50 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		# После верного ответа — приходит, и это разные состояния одного
 		# вопроса, а не ссылка на соседний тест.
 		self.assertTrue(ответ["verdict"]["correct"])
-		self.assertIn("счётчик", ответ["verdict"]["explanation"])
+		self.assertEqual(ответ["verdict"]["explanation"], ПОЯСНЕНИЕ_ВЕРНОГО)
+		self.assertNotIn("why_wrong", ответ["verdict"])
 		self.assertIsNotNone(ответ["next_question"])
+
+	def test_неверный_ответ_поясняется_выбранным_вариантом_а_не_верным(self):
+		"""Пояснение верного варианта ошибившемуся — готовый ответ до пересдачи."""
+		попытка = self.начать()["attempt"]
+
+		вердикт = принять_ответ(попытка, self.вопрос_выбор, "1")["verdict"]
+
+		self.assertFalse(вердикт["correct"])
+		self.assertEqual(вердикт["why_wrong"], ПОЯСНЕНИЕ_НЕВЕРНОГО)
+		self.assertNotIn("explanation", вердикт)
+		self.assertNotIn(ПОЯСНЕНИЕ_ВЕРНОГО, json.dumps(вердикт, ensure_ascii=False))
+
+	def test_неверный_вариант_без_пояснения_не_даёт_why_wrong(self):
+		попытка = self.начать()["attempt"]
+
+		вердикт = принять_ответ(попытка, self.вопрос_выбор, "3")["verdict"]
+
+		self.assertEqual(вердикт, {"correct": False})
+
+	def test_множественный_выбор_поясняет_только_выбранные_неверные(self):
+		# Верный вариант среди выбранных не поясняется: пояснение назвало бы,
+		# какой из выбранных угадан.
+		вопрос = создать_вопрос(
+			"Выберите чётные",
+			варианты=[
+				("2", True, "Два делится на два"),
+				("3", False, "Три нечётное"),
+				("4", True, "Четыре делится на два"),
+				("5", False, "Пять нечётное"),
+			],
+		)
+		урок = создать_урок(f"Урок {frappe.generate_hash(length=6)}")
+		создать_квиз(урок, [вопрос])
+		зачислить(self.ученик, урок)
+		попытка = начать_попытку(создать_занятие(self.ученик, урок))["attempt"]
+
+		вердикт = принять_ответ(попытка, вопрос, "1,2")["verdict"]
+
+		self.assertFalse(вердикт["correct"])
+		self.assertEqual(вердикт["why_wrong"], "Три нечётное")
+		self.assertNotIn("делится", json.dumps(вердикт, ensure_ascii=False))
 
 	# --- сверка ---
 
@@ -196,6 +256,9 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		self.assertTrue(итог["attempt_finished"])
 		self.assertTrue(итог["result"]["passed"])
 		self.assertEqual(итог["result"]["session_status"], "Completed")
+		# Пересдавать зачтённое незачем: ни паузы, ни остатка попыток.
+		self.assertNotIn("retry_after", итог["result"])
+		self.assertNotIn("attempts_left", итог["result"])
 		self.assertTrue(
 			frappe.db.exists(
 				"LMS Course Progress",
@@ -266,19 +329,13 @@ class IntegrationTestQuiz(IntegrationTestCase):
 	# --- политика организации ---
 
 	def test_исчерпанные_попытки_отклоняются_с_числом(self):
-		организация = создать_организацию(
-			f"Строгая {frappe.generate_hash(length=6)}", max_attempts=1, retry_delay_hours=0
-		)
-		добавить_в_организацию(self.ученик, организация)
-		frappe.get_doc(
-			{
-				"doctype": "Course Allocation",
-				"organization": организация,
-				"course": frappe.db.get_value("LMS Quiz", self.квиз, "course"),
-			}
-		).insert(ignore_permissions=True)
+		self.назначить_политику(max_attempts=1, retry_delay_hours=0)
 
-		self.пройти_целиком(верно_выбор=False, верно_ввод=False)
+		_, итог = self.пройти_целиком(верно_выбор=False, верно_ввод=False)
+
+		# Последняя попытка сгорела — итог не обещает пересдачи.
+		self.assertEqual(итог["result"]["attempts_left"], 0)
+		self.assertIsNone(итог["result"]["retry_after"])
 
 		with self.assertRaises(Отказ) as отказ:
 			начать_попытку(создать_занятие(self.ученик, self.урок))
@@ -286,24 +343,42 @@ class IntegrationTestQuiz(IntegrationTestCase):
 		self.assertEqual(отказ.exception.подробности["attempts_used"], 1)
 
 	def test_повтор_раньше_паузы_отклоняется_с_временем(self):
-		организация = создать_организацию(
-			f"С паузой {frappe.generate_hash(length=6)}", max_attempts=5, retry_delay_hours=24
-		)
-		добавить_в_организацию(self.ученик, организация)
-		frappe.get_doc(
-			{
-				"doctype": "Course Allocation",
-				"organization": организация,
-				"course": frappe.db.get_value("LMS Quiz", self.квиз, "course"),
-			}
-		).insert(ignore_permissions=True)
+		self.назначить_политику(max_attempts=5, retry_delay_hours=24)
 
-		self.пройти_целиком(верно_выбор=False, верно_ввод=False)
+		_, итог = self.пройти_целиком(верно_выбор=False, верно_ввод=False)
 
 		with self.assertRaises(Отказ) as отказ:
 			начать_попытку(создать_занятие(self.ученик, self.урок))
 		self.assertEqual(отказ.exception.код, СЛИШКОМ_РАНО)
-		self.assertIn("retry_after", отказ.exception.подробности)
+		# Отказ называет тот же момент, что итог попытки, и тоже с поясом.
+		self.assertEqual(отказ.exception.подробности["retry_after"], итог["result"]["retry_after"])
+
+	def test_проваленная_попытка_называет_паузу_и_остаток(self):
+		"""Момент пересдачи — с часовым поясом сайта: без него строка читается как UTC."""
+		self.назначить_политику(max_attempts=3, retry_delay_hours=24)
+
+		попытка, итог = self.пройти_целиком(верно_выбор=False, верно_ввод=False)
+
+		self.assertEqual(итог["result"]["attempts_left"], 2)
+		момент = datetime.fromisoformat(итог["result"]["retry_after"])
+		self.assertIsNotNone(момент.tzinfo, "retry_after без часового пояса")
+		закончена = frappe.db.get_value("Agent Quiz Attempt", попытка, "finished_at")
+		self.assertEqual(
+			момент,
+			закончена.replace(tzinfo=ZoneInfo(get_system_timezone())) + timedelta(hours=24),
+		)
+
+	def test_без_лимита_остаток_попыток_не_число(self):
+		# «Без лимита» задаётся только в общих настройках: ноль у организации
+		# наследует ограничение.
+		self.addCleanup(политика_по_умолчанию)
+		frappe.db.set_single_value("Agent Learning Settings", "max_attempts", 0)
+		frappe.clear_document_cache("Agent Learning Settings", "Agent Learning Settings")
+
+		_, итог = self.пройти_целиком(верно_выбор=False, верно_ввод=False)
+
+		self.assertIsNone(итог["result"]["attempts_left"])
+		self.assertIsNotNone(итог["result"]["retry_after"])
 
 	# --- открытые вопросы ---
 

@@ -1395,7 +1395,4 @@ def _осталось_попыток(ученик: str, lesson: str, полит�
 	квиз = quiz._квиз_урока(lesson)
 	if not квиз:
 		return None
-	лимит = политика["max_attempts"]
-	if not лимит:
-		return None
-	return max(0, лимит - quiz._прошлых_попыток(ученик, квиз))
+	return quiz.осталось_попыток(ученик, квиз, политика)

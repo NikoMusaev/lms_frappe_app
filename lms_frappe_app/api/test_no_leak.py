@@ -32,6 +32,8 @@ from lms_frappe_app.api import manager, student
 ПРАВИЛЬНЫЙ_ВАРИАНТ = "Москва"
 НЕВЕРНЫЙ_ВАРИАНТ = "Тула"
 ТЕКСТ_ПОЯСНЕНИЯ = "Столицей она стала в пятнадцатом веке"
+#: Пояснение неверного варианта — его отдавать можно: ответа оно не называет.
+ПОЯСНЕНИЕ_НЕВЕРНОГО = "Тула — оружейный город, но не столица"
 
 
 class IntegrationTestNoLeak(IntegrationTestCase):
@@ -48,7 +50,7 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 		)
 		self.вопрос = создать_вопрос(
 			"Столица России?",
-			варианты=[(ПРАВИЛЬНЫЙ_ВАРИАНТ, True), (НЕВЕРНЫЙ_ВАРИАНТ, False)],
+			варианты=[(ПРАВИЛЬНЫЙ_ВАРИАНТ, True), (НЕВЕРНЫЙ_ВАРИАНТ, False, ПОЯСНЕНИЕ_НЕВЕРНОГО)],
 			пояснение=ТЕКСТ_ПОЯСНЕНИЯ,
 		)
 		создать_квиз(self.урок, [self.вопрос])
@@ -167,6 +169,20 @@ class IntegrationTestNoLeak(IntegrationTestCase):
 
 		self.assertTrue(ответ["data"]["verdict"]["correct"])
 		self.assertIn(ТЕКСТ_ПОЯСНЕНИЯ, ответ["data"]["verdict"]["explanation"])
+
+	def test_неверный_ответ_поясняется_без_пояснения_верного(self):
+		"""Ошибившийся получает «почему нет» к своему варианту, но не текст,
+		поясняющий верный: тот называет ответ до следующей попытки."""
+		frappe.set_user(self.ученик)
+		занятие = student.start_lesson()["data"]["session"]
+		попытка = student.request_quiz(занятие)["data"]["attempt"]
+
+		ответ = student.submit_answer(попытка, self.вопрос, "2")
+
+		self.проверить("submit_answer", ответ)
+		вердикт = ответ["data"]["verdict"]
+		self.assertFalse(вердикт["correct"])
+		self.assertEqual(вердикт["why_wrong"], ПОЯСНЕНИЕ_НЕВЕРНОГО)
 
 	def test_ни_один_метод_руководителя_не_отдаёт_эталон(self):
 		frappe.set_user(self.ученик)
