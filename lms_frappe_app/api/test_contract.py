@@ -285,7 +285,8 @@ class IntegrationTestContractExamples(IntegrationTestCase):
 
 	def test_ключи_ответов_совпадают_с_примерами_контракта(self):
 		курс, уроки = self._собрать_курс()
-		self._пройти_курс(курс, уроки)
+		репорт = self._пройти_курс(курс, уроки)
+		self._разобрать_репорт(курс, репорт)
 		self._посмотреть_отчёты()
 
 	# --- сборка курса ---
@@ -482,10 +483,10 @@ class IntegrationTestContractExamples(IntegrationTestCase):
 			"student.report_checkpoint",
 			student.report_checkpoint(session=занятие, note="разобрали пример"),
 		)
-		self.сверить(
+		репорт = self.сверить(
 			"student.report_issue",
 			student.report_issue(session=занятие, kind="stuck", text="Встал на примере"),
-		)
+		)["report"]
 		self.сверить(
 			"student.remember",
 			student.remember(kind="fact", key="role", text="Руководитель отдела"),
@@ -530,6 +531,19 @@ class IntegrationTestContractExamples(IntegrationTestCase):
 		второе = student.start_lesson(lesson=без_квиза)["data"]["session"]
 		self.сверить("student.complete_lesson", student.complete_lesson(session=второе))
 		self.сверить("student.get_my_progress", student.get_my_progress())
+		return репорт
+
+	# --- репорт: разбор и итог ---
+
+	def _разобрать_репорт(self, курс: str, репорт: str) -> None:
+		frappe.set_user(self.куратор)
+		self.сверить("authoring.course_reports", authoring.course_reports(course=курс))
+		self.сверить(
+			"authoring.resolve_report",
+			authoring.resolve_report(report=репорт, status="fixed", resolution="Добавили пример"),
+		)
+		frappe.set_user(self.ученик)
+		self.сверить("student.my_reports", student.my_reports(course=курс))
 
 	# --- отчётность руководителя ---
 

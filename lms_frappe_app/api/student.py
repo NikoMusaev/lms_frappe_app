@@ -12,6 +12,7 @@ import json
 from datetime import timedelta
 
 import frappe
+from frappe.query_builder import Order
 from frappe.utils import now_datetime
 
 from lms_frappe_app.agent_learning import directives, quiz
@@ -30,14 +31,18 @@ from lms_frappe_app.agent_learning.constants import (
 	ВИДЫ_ЗАМЕТОК,
 	ВИДЫ_РЕПОРТОВ,
 	ЗАВЕРШЁННЫЕ,
+	ЗАКРЫТЫЕ_РЕПОРТЫ,
 	ЗАМЕТКА_НАБЛЮДЕНИЕ,
 	ЗАМЕТКА_ФАКТ,
 	ЗАНЯТИЕ_ЗАВЕРШЕНО,
+	ИМЯ_ВИДА_РЕПОРТА,
+	ИМЯ_СТАТУСА_РЕПОРТА,
 	ОТКРЫТЫЕ,
 	ПРОЙДЕН,
 	СОБЫТИЕ_ВЕРДИКТ,
 	СОБЫТИЕ_ДИРЕКТИВА_ВЫДАНА,
 	СОБЫТИЕ_ОТМЕТКА,
+	СТАТУСЫ_РЕПОРТОВ,
 )
 from lms_frappe_app.agent_learning.doctype.agent_course_artifact.agent_course_artifact import (
 	нормализовать_ключ,
@@ -110,6 +115,10 @@ def лимит_заметок() -> int:
 #: Две тысячи — примерно страница: хватает объяснить, что не так, и не хватает
 #: пересказать урок.
 ДЛИНА_ОПИСАНИЯ = 2000
+#: Сколько своих репортов ученик получает за раз, свежие сверху. Предел — не
+#: про читателя, а про выборку: без него она однажды поднимет всё, что
+#: ученик когда-либо писал.
+РЕПОРТОВ_УЧЕНИКА = 50
 
 АРТЕФАКТ_НЕ_НАЙДЕН = "artifact_not_found"
 БЛОК_НЕ_НАЙДЕН = "artifact_block_not_found"
@@ -285,8 +294,11 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 	сведения = доступные[курс]
 	перенос = _незакрытые_цели(ученик, курс, кроме=lesson)
 	сегмент = min(segment, материал.total_segments or 1)
+	# Итоги репортов — один раз: агент говорит о них на ближайшем занятии
+	# курса, а повтор на каждом старте превратил бы новость в шум.
+	итоги = _репорты_ученика(ученик, course=курс, только_новые_итоги=True)
 
-	return {
+	ответ = {
 		"session": занятие.name,
 		"lesson": {
 			"id": lesson,
@@ -322,11 +334,16 @@ def start_lesson(lesson: str | None = None, segment: int = 1, channel: str = "ag
 		"student_context": {
 			**_заметки(ученик, курс),
 			"carried_over": перенос,
+			"closed_reports": итоги,
 		},
 		# Подсказка «сегодня собираем резюме проекта», а не ограничение:
 		# update_artifact принимает любой ключ, и ученик волен забежать вперёд.
 		"artifact_blocks": _блоки_урока(ученик, курс, lesson),
 	}
+	# Отметка — после сборки ответа: упади она раньше, итог пропал бы для
+	# ученика, так и не дойдя до агента.
+	_отметить_показанные(итоги)
+	return ответ
 
 
 @frappe.whitelist(methods=["POST"])
@@ -464,6 +481,18 @@ def whoami() -> dict:
 def my_notes(course: str | None = None) -> dict:
 	"""Что агент запомнил об ученике. Ученик вправе это видеть."""
 	return _заметки(текущий_пользователь(), course)
+
+
+@frappe.whitelist()
+@контракт
+def my_reports(course: str | None = None) -> dict:
+	"""Репорты с занятий ученика: что с ними стало и что ответили.
+
+	`Why:` без ответа ученик не видит смысла писать репорты, а курс правят
+	именно по ним (learning-services#286). Прав на сам DocType у ученика нет:
+	репорт читается только этим методом и только по своим занятиям.
+	"""
+	return {"reports": _репорты_ученика(текущий_пользователь(), course=course)}
 
 
 @frappe.whitelist()
@@ -634,6 +663,9 @@ def report_issue(
 
 	Курс, урок и действующую редакцию указаний берёт сервер из занятия:
 	привязка от агента указала бы на чужой урок.
+
+	Номер репорта — для ученика: по нему тот найдёт свой репорт в
+	`my_reports` и узнает, чем кончилось дело.
 	"""
 	занятие = _своё_занятие(session)
 	имя_вида = (kind or "").strip().lower()
@@ -1141,6 +1173,113 @@ def _заметки(ученик: str, course: str | None) -> dict:
 			}
 		)
 	return {"facts": факты, "observations": наблюдения}
+
+
+def _репорты_ученика(
+	ученик: str, course: str | None = None, только_новые_итоги: bool = False
+) -> list[dict]:
+	"""Репорты занятий ученика, свежие сверху.
+
+	Отбор — по занятиям ученика, а не по `owner`: репорт, перенесённый
+	сотрудником платформы, записан от его имени, но остаётся репортом с
+	занятия ученика. `только_новые_итоги` — закрытые, о которых ученик ещё
+	не узнал.
+
+	Наружу не идут занятие и вопрос квиза: занятие — внутренняя привязка, а
+	идентификатор вопроса ученику ни о чём не говорит.
+	"""
+	репорт = frappe.qb.DocType("Agent Course Report")
+	занятие = frappe.qb.DocType("Agent Learning Session")
+	запрос = (
+		frappe.qb.from_(репорт)
+		.join(занятие)
+		.on(репорт.session == занятие.name)
+		.select(
+			репорт.name,
+			репорт.kind,
+			репорт.lesson,
+			репорт.objective,
+			репорт.text,
+			репорт.creation,
+			репорт.status,
+			репорт.resolution,
+			репорт.resolved_at,
+			репорт.duplicate_of,
+		)
+		.where(занятие.student == ученик)
+		.orderby(репорт.creation, order=Order.desc)
+		.limit(РЕПОРТОВ_УЧЕНИКА)
+	)
+	if course:
+		запрос = запрос.where(репорт.course == course)
+	if только_новые_итоги:
+		запрос = запрос.where(репорт.status.isin(ЗАКРЫТЫЕ_РЕПОРТЫ)).where(
+			репорт.student_notified_at.isnull()
+		)
+	записи = запрос.run(as_dict=True)
+	if not записи:
+		return []
+
+	названия = _названия_уроков(list({з.lesson for з in записи}))
+	ответы_оригиналов = _ответы_оригиналов(записи)
+	return [_репорт_наружу(з, названия, ответы_оригиналов) for з in записи]
+
+
+def _ответы_оригиналов(записи: list) -> dict[str, str]:
+	"""Ответы репортов, дублями которых признаны записи без своего ответа.
+
+	Дубль закрывают ссылкой на оригинал, а ответ пишут там: без него ученик
+	узнал бы только, что его репорт — «дубль», но не чем кончилось дело.
+	"""
+	оригиналы = {
+		з.duplicate_of
+		for з in записи
+		if з.status == СТАТУСЫ_РЕПОРТОВ["duplicate"] and з.duplicate_of and not (з.resolution or "").strip()
+	}
+	if not оригиналы:
+		return {}
+	return {
+		о.name: о.resolution.strip()
+		for о in frappe.get_all(
+			"Agent Course Report",
+			filters={"name": ("in", list(оригиналы))},
+			fields=["name", "resolution"],
+		)
+		if (о.resolution or "").strip()
+	}
+
+
+def _репорт_наружу(запись, названия: dict[str, str], ответы_оригиналов: dict[str, str]) -> dict:
+	ответ = (запись.resolution or "").strip() or ответы_оригиналов.get(запись.duplicate_of)
+	return {
+		"id": запись.name,
+		"kind": ИМЯ_ВИДА_РЕПОРТА.get(запись.kind, запись.kind),
+		"lesson": запись.lesson,
+		"lesson_title": названия.get(запись.lesson),
+		"objective": запись.objective or None,
+		"text": запись.text,
+		"reported_at": запись.creation.isoformat() if запись.creation else None,
+		"status": ИМЯ_СТАТУСА_РЕПОРТА.get(запись.status, запись.status),
+		"resolution": ответ or None,
+		"resolved_at": запись.resolved_at.isoformat() if запись.resolved_at else None,
+	}
+
+
+def _отметить_показанные(репорты: list[dict]) -> None:
+	"""Итог отдан агенту — ученик о нём узнал.
+
+	Без смены `modified`: отметка — не правка репорта, и в очереди куратора
+	он не должен всплывать как изменённый.
+	"""
+	if not репорты:
+		return
+	frappe.db.set_value(
+		"Agent Course Report",
+		{"name": ("in", [р["id"] for р in репорты])},
+		"student_notified_at",
+		now_datetime(),
+		update_modified=False,
+	)
 
 
 #: Сколько последних уроков курса приносят с собой незакрытые цели — запасное
