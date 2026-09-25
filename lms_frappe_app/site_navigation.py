@@ -34,6 +34,14 @@ import frappe
 РОЛИ_АВТОРА = {"Course Creator", "Moderator"}
 КАБИНЕТ_АВТОРА = ("Кабинет автора", "/author")
 
+#: Подвал вместо «Built on Frappe»: исходники приложения платформы открыты под
+#: AGPL-3.0, и ссылка на них — то, что этим страницам положено по лицензии.
+ИСХОДНЫЙ_КОД = "https://github.com/lms-high-time/learning-app"
+ПОДВАЛ = (
+	f'Учебное приложение платформы открыто под AGPL-3.0 — '
+	f'<a href="{ИСХОДНЫЙ_КОД}" class="text-muted">исходный код</a>'
+)
+
 
 def шапка_платформы(context) -> None:
 	"""Логотип и пункты шапки для страницы платформы."""
@@ -47,3 +55,4 @@ def шапка_платформы(context) -> None:
 	if имя:
 		context.brand_html = escape(имя)
 	context.top_bar_items = [frappe._dict(label=подпись, url=адрес) for подпись, адрес in пункты]
+	context.footer_powered = ПОДВАЛ

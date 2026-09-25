@@ -36,13 +36,14 @@ class IntegrationTestHomePage(IntegrationTestCase):
 			"домашней не должна быть страница настроек `me` — именно её видел первый вошедший через Google",
 		)
 
-	def test_сотрудника_платформы_не_уводим_из_desk(self):
-		"""`Why:` хук вызывается для всех подряд, и строковый вариант уводил
-		администратора в ученический интерфейс: он входил и не попадал в
-		админку, потому что до ветки «`me` для System User» дело не доходило."""
-		from lms_frappe_app.www.home import домашняя_страница
+	def test_сотрудника_платформы_ведём_в_воркспейс(self):
+		"""`Why:` строковый хук уводил администратора в ученический интерфейс,
+		а без хука он попадал на общий `/desk` — стартовый экран приложений,
+		откуда до курсов и учеников ещё идти (learning-services#302)."""
+		from lms_frappe_app.www.home import РАБОЧАЯ, домашняя_страница
 
-		self.assertIsNone(домашняя_страница("Administrator"))
+		self.assertEqual(домашняя_страница("Administrator"), РАБОЧАЯ)
+		self.assertEqual(РАБОЧАЯ, "desk/agent-learning")
 
 	def test_ученику_отдаём_каталог(self):
 		from lms_frappe_app.www.home import домашняя_страница

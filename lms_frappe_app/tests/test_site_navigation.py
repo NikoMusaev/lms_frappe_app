@@ -36,6 +36,11 @@ class IntegrationTestSiteNavigation(IntegrationTestCase):
 
 		self.assertEqual(пункты, list(ПУНКТЫ))
 
+	def test_подвал_ведёт_к_исходникам_а_не_на_frappe(self):
+		подвал = self.шапка(self.ученик).footer_powered
+
+		self.assertIn("github.com/lms-high-time/learning-app", подвал)
+
 	def test_кабинет_автора_только_автору(self):
 		у_ученика = [п.url for п in self.шапка(self.ученик).top_bar_items]
 		у_куратора = [п.url for п in self.шапка(self.куратор).top_bar_items]
