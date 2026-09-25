@@ -521,6 +521,8 @@ def update_artifact(
 	content: str | None = None,
 	clear: bool = False,
 	url: str | None = None,
+	table=None,
+	file_name: str | None = None,
 ) -> dict:
 	"""Записывает блок артефакта целиком — или очищает его.
 
@@ -531,8 +533,14 @@ def update_artifact(
 	подыгрывать здесь нечему.
 
 	`url` — адрес внешнего документа у блока-ссылки (`kind: link`); текст при
-	нём необязателен, прежний остаётся. Файл сюда не передаётся: его загружает
-	ученик на странице «Мои документы» (`upload_artifact_file`, #315).
+	нём необязателен, прежний остаётся.
+
+	`table` — таблица, которую собрал агент, у блока-файла (`kind: file`):
+	строки ячеек, формулы строками с `=`. Сервер собирает `xlsx` (или `csv`,
+	если блок принимает только его) и кладёт файлом в блок, как загрузку
+	ученика. `Why:` текст таблицы в десятки раз дешевле байтов base64 через
+	параметры модели, и формулы в файле остаются формулами (#258, #319).
+	`file_name` — имя файла, без него — по ключу блока.
 
 	`clear` удаляет блок из документа ученика — текст, ссылку и файл; текст при
 	этом не передаётся. `Why:` при смене проекта агенту нечем было убрать старый
@@ -546,7 +554,7 @@ def update_artifact(
 	ключ = блок.block_key
 	# Флаг приходит и булевым из JSON, и строкой из формы.
 	if clear in (True, 1, "1", "true"):
-		if (content or "").strip() or (url or "").strip():
+		if (content or "").strip() or (url or "").strip() or table:
 			raise Отказ(
 				ОЧИСТКА_С_ТЕКСТОМ,
 				"Очистка блока не принимает текст: либо content, либо clear",
@@ -566,6 +574,8 @@ def update_artifact(
 				kind=artifact_files.вид(блок),
 			)
 		адрес = artifact_files.проверить_ссылку(url)
+	if table:
+		return _положить_таблицу(ученик, course, схема, блок, table, file_name, content)
 	if not (content or "").strip() and not адрес:
 		raise Отказ(ПУСТОЙ_БЛОК, "Блок записывается непустым", artifact=схема.slug, key=ключ)
 
@@ -636,6 +646,36 @@ def _положить_файл(ученик: str, course: str, artifact: str, ke
 		"preview": строка.preview or None,
 		**заполнено,
 	}
+
+
+def _положить_таблицу(
+	ученик: str, course: str, схема, блок, table, file_name: str | None, content: str | None
+) -> dict:
+	"""Таблица агента — файлом в блок-файл; текст рядом, если передан."""
+	ключ = блок.block_key
+	if artifact_files.вид(блок) != artifact_files.ФАЙЛ:
+		raise Отказ(
+			artifact_files.ВИД_НЕ_ТОТ,
+			"Таблицу файлом принимает только блок-файл",
+			artifact=схема.slug,
+			key=ключ,
+			kind=artifact_files.вид(блок),
+		)
+	тип = artifact_files.тип_для_таблицы(блок)
+	строки = artifact_files.строки_таблицы(table)
+	имя = (file_name or "").strip() or ключ
+	if artifact_files.расширение(имя) != тип:
+		имя = f"{имя}.{тип}"
+	_положить_файл(
+		ученик, course, схема.slug, ключ, имя, artifact_files.собрать_таблицу(строки, тип)
+	)
+	документ, строка = _строка_блока(ученик, course, схема, ключ)
+	if (content or "").strip():
+		строка.content = content
+		документ.schema_version = схема.name
+		документ.save(ignore_permissions=True)
+	заполнено = _заполненность(схема, _содержимое(документ), _вложения(документ))
+	return {"artifact": схема.slug, "key": ключ, **заполнено}
 
 
 def _блок_схемы(course: str, artifact: str, key: str):
