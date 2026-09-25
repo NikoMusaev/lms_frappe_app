@@ -72,6 +72,22 @@ def проверить_ссылку(url: str) -> str:
 	return адрес
 
 
+def из_base64(содержимое: str | None) -> bytes:
+	"""Байты файла из base64; пустое или битое — пустые байты, и дальше
+	`проверить_файл` откажет `artifact_file_missing`. Префикс `data:…;base64,`
+	снимается: так файл отдаёт браузер."""
+	import base64
+	import binascii
+
+	текст = (содержимое or "").strip()
+	if текст.startswith("data:") and "," in текст:
+		текст = текст.split(",", 1)[1]
+	try:
+		return base64.b64decode(текст, validate=True) if текст else b""
+	except (binascii.Error, ValueError):
+		return b""
+
+
 def проверить_файл(блок, имя: str, данные: bytes, **где) -> str:
 	"""Годится ли файл для блока; возвращает расширение."""
 	if вид(блок) != ФАЙЛ:
