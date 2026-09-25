@@ -95,6 +95,24 @@ class IntegrationTestArtifactFiles(IntegrationTestCase):
 		self.assertIn("| Месяц | Выручка | Расходы | Прибыль |", срез)
 		self.assertIn("=B2-C2", срез, "у собранного программой файла значения нет — видна формула")
 
+	def test_пустые_колонки_справа_в_срез_не_попадают(self):
+		from openpyxl import Workbook
+		from openpyxl.styles import Font
+
+		книга = Workbook()
+		лист = книга.active
+		лист.append(["Гипотеза", "Охват"])
+		лист.append(["Кофейня", 100])
+		# Отформатированная, но пустая колонка далеко справа — как в живом файле.
+		лист.cell(row=1, column=25).font = Font(bold=True)
+		поток = io.BytesIO()
+		книга.save(поток)
+
+		self.загрузить("rice.xlsx", поток.getvalue())
+		срез = self.блок("money")["preview"]
+
+		self.assertEqual(срез.splitlines()[0], "| Гипотеза | Охват |")
+
 	def test_новый_файл_замещает_прежний(self):
 		self.загрузить()
 		первый = self.запись_файла()
