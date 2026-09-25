@@ -25,7 +25,9 @@ from lms_frappe_app.api.student import (
 )
 from lms_frappe_app.install import обеспечить_значения_настроек
 from lms_frappe_app.tests.sample_data import политика_по_умолчанию
-from lms_frappe_app.www.agent import адрес_сервиса
+from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
+	адрес_сервиса,
+)
 
 #: Числовой параметр методики: поле настроек, читалка, запасное значение.
 ПАРАМЕТРЫ = (
