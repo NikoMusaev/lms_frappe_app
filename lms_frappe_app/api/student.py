@@ -638,7 +638,11 @@ def report_outcomes(session: str, outcomes) -> dict:
 	занятие.save(ignore_permissions=True)
 	занятие.записать_событие(СОБЫТИЕ_ОТМЕТКА, "отчёт по целям урока")
 
-	return {"session": session, "reported": len(цели)}
+	return {
+		"session": session,
+		"reported": len(цели),
+		"empty_blocks": _пустые_блоки_урока(занятие.student, занятие.course, занятие.lesson),
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -746,6 +750,7 @@ def complete_lesson(session: str) -> dict:
 		"lesson": занятие.lesson,
 		"session_status": занятие.status,
 		"next_lesson": _следующий_урок(занятие.student, занятие.course),
+		"empty_blocks": _пустые_блоки_урока(занятие.student, занятие.course, занятие.lesson),
 	}
 
 
@@ -897,6 +902,10 @@ def get_my_progress() -> dict:
 				"deadline": курс["deadline"],
 				"overdue": курс["overdue"],
 				"completion": _доля_пройденного(ученик, курс["course"]),
+				# Документ — отдельно от доли уроков: урок засчитывает квиз, и
+				# пройденный курс с пустым документом иначе не отличить от
+				# собранного (learning-services#296).
+				"documents": _перечень_артефактов(ученик, курс["course"]),
 			}
 			for курс in курсы
 		],
@@ -1092,6 +1101,20 @@ def _блоки_урока(ученик: str, курс: str, lesson: str) -> lis
 				{"artifact": схема.slug, "artifact_title": схема.title, **_блок(блок, содержимое)}
 			)
 	return блоки
+
+
+def _пустые_блоки_урока(ученик: str, курс: str, lesson: str) -> list[dict]:
+	"""Блоки документа, которые собирают на этом уроке, а они пусты.
+
+	Предупреждение, а не отказ: урок засчитывает квиз, блок часто доводят
+	после занятия, а «непустой» ещё не значит «готов» — запрет давал бы
+	обход, а не документ (решение владельца, learning-services#296).
+	"""
+	return [
+		{"artifact": блок["artifact"], "key": блок["key"], "title": блок["title"]}
+		for блок in _блоки_урока(ученик, курс, lesson)
+		if not блок["content"].strip()
+	]
 
 
 def _текущее_занятие(ученик: str, lesson: str):
