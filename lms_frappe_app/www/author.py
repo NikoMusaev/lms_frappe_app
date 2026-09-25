@@ -21,6 +21,7 @@ from frappe.utils import get_datetime, md_to_html, now_datetime, sanitize_html
 from lms_frappe_app.agent_learning import diffs, directives, normalizer, notes, snapshots
 from lms_frappe_app.agent_learning.errors import УРОК_НЕ_НАЙДЕН, Отказ
 from lms_frappe_app.api import authoring, контракт
+from lms_frappe_app.site_navigation import шапка_платформы
 
 no_cache = 1
 
@@ -623,6 +624,7 @@ def _сосед(уроки: list[dict], индекс: int) -> dict | None:
 
 def get_context(context):
 	context.no_breadcrumbs = True
+	шапка_платформы(context)
 	context.update(
 		сведения(
 			frappe.session.user,

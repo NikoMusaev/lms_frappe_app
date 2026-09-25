@@ -9,43 +9,61 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learnin
 	НАСТРОЙКИ,
 )
 
-#: Пункты сайдбара Frappe Learning. Web Page — обязательное поле пункта, а
-#: `route` и `title` пункт берёт из неё (`fetch_from`). Заглушки не
-#: публикуются: сами страницы живут в коде, а с маршрута заглушки на них ведёт
-#: `website_redirects` в hooks.
+#: Пункты сайдбара Frappe Learning — в том порядке, в каком их видит ученик:
+#: сначала способы заниматься, документы последними (lms-platform#311).
+#: Web Page — обязательное поле пункта, а `route` и `title` пункт берёт из неё
+#: (`fetch_from`). Заглушки не публикуются: сами страницы живут в коде, а с
+#: маршрута заглушки на них ведёт `website_redirects` в hooks.
+#:
+#: Иконка — имя компонента `lucide-vue-next` (PascalCase), как её сохраняет
+#: выбор иконки в самом Learning: по нему рисует сайдбар на десктопе, а
+#: телефон выводит из него класс `lucide-…`. `Why:` имена в kebab-case
+#: телефон понимал, а десктоп — нет, и пункты платформы стояли без иконок.
 ПУНКТЫ_САЙДБАРА = (
-	{"title": "Подключить агента", "route": "agent-sidebar", "icon": "bot", "page": "/agent"},
 	# Веб-чат живёт в MCP-сервисе на том же домене, что и сайт. Маршрут заглушки
 	# не начинается с путей этого сервиса: Traefik сопоставляет их по префиксу, и
 	# `/chat-…` ушёл бы в MCP-сервис с «Not Found» вместо переадресации.
-	{"title": "Заниматься в браузере", "route": "study-in-browser", "icon": "message-circle", "page": "/chat"},
-	{"title": "Мои документы", "route": "artifacts-sidebar", "icon": "file-text", "page": "/artifacts"},
+	{"title": "Заниматься в браузере", "route": "study-in-browser", "icon": "MessageCircle", "page": "/chat"},
+	{"title": "Подключить агента", "route": "agent-sidebar", "icon": "Bot", "page": "/agent"},
+	{"title": "Мои документы", "route": "artifacts-sidebar", "icon": "FileText", "page": "/artifacts"},
 )
+
+#: Иконки, которые прежде ставила сама установка, — их правка админа не трогает.
+ПРЕЖНИЕ_ИКОНКИ = {"message-circle", "bot", "file-text", ""}
 
 
 def обеспечить_пункты_сайдбара() -> None:
-	"""Пункты приложения в сайдбаре Frappe Learning.
+	"""Пункты приложения в сайдбаре Frappe Learning — есть, с иконкой, по порядку.
 
-	Сайдбар читает дочернюю таблицу `LMS Settings.sidebar_items` и ведёт по
-	`route` обычной ссылкой. Идемпотентно: вызывается и при установке, и при
-	каждой миграции.
+	Сайдбар читает дочернюю таблицу `LMS Settings.sidebar_items` в её порядке
+	и ведёт по `route` обычной ссылкой. Пункты платформы идут первыми и в
+	порядке `ПУНКТЫ_САЙДБАРА`, пункты, добавленные админом, — следом, в своём.
+	Иконку установка меняет, только если та осталась от неё самой: выбранную
+	админом не трогает. Идемпотентно: вызывается при установке и при каждой
+	миграции, и без расхождений ничего не сохраняет.
 	"""
-	for пункт in ПУНКТЫ_САЙДБАРА:
-		_обеспечить_пункт(пункт)
-
-
-def _обеспечить_пункт(пункт: dict) -> None:
-	заглушка = _заглушка(пункт)
-	фильтры = {
-		"parenttype": "LMS Settings",
-		"parentfield": "sidebar_items",
-		"parent": "LMS Settings",
-		"web_page": заглушка,
-	}
-	if frappe.db.exists("LMS Sidebar Item", фильтры):
-		return
+	заглушки = [_заглушка(пункт) for пункт in ПУНКТЫ_САЙДБАРА]
 	настройки = frappe.get_single("LMS Settings")
-	настройки.append("sidebar_items", {"web_page": заглушка, "icon": пункт["icon"]})
+	строки = {строка.web_page: строка for строка in настройки.sidebar_items}
+
+	наши = []
+	for пункт, заглушка in zip(ПУНКТЫ_САЙДБАРА, заглушки):
+		строка = строки.get(заглушка)
+		if строка is None:
+			строка = frappe._dict(web_page=заглушка, icon=пункт["icon"])
+		elif (строка.icon or "") in ПРЕЖНИЕ_ИКОНКИ:
+			строка.icon = пункт["icon"]
+		наши.append(строка)
+	чужие = [строка for строка in настройки.sidebar_items if строка.web_page not in заглушки]
+
+	было = [(строка.web_page, строка.icon) for строка in настройки.sidebar_items]
+	стало = [(строка.web_page, строка.icon) for строка in наши + чужие]
+	if было == стало:
+		return
+	настройки.set(
+		"sidebar_items",
+		[{"web_page": строка.web_page, "icon": строка.icon} for строка in наши + чужие],
+	)
 	настройки.save(ignore_permissions=True)
 
 

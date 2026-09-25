@@ -17,6 +17,7 @@ from frappe.utils import md_to_html, sanitize_html
 from lms_frappe_app.agent_learning.access import доступен_курс, курсы_ученика
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.api import student, текущий_пользователь
+from lms_frappe_app.site_navigation import шапка_платформы
 
 no_cache = 1
 
@@ -114,6 +115,7 @@ def download(course: str, artifact: str):
 
 def get_context(context):
 	context.no_breadcrumbs = True
+	шапка_платформы(context)
 	context.title = "Мои документы"
 	context.update(
 		сведения(frappe.session.user, frappe.form_dict.get("course"), frappe.form_dict.get("artifact"))
