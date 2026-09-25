@@ -36,6 +36,13 @@ from lms_frappe_app.agent_learning.errors import Отказ
 ФАЙЛ_СЛИШКОМ_БОЛЬШОЙ = "artifact_file_too_large"
 ФАЙЛА_НЕТ = "artifact_file_missing"
 НЕВЕРНАЯ_ССЫЛКА = "artifact_invalid_url"
+НЕВЕРНАЯ_ТАБЛИЦА = "artifact_invalid_table"
+
+#: Пределы таблицы от агента. Документ курса — финплан или журнал, а не выгрузка
+#: базы: больше — почти наверняка ошибка агента, и платить за неё контекстом
+#: незачем.
+СТРОК_МАКС = 500
+КОЛОНОК_МАКС = 50
 
 #: Из чего строится срез. Остальные типы хранятся без него.
 ТАБЛИЦЫ = ("csv", "xlsx")
@@ -194,6 +201,70 @@ def _таблица(строки: list[list[str]]) -> str | None:
 
 	шапка, *тело = строки
 	return "\n".join([ряд(шапка), "|" + " --- |" * ширина, *(ряд(с) for с in тело)])
+
+
+def тип_для_таблицы(блок) -> str:
+	"""Во что собрать таблицу агента: `xlsx`, если блок его принимает или
+	форматы не заданы, иначе `csv`; блок без обоих — отказ."""
+	можно = допустимые(блок)
+	if not можно or "xlsx" in можно:
+		return "xlsx"
+	if "csv" in можно:
+		return "csv"
+	raise Отказ(
+		ФАЙЛ_НЕ_ТОГО_ТИПА,
+		"Блок не принимает таблицы: " + ", ".join(можно),
+		accept=можно,
+		received="xlsx",
+	)
+
+
+def строки_таблицы(table) -> list[list]:
+	"""Строки таблицы от агента: список списков, ячейка — текст или число.
+
+	Формула — строка с `=`: `=B2-C2`. Приходит и JSON-строкой: так тело
+	запроса отдаёт форма.
+	"""
+	import json
+
+	if isinstance(table, str):
+		try:
+			table = json.loads(table)
+		except ValueError:
+			table = None
+	if not isinstance(table, list) or not table or not all(isinstance(р, list) for р in table):
+		raise Отказ(НЕВЕРНАЯ_ТАБЛИЦА, "Таблица — непустой список строк, строка — список ячеек")
+	if len(table) > СТРОК_МАКС or max(len(р) for р in table) > КОЛОНОК_МАКС:
+		raise Отказ(
+			НЕВЕРНАЯ_ТАБЛИЦА,
+			f"Таблица больше допустимого: до {СТРОК_МАКС} строк и {КОЛОНОК_МАКС} колонок",
+			max_rows=СТРОК_МАКС,
+			max_columns=КОЛОНОК_МАКС,
+		)
+	for ряд in table:
+		for ячейка in ряд:
+			if ячейка is not None and not isinstance(ячейка, (str, int, float, bool)):
+				raise Отказ(НЕВЕРНАЯ_ТАБЛИЦА, "Ячейка — текст, число или пусто")
+	return table
+
+
+def собрать_таблицу(строки: list[list], тип: str) -> bytes:
+	"""Файл из строк агента. В `xlsx` формулы остаются формулами — ученик
+	открывает таблицу, и она считает сама; в `csv` формула — просто текст."""
+	if тип == "csv":
+		поток = io.StringIO()
+		csv.writer(поток).writerows([["" if я is None else я for я in р] for р in строки])
+		return поток.getvalue().encode("utf-8-sig")
+
+	from openpyxl import Workbook
+
+	книга = Workbook()
+	лист = книга.active
+	for ряд in строки:
+		лист.append(ряд)
+	поток = io.BytesIO()
+	книга.save(поток)
+	return поток.getvalue()
 
 
 def сохранить_файл(документ_ученика, имя: str, данные: bytes):

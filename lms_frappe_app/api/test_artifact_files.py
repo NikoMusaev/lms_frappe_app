@@ -195,7 +195,67 @@ class IntegrationTestArtifactFiles(IntegrationTestCase):
 			with self.subTest(чужой=чужой):
 				self.assertFalse(frappe.has_permission("File", doc=файл, user=чужой))
 
-	# --- ссылка ---
+	# --- таблица от агента (#319) ---
+
+	def файл_блока(self, ключ: str = "money") -> bytes:
+		return frappe.get_doc("File", self.запись_файла(ключ)).get_content()
+
+	def test_таблица_агента_ложится_xlsx_с_формулой(self):
+		from openpyxl import load_workbook
+
+		ответ = student.update_artifact(
+			self.курс,
+			"plan",
+			"money",
+			table=[["Месяц", "Выручка", "Расходы", "Прибыль"], ["Январь", 100, 80, "=B2-C2"]],
+			file_name="Финплан",
+			content="Первый месяц в плюсе.",
+		)
+
+		self.assertTrue(ответ["ok"], ответ.get("error"))
+		блок = self.блок("money")
+		self.assertEqual(блок["file"]["name"], "Финплан.xlsx")
+		self.assertEqual(блок["content"], "Первый месяц в плюсе.")
+		self.assertIn("=B2-C2", блок["preview"])
+		лист = load_workbook(io.BytesIO(self.файл_блока())).active
+		self.assertEqual(лист["D2"].value, "=B2-C2", "формула осталась формулой")
+
+	def test_блок_только_csv_получает_csv(self):
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{
+				"doctype": "Agent Course Artifact",
+				"course": self.курс,
+				"slug": "log",
+				"title": "Журнал",
+				"blocks": [{"block_key": "calls", "title": "Звонки", "kind": "file", "accept": "csv"}],
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+
+		ответ = student.update_artifact(self.курс, "log", "calls", table=[["Дата", "Клиент"], ["1.10", "Анна"]])
+
+		self.assertTrue(ответ["ok"], ответ.get("error"))
+		блоки = student.artifact(self.курс, "log")["data"]["blocks"]
+		self.assertEqual(блоки[0]["file"]["name"], "calls.csv")
+		self.assertIn("| Дата | Клиент |", блоки[0]["preview"])
+
+	def test_таблица_не_в_блок_файл_и_кривая_отказ(self):
+		мимо = student.update_artifact(self.курс, "plan", "goal", table=[["a"]])
+		кривая = student.update_artifact(self.курс, "plan", "money", table=["не строки"])
+		большая = student.update_artifact(self.курс, "plan", "money", table=[["x"]] * 501)
+
+		self.assertEqual(мимо["error"]["code"], artifact_files.ВИД_НЕ_ТОТ)
+		self.assertEqual(кривая["error"]["code"], artifact_files.НЕВЕРНАЯ_ТАБЛИЦА)
+		self.assertEqual(большая["error"]["code"], artifact_files.НЕВЕРНАЯ_ТАБЛИЦА)
+
+	def test_таблица_строкой_json_тоже_принимается(self):
+		ответ = student.update_artifact(self.курс, "plan", "money", table='[["Месяц"], ["Январь"]]')
+
+		self.assertTrue(ответ["ok"], ответ.get("error"))
+		self.assertEqual(self.блок("money")["file"]["name"], "money.xlsx")
+
+		# --- ссылка ---
 
 	def test_ссылка_записывается_в_блок_ссылку(self):
 		ответ = student.update_artifact(self.курс, "plan", "crm", url="https://crm.example.com/base")
