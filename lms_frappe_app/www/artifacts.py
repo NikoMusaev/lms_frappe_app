@@ -23,6 +23,7 @@ no_cache = 1
 
 СТРАНИЦА = "/artifacts"
 МЕТОД_ЗАПИСИ = "lms_frappe_app.api.student.update_artifact"
+МЕТОД_ЗАГРУЗКИ = "lms_frappe_app.api.student.upload_artifact_file"
 ПУСТОЙ_БЛОК = "_Не заполнено._"
 
 
@@ -40,6 +41,7 @@ def сведения(пользователь: str, course: str | None = None, a
 		"login_url": f"/login?redirect-to={СТРАНИЦА}",
 		"page_url": СТРАНИЦА,
 		"update_method": МЕТОД_ЗАПИСИ,
+		"upload_method": МЕТОД_ЗАГРУЗКИ,
 		"courses": [],
 		"document": None,
 		"missing": False,
@@ -87,18 +89,42 @@ def _документ(пользователь: str, course: str, artifact: str)
 		# только после чистки: свой же скрипт человеку не страшен, а чужого
 		# здесь не бывает, но правило «HTML из базы не доверять» одно на всех.
 		блок["html"] = sanitize_html(md_to_html(блок["content"])) if блок["content"] else ""
+		# Срез — таблица markdown; ученику он показывает, что увидит агент.
+		блок["preview_html"] = sanitize_html(md_to_html(блок["preview"])) if блок["preview"] else ""
+		блок["accept_attr"] = ",".join("." + тип for тип in блок["accept"])
+		if блок["file"]:
+			блок["file"]["size_display"] = _размер(блок["file"]["size"])
 	документ["download_url"] = (
 		f"/api/method/lms_frappe_app.www.artifacts.download?course={course}&artifact={документ['artifact']}"
 	)
 	return документ
 
 
+def _размер(байт: int) -> str:
+	if байт < 1024:
+		return f"{байт} Б"
+	if байт < 1024 * 1024:
+		return f"{байт / 1024:.0f} КБ"
+	return f"{байт / (1024 * 1024):.1f} МБ"
+
+
 def собрать_markdown(документ: dict) -> str:
-	"""Документ одним файлом: заголовок и блоки в порядке схемы."""
+	"""Документ одним файлом: заголовок и блоки в порядке схемы.
+
+	Файл блока сюда не вкладывается — только его имя и срез: markdown остаётся
+	текстом, а сам файл скачивается со страницы.
+	"""
 	части = [f"# {документ['title']}"]
 	for блок in документ["blocks"]:
 		части.append(f"## {блок['title']}")
-		части.append((блок["content"] or "").strip() or ПУСТОЙ_БЛОК)
+		текст = (блок["content"] or "").strip()
+		if блок.get("url"):
+			текст = "\n\n".join(ч for ч in (f"Ссылка: {блок['url']}", текст) if ч)
+		if блок.get("file"):
+			текст = "\n\n".join(
+				ч for ч in (f"Файл: {блок['file']['name']}", блок.get("preview") or "", текст) if ч
+			)
+		части.append(текст or ПУСТОЙ_БЛОК)
 	return "\n\n".join(части) + "\n"
 
 

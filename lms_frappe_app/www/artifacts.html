@@ -25,6 +25,37 @@
 			style="border: 1px solid #e2e6ea; border-radius: 8px; padding: 1rem 1.25rem; margin: {% if сетка %}0{% else %}0 0 1rem{% endif %};
 			{% if сетка %}grid-column: span {{ [b.span, 4] | min }};{% endif %}">
 			<h3 style="margin-top: 0;">{{ b.title | e }}</h3>
+			{% if b.kind == "file" %}
+			<div class="artifact-file" style="margin-bottom: .75rem;">
+				{% if b.file %}
+				<p style="margin: 0 0 .5rem;">Файл: <a href="{{ b.file.url | e }}" download>{{ b.file.name | e }}</a>
+					<span style="color: #6c757d;">— {{ b.file.size_display }}</span></p>
+				{% if b.preview_html %}
+				<details><summary style="cursor: pointer; color: #6c757d;">Что видит агент</summary>
+					<div class="artifact-preview" style="overflow-x: auto; font-size: .9em;">{{ b.preview_html }}</div>
+				</details>
+				{% endif %}
+				{% else %}
+				<p style="color: #6c757d; margin: 0 0 .5rem;"><em>Файл ещё не загружен.</em></p>
+				{% endif %}
+				<form class="artifact-upload" style="margin-top: .5rem;">
+					<input type="file" name="file" {% if b.accept_attr %}accept="{{ b.accept_attr }}"{% endif %} required>
+					<button type="submit" class="btn btn-sm btn-primary">{% if b.file %}Заменить{% else %}Загрузить{% endif %}</button>
+					<span class="artifact-status" style="margin-left: .5rem; color: #6c757d;"></span>
+				</form>
+			</div>
+			{% elif b.kind == "link" %}
+			<div class="artifact-link" style="margin-bottom: .75rem;">
+				{% if b.url %}
+				<p style="margin: 0 0 .5rem;">Ссылка: <a href="{{ b.url | e }}" rel="noopener" target="_blank">{{ b.url | e }}</a></p>
+				{% endif %}
+				<form class="artifact-url" style="display: flex; gap: .5rem;">
+					<input type="url" name="url" value="{{ (b.url or '') | e }}" placeholder="https://…" required style="flex: 1;">
+					<button type="submit" class="btn btn-sm btn-primary">Сохранить ссылку</button>
+					<span class="artifact-status" style="color: #6c757d;"></span>
+				</form>
+			</div>
+			{% endif %}
 			{% if b.html %}
 			<div class="artifact-content">{{ b.html }}</div>
 			{% else %}
@@ -47,6 +78,49 @@
 	<script>
 	// Запись тем же методом, что у агента: у страницы своего пути нет.
 	frappe.csrf_token = "{{ csrf_token }}";
+	var ДОКУМЕНТ = { course: {{ document.course | tojson }}, artifact: {{ document.artifact | tojson }} };
+
+	async function отправить(form, метод, тело, заголовки) {
+		var status = form.querySelector(".artifact-status");
+		status.textContent = "Сохраняю…";
+		var response = await fetch("/api/method/" + метод, {
+			method: "POST",
+			headers: Object.assign({ "Accept": "application/json", "X-Frappe-CSRF-Token": frappe.csrf_token }, заголовки || {}),
+			body: тело,
+		});
+		var body = response.ok ? await response.json() : null;
+		var ответ = body && body.message;
+		if (ответ && ответ.ok) {
+			window.location.reload();
+		} else {
+			status.textContent = (ответ && ответ.error && ответ.error.message) || "Не удалось сохранить";
+		}
+	}
+
+	// Файл уходит формой: байты мимо JSON, как их отдаёт браузер (#315).
+	document.querySelectorAll(".artifact-upload").forEach(function (form) {
+		form.addEventListener("submit", function (event) {
+			event.preventDefault();
+			var данные = new FormData();
+			данные.append("course", ДОКУМЕНТ.course);
+			данные.append("artifact", ДОКУМЕНТ.artifact);
+			данные.append("key", form.closest(".artifact-block").dataset.key);
+			данные.append("file", form.elements.file.files[0]);
+			отправить(form, "{{ upload_method }}", данные);
+		});
+	});
+
+	document.querySelectorAll(".artifact-url").forEach(function (form) {
+		form.addEventListener("submit", function (event) {
+			event.preventDefault();
+			отправить(form, "{{ update_method }}", JSON.stringify({
+				course: ДОКУМЕНТ.course,
+				artifact: ДОКУМЕНТ.artifact,
+				key: form.closest(".artifact-block").dataset.key,
+				url: form.elements.url.value,
+			}), { "Content-Type": "application/json" });
+		});
+	});
 	document.querySelectorAll(".artifact-form").forEach(function (form) {
 		form.addEventListener("submit", async function (event) {
 			event.preventDefault();

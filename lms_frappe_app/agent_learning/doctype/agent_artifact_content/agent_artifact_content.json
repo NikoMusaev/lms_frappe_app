@@ -7,7 +7,10 @@
  "engine": "InnoDB",
  "field_order": [
   "block_key",
-  "content"
+  "content",
+  "file",
+  "url",
+  "preview"
  ],
  "fields": [
   {
@@ -24,13 +27,32 @@
    "fieldtype": "Markdown Editor",
    "in_list_view": 1,
    "label": "Содержимое"
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Link",
+   "label": "Файл",
+   "options": "File"
+  },
+  {
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "label": "Ссылка",
+   "options": "URL"
+  },
+  {
+   "description": "Текстовый срез файла для агента: шапка и первые строки. Считается при загрузке.",
+   "fieldname": "preview",
+   "fieldtype": "Long Text",
+   "label": "Срез",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-10 12:00:00.000000",
+ "modified": "2026-09-25 18:25:17.638708",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Artifact Content",

@@ -8,6 +8,8 @@
  "field_order": [
   "block_key",
   "title",
+  "kind",
+  "accept",
   "lesson",
   "span",
   "hint"
@@ -27,6 +29,22 @@
    "in_list_view": 1,
    "label": "Заголовок",
    "reqd": 1
+  },
+  {
+   "default": "text",
+   "description": "text — markdown в блоке; file — файл ученика (таблица, журнал); link — ссылка на внешний документ.",
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Вид",
+   "options": "text\nfile\nlink"
+  },
+  {
+   "depends_on": "eval:doc.kind=='file'",
+   "description": "Расширения через запятую: xlsx,csv.",
+   "fieldname": "accept",
+   "fieldtype": "Data",
+   "label": "Допустимые файлы"
   },
   {
    "description": "На каком уроке блок обычно заполняется. Подсказка агенту, а не ограничение",
@@ -55,7 +73,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-10 12:00:00.000000",
+ "modified": "2026-09-25 18:25:17.638708",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Artifact Block",

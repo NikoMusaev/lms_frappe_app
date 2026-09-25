@@ -16,6 +16,7 @@ from urllib.parse import quote
 import frappe
 
 from lms_frappe_app.agent_learning import (
+	artifact_files,
 	course_builder,
 	course_map,
 	directives,
@@ -72,6 +73,7 @@ from lms_frappe_app.api import контракт, список, текущий_п
 УРОК_В_РАБОТЕ = "lesson_in_use"
 ГЛАВА_НЕ_ПУСТА = "chapter_not_empty"
 НЕВЕРНЫЙ_ВОПРОС = "invalid_question"
+НЕВЕРНЫЙ_ВИД_БЛОКА = "invalid_block_kind"
 
 
 def _автор() -> str:
@@ -441,8 +443,8 @@ def set_course_artifact(
 ) -> dict:
 	"""Задаёт схему документа курса новой версией.
 
-	`blocks` — список `{key, title, hint, lesson, span}` в том порядке, в
-	каком документ читается. Порядок задаётся здесь и нигде больше: ученик
+	`blocks` — список `{key, title, hint, lesson, span, kind, accept}` в том
+	порядке, в каком документ читается. Порядок задаётся здесь и нигде больше: ученик
 	видит блоки в нём же. Подсказка `hint` адресована агенту: что должно
 	оказаться в блоке и когда считать его заполненным.
 
@@ -457,6 +459,15 @@ def set_course_artifact(
 		урок = блок.get("lesson") or None
 		if урок:
 			_должен_существовать("Course Lesson", урок, УРОК_НЕ_НАЙДЕН)
+		# Вид блока: текст, файл ученика или ссылка на внешний документ (#315).
+		вид = блок.get("kind") or artifact_files.ТЕКСТ
+		if вид not in artifact_files.ВИДЫ:
+			raise Отказ(
+				НЕВЕРНЫЙ_ВИД_БЛОКА,
+				"Вид блока: " + ", ".join(artifact_files.ВИДЫ),
+				key=блок.get("key"),
+				kind=вид,
+			)
 		строки.append(
 			{
 				"block_key": блок.get("key"),
@@ -464,6 +475,8 @@ def set_course_artifact(
 				"hint": блок.get("hint"),
 				"lesson": урок,
 				"span": блок.get("span") or 1,
+				"kind": вид,
+				"accept": ",".join(artifact_files.допустимые(блок)) or None,
 			}
 		)
 	версия = directives.записать(
@@ -1300,11 +1313,13 @@ def _действующие_артефакты(course: str) -> list[dict]:
 						"hint": блок.hint or "",
 						"lesson": блок.lesson or None,
 						"span": блок.span or 1,
+						"kind": artifact_files.вид(блок),
+						"accept": artifact_files.допустимые(блок),
 					}
 					for блок in frappe.get_all(
 						"Agent Artifact Block",
 						filters={"parent": запись.name},
-						fields=["block_key", "title", "hint", "lesson", "span"],
+						fields=["block_key", "title", "hint", "lesson", "span", "kind", "accept"],
 						order_by="idx asc",
 					)
 				],

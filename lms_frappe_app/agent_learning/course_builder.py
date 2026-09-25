@@ -143,6 +143,7 @@ def _проверить_количество(элементы: list) -> None:
 БЕЗ_ДИРЕКТИВЫ_КУРСА = "course_without_directive"
 БЕЗ_КВИЗОВ = "course_without_quiz"
 БЕЗ_БЛОКОВ = "artifact_without_blocks"
+ФАЙЛ_БЕЗ_ФОРМАТОВ = "artifact_file_without_accept"
 БЕЗ_ОБЕЩАНИЯ = "course_without_promise"
 БЕЗ_ЗАЧИНА = "lesson_without_hook"
 
@@ -237,6 +238,22 @@ def проверить_готовность(курс: str) -> dict:
 					"message": "Документ объявлен без блоков: ученику нечего заполнять",
 				}
 			)
+		# Блок-файл без списка форматов примет что угодно — ученик загрузит
+		# снимок экрана вместо таблицы, и агент не построит срез (#315).
+		for блок in frappe.get_all(
+			"Agent Artifact Block",
+			filters={"parent": схема.name, "kind": "file"},
+			fields=["block_key", "accept"],
+		):
+			if not (блок.accept or "").strip():
+				стоит_знать.append(
+					{
+						"code": ФАЙЛ_БЕЗ_ФОРМАТОВ,
+						"artifact": схема.slug,
+						"key": блок.block_key,
+						"message": "Блок-файл без допустимых форматов: укажите accept, например xlsx,csv",
+					}
+				)
 
 	return {"blocking": мешает, "warnings": стоит_знать}
 
