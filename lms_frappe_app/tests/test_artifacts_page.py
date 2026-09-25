@@ -79,6 +79,25 @@ class IntegrationTestArtifactsPage(IntegrationTestCase):
 		self.assertTrue(self.сведения_для(посторонний, course=self.курс, artifact="summary")["missing"])
 		self.assertTrue(self.сведения_для(self.ученик, course=self.курс, artifact="lean_canvas")["missing"])
 
+	def test_ссылка_на_курс_показывает_только_его_документы(self):
+		"""Так ведёт «Мои документы» из веб-чата (learning-services#303)."""
+		другой = зачислить(self.ученик, создать_урок(f"Другой {frappe.generate_hash(length=6)}"))
+		frappe.get_doc(
+			{
+				"doctype": "Agent Course Artifact",
+				"course": другой,
+				"slug": "plan",
+				"title": "План",
+				"blocks": [{"block_key": "step", "title": "Шаг"}],
+			}
+		).insert(ignore_permissions=True)
+
+		с = self.сведения_для(self.ученик, course=self.курс)
+		без_документов = self.сведения_для(self.ученик, course="нет-такого-курса")
+
+		self.assertEqual([к["id"] for к in с["courses"]], [self.курс])
+		self.assertIn(другой, [к["id"] for к in без_документов["courses"]], "пустой страницы нет")
+
 	def test_курс_без_документов_в_списке_не_показывается(self):
 		одинокий = создать_ученика(f"page-d-{frappe.generate_hash(length=6)}@example.com")
 		зачислить(одинокий, создать_урок(f"Без документов {frappe.generate_hash(length=6)}"))
