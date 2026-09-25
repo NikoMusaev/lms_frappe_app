@@ -95,6 +95,24 @@ class IntegrationTestArtifactFiles(IntegrationTestCase):
 		self.assertIn("| Месяц | Выручка | Расходы | Прибыль |", срез)
 		self.assertIn("=B2-C2", срез, "у собранного программой файла значения нет — видна формула")
 
+	def test_файл_base64_от_сервиса_ложится_так_же(self):
+		import base64
+
+		ответ = student.upload_artifact_file(
+			self.курс, "plan", "money", file_name="plan.csv", content=base64.b64encode(CSV).decode()
+		)
+
+		self.assertTrue(ответ["ok"], ответ.get("error"))
+		self.assertEqual(ответ["data"]["file"]["name"], "plan.csv")
+		self.assertIn("| Месяц | Выручка | Расходы |", ответ["data"]["preview"])
+
+	def test_битый_base64_отказ_как_пустой_файл(self):
+		ответ = student.upload_artifact_file(
+			self.курс, "plan", "money", file_name="plan.csv", content="не base64!"
+		)
+
+		self.assertEqual(ответ["error"]["code"], artifact_files.ФАЙЛА_НЕТ)
+
 	def test_пустые_колонки_справа_в_срез_не_попадают(self):
 		from openpyxl import Workbook
 		from openpyxl.styles import Font

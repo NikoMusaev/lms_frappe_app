@@ -583,18 +583,28 @@ def update_artifact(
 
 @frappe.whitelist(methods=["POST"])
 @контракт
-def upload_artifact_file(course: str, artifact: str, key: str) -> dict:
-	"""Кладёт файл ученика в блок-файл документа. Файл — полем `file` формы.
+def upload_artifact_file(
+	course: str,
+	artifact: str,
+	key: str,
+	file_name: str | None = None,
+	content: str | None = None,
+) -> dict:
+	"""Кладёт файл ученика в блок-файл документа.
 
-	Зовёт страница «Мои документы», а не агент: байты через параметры MCP
-	пришлось бы гнать base64, десятками тысяч токенов (#258). Файл приватный,
-	привязан к документу ученика, и права на него Frappe берёт у документа:
-	видит только ученик. Новый файл замещает прежний.
+	Файл приходит полем `file` формы — так его шлёт страница «Мои документы»,
+	или парой `file_name` + `content` (base64) — так его передаёт MCP-сервис из
+	окна загрузки в чате (#317). Модель байтов не видит ни в одном случае: окно
+	чата зовёт скрытый от неё инструмент. Файл приватный, привязан к документу
+	ученика, и права на него Frappe берёт у документа: видит только ученик.
+	Новый файл замещает прежний.
 	"""
 	ученик = текущий_пользователь()
 	файл = frappe.request.files.get("file") if frappe.request and frappe.request.files else None
-	имя = (файл.filename if файл else "") or ""
-	данные = файл.stream.read() if файл else b""
+	if файл:
+		имя, данные = файл.filename or "", файл.stream.read()
+	else:
+		имя, данные = file_name or "", artifact_files.из_base64(content)
 	return _положить_файл(ученик, course, artifact, key, имя, данные)
 
 
