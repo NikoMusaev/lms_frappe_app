@@ -1,20 +1,33 @@
 # Copyright (c) 2026, NikoMusaev and contributors
 # For license information, please see license.txt
 
-"""Витрина курса — методы контракта, доступные без входа.
+"""Витрина курса — методы, которые зовут страницы Learning, а не агент.
 
 `Why:` карту курса показывают и гостю, которому курс открывают до
-регистрации. Остальные методы требуют входа: у них есть ученик, чьи данные
-они отдают, а здесь наружу идёт только состав курса и цели его уроков.
+регистрации. Прочие методы ученика требуют входа: у них есть ученик, чьи
+данные они отдают, а здесь наружу идёт только состав курса, цели его уроков
+и то, куда вести ученика с урока.
 """
+
+from urllib.parse import quote
 
 import frappe
 
 from lms_frappe_app.agent_learning import directives
-from lms_frappe_app.agent_learning.errors import Отказ
+from lms_frappe_app.agent_learning.constants import ПРОЙДЕН
+from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learning_settings import (
+	ПУТЬ_ЧАТА,
+	адрес_сервиса,
+	пробных_уроков,
+)
+from lms_frappe_app.agent_learning.errors import УРОК_НЕ_НАЙДЕН, Отказ
 from lms_frappe_app.agent_learning.structure import уроки_по_главам
-from lms_frappe_app.api import контракт
+from lms_frappe_app.api import контракт, текущий_пользователь
 from lms_frappe_app.api.authoring import КУРС_НЕ_НАЙДЕН
+from lms_frappe_app.api.student import веб_уроки_ученика
+
+#: Куда вести ученика, когда веб-чат недоступен: там шаги подключения агента.
+СТРАНИЦА_АГЕНТА = "/agent"
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -66,6 +79,57 @@ def course_map(course: str) -> dict:
 			for глава in структура
 		],
 	}
+
+
+@frappe.whitelist(methods=["GET"])
+@контракт
+def lesson_entry(lesson: str) -> dict:
+	"""Вход в урок: зачин, пройден ли урок и куда вести на занятие.
+
+	Зовёт страница урока в браузере. Урок проходится с наставником, а не
+	чтением, поэтому страница показывает не материал, а дорогу на занятие:
+	в веб-чат на этот урок, пока у ученика остались пробные уроки, иначе — на
+	страницу подключения своего агента.
+
+	Материал и директива сюда не выходят: материал написан для агента, а зачин
+	(`lesson_hook`) — единственное в уроке, что обращено к ученику.
+	"""
+	ученик = текущий_пользователь()
+	урок = frappe.db.get_value(
+		"Course Lesson", lesson, ["name", "title", "course", "lesson_hook"], as_dict=True
+	)
+	if not урок:
+		raise Отказ(УРОК_НЕ_НАЙДЕН, "Урок не найден", id=lesson)
+
+	пройден = frappe.db.exists(
+		"LMS Course Progress", {"member": ученик, "lesson": lesson, "status": ПРОЙДЕН}
+	)
+	return {
+		"lesson": урок.name,
+		"course": урок.course,
+		"title": урок.title,
+		"hook": (урок.lesson_hook or "").strip() or None,
+		"completed": bool(пройден),
+		"study": _куда_на_занятие(ученик, lesson),
+	}
+
+
+def _куда_на_занятие(ученик: str, lesson: str) -> dict:
+	"""Веб-чат на урок, если он ответит, иначе страница подключения агента.
+
+	Урок, уже начатый в веб-чате, пробного не тратит — туда чат пустит всегда,
+	тем же правилом, что и `start_lesson` с каналом `web`.
+	"""
+	сервис = адрес_сервиса()
+	использовано = веб_уроки_ученика(ученик)
+	осталось = max(пробных_уроков() - len(использовано), 0)
+	if сервис and (lesson in использовано or осталось):
+		return {
+			"channel": "web",
+			"url": f"{сервис}{ПУТЬ_ЧАТА}?lesson={quote(lesson, safe='')}",
+			"demo_left": осталось,
+		}
+	return {"channel": "agent", "url": СТРАНИЦА_АГЕНТА, "demo_left": осталось}
 
 
 def _цель(цель: str, покрытие_урока: dict[str, str]) -> dict:

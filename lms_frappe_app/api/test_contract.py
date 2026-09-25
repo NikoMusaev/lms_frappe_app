@@ -28,7 +28,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 import lms_frappe_app.api
-from lms_frappe_app.api import authoring, manager, student
+from lms_frappe_app.api import authoring, manager, public, student
 from lms_frappe_app.tests.sample_data import (
 	добавить_в_организацию,
 	политика_по_умолчанию,
@@ -474,6 +474,7 @@ class IntegrationTestContractExamples(IntegrationTestCase):
 		frappe.set_user(self.ученик)
 		self.сверить("student.list_my_courses", student.list_my_courses())
 		self.сверить("student.course_outline", student.course_outline(course=курс))
+		self.сверить("public.lesson_entry", public.lesson_entry(lesson=с_квизом))
 
 		занятие = self.сверить(
 			"student.start_lesson", student.start_lesson(lesson=с_квизом)
