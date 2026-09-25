@@ -15,7 +15,7 @@ import frappe
 from frappe.query_builder import Order
 from frappe.utils import now_datetime
 
-from lms_frappe_app.agent_learning import directives, quiz
+from lms_frappe_app.agent_learning import artifact_files, directives, quiz
 from lms_frappe_app.agent_learning.access import (
 	НЕ_ЗАЧИСЛЕН,
 	организация_приостановлена,
@@ -515,7 +515,12 @@ def artifact(course: str, artifact: str | None = None) -> dict:
 @frappe.whitelist(methods=["POST"])
 @контракт
 def update_artifact(
-	course: str, artifact: str, key: str, content: str | None = None, clear: bool = False
+	course: str,
+	artifact: str,
+	key: str,
+	content: str | None = None,
+	clear: bool = False,
+	url: str | None = None,
 ) -> dict:
 	"""Записывает блок артефакта целиком — или очищает его.
 
@@ -525,23 +530,23 @@ def update_artifact(
 	подсказке автора, смотрит агент: артефакт на зачёт не влияет, и
 	подыгрывать здесь нечему.
 
-	`clear` удаляет блок из документа ученика; текст при этом не передаётся.
-	`Why:` при смене проекта агенту нечем было убрать старый текст — он висел,
-	пока не находилось, чем его заменить (репорт 8qse4ii3dc). Очистка — только
-	явным флагом: пустой `content` без него по-прежнему отказ, иначе случайная
-	пустая запись стирала бы блок.
+	`url` — адрес внешнего документа у блока-ссылки (`kind: link`); текст при
+	нём необязателен, прежний остаётся. Файл сюда не передаётся: его загружает
+	ученик на странице «Мои документы» (`upload_artifact_file`, #315).
+
+	`clear` удаляет блок из документа ученика — текст, ссылку и файл; текст при
+	этом не передаётся. `Why:` при смене проекта агенту нечем было убрать старый
+	текст — он висел, пока не находилось, чем его заменить (репорт 8qse4ii3dc).
+	Очистка — только явным флагом: пустой `content` без него по-прежнему отказ,
+	иначе случайная пустая запись стирала бы блок.
 	"""
 	ученик = текущий_пользователь()
 	_требовать_доступ_к_курсу(ученик, course)
-	схема = _действующая_схема(course, artifact)
-	ключ = нормализовать_ключ(key)
-	if ключ not in {блок.block_key for блок in схема.blocks}:
-		raise Отказ(
-			БЛОК_НЕ_НАЙДЕН, "В этом документе нет такого блока", artifact=схема.slug, key=key
-		)
+	схема, блок = _блок_схемы(course, artifact, key)
+	ключ = блок.block_key
 	# Флаг приходит и булевым из JSON, и строкой из формы.
 	if clear in (True, 1, "1", "true"):
-		if (content or "").strip():
+		if (content or "").strip() or (url or "").strip():
 			raise Отказ(
 				ОЧИСТКА_С_ТЕКСТОМ,
 				"Очистка блока не принимает текст: либо content, либо clear",
@@ -549,9 +554,94 @@ def update_artifact(
 				key=ключ,
 			)
 		return _очистить_блок(ученик, course, схема, ключ)
-	if not (content or "").strip():
+
+	адрес = None
+	if (url or "").strip():
+		if artifact_files.вид(блок) != artifact_files.ССЫЛКА:
+			raise Отказ(
+				artifact_files.ВИД_НЕ_ТОТ,
+				"Ссылку принимает только блок-ссылка",
+				artifact=схема.slug,
+				key=ключ,
+				kind=artifact_files.вид(блок),
+			)
+		адрес = artifact_files.проверить_ссылку(url)
+	if not (content or "").strip() and not адрес:
 		raise Отказ(ПУСТОЙ_БЛОК, "Блок записывается непустым", artifact=схема.slug, key=ключ)
 
+	документ, строка = _строка_блока(ученик, course, схема, ключ)
+	if (content or "").strip():
+		строка.content = content
+	if адрес:
+		строка.url = адрес
+	документ.schema_version = схема.name
+	документ.save(ignore_permissions=True)
+
+	заполнено = _заполненность(схема, _содержимое(документ), _вложения(документ))
+	return {"artifact": схема.slug, "key": ключ, **заполнено}
+
+
+@frappe.whitelist(methods=["POST"])
+@контракт
+def upload_artifact_file(course: str, artifact: str, key: str) -> dict:
+	"""Кладёт файл ученика в блок-файл документа. Файл — полем `file` формы.
+
+	Зовёт страница «Мои документы», а не агент: байты через параметры MCP
+	пришлось бы гнать base64, десятками тысяч токенов (#258). Файл приватный,
+	привязан к документу ученика, и права на него Frappe берёт у документа:
+	видит только ученик. Новый файл замещает прежний.
+	"""
+	ученик = текущий_пользователь()
+	файл = frappe.request.files.get("file") if frappe.request and frappe.request.files else None
+	имя = (файл.filename if файл else "") or ""
+	данные = файл.stream.read() if файл else b""
+	return _положить_файл(ученик, course, artifact, key, имя, данные)
+
+
+def _положить_файл(ученик: str, course: str, artifact: str, key: str, имя: str, данные: bytes) -> dict:
+	_требовать_доступ_к_курсу(ученик, course)
+	схема, блок = _блок_схемы(course, artifact, key)
+	ключ = блок.block_key
+	тип = artifact_files.проверить_файл(блок, имя, данные, artifact=схема.slug, key=ключ)
+
+	документ, строка = _строка_блока(ученик, course, схема, ключ)
+	if документ.is_new():
+		# Файл привязывается к документу по имени — оно появляется при записи.
+		документ.schema_version = схема.name
+		документ.insert(ignore_permissions=True)
+		строка = next(с for с in документ.blocks if с.block_key == ключ)
+	прежний = строка.file
+	новый = artifact_files.сохранить_файл(документ, имя, данные)
+	строка.file = новый.name
+	строка.preview = artifact_files.срез(данные, тип)
+	документ.schema_version = схема.name
+	документ.save(ignore_permissions=True)
+	artifact_files.удалить_файл(прежний)
+
+	заполнено = _заполненность(схема, _содержимое(документ), _вложения(документ))
+	return {
+		"artifact": схема.slug,
+		"key": ключ,
+		"file": artifact_files.сведения_о_файлах([новый.name])[новый.name],
+		"preview": строка.preview or None,
+		**заполнено,
+	}
+
+
+def _блок_схемы(course: str, artifact: str, key: str):
+	"""Действующая схема и её блок по ключу; нет блока — отказ."""
+	схема = _действующая_схема(course, artifact)
+	ключ = нормализовать_ключ(key)
+	блок = next((б for б in схема.blocks if б.block_key == ключ), None)
+	if блок is None:
+		raise Отказ(
+			БЛОК_НЕ_НАЙДЕН, "В этом документе нет такого блока", artifact=схема.slug, key=key
+		)
+	return схема, блок
+
+
+def _строка_блока(ученик: str, course: str, схема, ключ: str):
+	"""Документ ученика и строка блока в нём; чего нет — заводится, не записываясь."""
 	документ = _экземпляр(ученик, course, схема.slug) or frappe.get_doc(
 		{
 			"doctype": "Agent Student Artifact",
@@ -560,21 +650,14 @@ def update_artifact(
 			"artifact": схема.slug,
 		}
 	)
-	for строка in документ.blocks:
-		if строка.block_key == ключ:
-			строка.content = content
-			break
-	else:
-		документ.append("blocks", {"block_key": ключ, "content": content})
-	документ.schema_version = схема.name
-	документ.save(ignore_permissions=True)
-
-	заполнено = _заполненность(схема, _содержимое(документ))
-	return {"artifact": схема.slug, "key": ключ, **заполнено}
+	строка = next((с for с in документ.blocks if с.block_key == ключ), None)
+	if строка is None:
+		строка = документ.append("blocks", {"block_key": ключ})
+	return документ, строка
 
 
 def _очистить_блок(ученик: str, course: str, схема, ключ: str) -> dict:
-	"""Удаляет строку блока из документа ученика; ответ — как у записи.
+	"""Удаляет строку блока из документа ученика — с файлом; ответ — как у записи.
 
 	Блока нет или документ ещё не заводился — очищать нечего, и это не отказ:
 	результат тот же, что после удаления.
@@ -582,10 +665,12 @@ def _очистить_блок(ученик: str, course: str, схема, кл�
 	документ = _экземпляр(ученик, course, схема.slug)
 	строка = next((с for с in документ.blocks if с.block_key == ключ), None) if документ else None
 	if строка:
+		файл = строка.file
 		документ.remove(строка)
 		документ.schema_version = схема.name
 		документ.save(ignore_permissions=True)
-	заполнено = _заполненность(схема, _содержимое(документ))
+		artifact_files.удалить_файл(файл)
+	заполнено = _заполненность(схема, _содержимое(документ), _вложения(документ))
 	return {"artifact": схема.slug, "key": ключ, **заполнено}
 
 
@@ -971,7 +1056,7 @@ def _блоки_схем(схемы: list[str]) -> dict[str, list]:
 	for строка in frappe.get_all(
 		"Agent Artifact Block",
 		filters={"parent": ("in", схемы), "parenttype": "Agent Course Artifact"},
-		fields=["parent", "block_key", "title", "hint", "lesson", "span"],
+		fields=["parent", "block_key", "title", "hint", "lesson", "span", "kind", "accept"],
 		order_by="parent asc, idx asc",
 	):
 		по_схемам.setdefault(строка.parent, []).append(строка)
@@ -1002,16 +1087,37 @@ def _содержимое(экземпляр) -> dict[str, str]:
 	return {строка.block_key: строка.content or "" for строка in экземпляр.blocks}
 
 
-def _заполненность(схема, содержимое: dict[str, str]) -> dict:
-	ключи = [блок.block_key for блок in схема.blocks]
+def _вложения(экземпляр) -> dict[str, dict]:
+	"""Файл, ссылка и срез блоков документа ученика — по ключу блока."""
+	if not экземпляр:
+		return {}
 	return {
-		"blocks_total": len(ключи),
-		"blocks_filled": sum(1 for ключ in ключи if содержимое.get(ключ, "").strip()),
+		строка.block_key: {"file": строка.file, "url": строка.url, "preview": строка.preview}
+		for строка in экземпляр.blocks
+		if строка.file or строка.url
 	}
 
 
-def _блок(блок, содержимое: dict[str, str]) -> dict:
-	"""Блок схемы с содержимым ученика; пустой — с подсказкой автора."""
+def _заполненность(схема, содержимое: dict[str, str], вложения: dict | None = None) -> dict:
+	"""Заполнен блок, где есть текст, файл или ссылка."""
+	вложения = вложения or {}
+	ключи = [блок.block_key for блок in схема.blocks]
+	return {
+		"blocks_total": len(ключи),
+		"blocks_filled": sum(
+			1 for ключ in ключи if содержимое.get(ключ, "").strip() or ключ in вложения
+		),
+	}
+
+
+def _блок(блок, содержимое: dict[str, str], вложения: dict | None = None, файлы: dict | None = None) -> dict:
+	"""Блок схемы с содержимым ученика; пустой — с подсказкой автора.
+
+	`kind` — вид блока: `text`, `file` или `link`. У файла — сведения о нём и
+	срез таблицы (`preview`), по которому агент сверяет готовность, не открывая
+	файл (#315).
+	"""
+	вложение = (вложения or {}).get(блок.block_key) or {}
 	return {
 		"key": блок.block_key,
 		"title": блок.title,
@@ -1020,12 +1126,21 @@ def _блок(блок, содержимое: dict[str, str]) -> dict:
 		"hint": блок.hint or "",
 		"lesson": блок.lesson or None,
 		"span": блок.span or 1,
+		"kind": artifact_files.вид(блок),
+		"accept": artifact_files.допустимые(блок),
 		"content": содержимое.get(блок.block_key, ""),
+		"file": (файлы or {}).get(вложение.get("file")) if вложение.get("file") else None,
+		"url": вложение.get("url") or None,
+		"preview": вложение.get("preview") or None,
 	}
 
 
-def _содержимое_курса(ученик: str, course: str) -> dict[str, dict[str, str]]:
-	"""Содержимое всех документов ученика по курсу — по ключу документа.
+def _заполнен(блок: dict) -> bool:
+	return bool(блок["content"].strip() or блок["file"] or блок["url"])
+
+
+def _содержимое_курса(ученик: str, course: str) -> tuple[dict[str, dict[str, str]], dict[str, dict]]:
+	"""Содержимое и вложения всех документов ученика по курсу — по ключу документа.
 
 	`Why:` перечень и блоки урока спрашивали документ ученика отдельно на
 	каждую схему, а каждый такой вопрос стоил трёх обходов базы.
@@ -1039,31 +1154,45 @@ def _содержимое_курса(ученик: str, course: str) -> dict[str
 		)
 	}
 	if not экземпляры:
-		return {}
+		return {}, {}
 
 	содержимое: dict[str, dict[str, str]] = {}
+	вложения: dict[str, dict] = {}
 	for строка in frappe.get_all(
 		"Agent Artifact Content",
 		filters={"parent": ("in", list(экземпляры)), "parenttype": "Agent Student Artifact"},
-		fields=["parent", "block_key", "content"],
+		fields=["parent", "block_key", "content", "file", "url", "preview"],
 	):
-		содержимое.setdefault(экземпляры[строка.parent], {})[строка.block_key] = (
-			строка.content or ""
-		)
-	return содержимое
+		документ = экземпляры[строка.parent]
+		содержимое.setdefault(документ, {})[строка.block_key] = строка.content or ""
+		if строка.file or строка.url:
+			вложения.setdefault(документ, {})[строка.block_key] = {
+				"file": строка.file,
+				"url": строка.url,
+				"preview": строка.preview,
+			}
+	return содержимое, вложения
+
+
+def _файлы(вложения: dict) -> dict[str, dict]:
+	"""Сведения о файлах блоков — одним запросом на вызов."""
+	return artifact_files.сведения_о_файлах(
+		[в["file"] for в in вложения.values() if в.get("file")]
+	)
 
 
 def _перечень_артефактов(ученик: str, course: str) -> list[dict]:
-	по_документам = _содержимое_курса(ученик, course)
+	по_документам, вложения = _содержимое_курса(ученик, course)
 	перечень = []
 	for схема in _схемы_курса(course):
-		содержимое = по_документам.get(схема.slug, {})
 		перечень.append(
 			{
 				"artifact": схема.slug,
 				"title": схема.title,
 				"layout": схема.layout,
-				**_заполненность(схема, содержимое),
+				**_заполненность(
+					схема, по_документам.get(схема.slug, {}), вложения.get(схема.slug, {})
+				),
 			}
 		)
 	return перечень
@@ -1073,13 +1202,16 @@ def _артефакт_целиком(ученик: str, course: str, artifact: s
 	"""Блоки в порядке схемы. Блок, убранный из схемы, не показывается, но
 	его содержимое остаётся в базе — вернётся вместе с блоком."""
 	схема = _действующая_схема(course, artifact)
-	содержимое = _содержимое(_экземпляр(ученик, course, схема.slug))
+	экземпляр = _экземпляр(ученик, course, схема.slug)
+	содержимое = _содержимое(экземпляр)
+	вложения = _вложения(экземпляр)
+	файлы = _файлы(вложения)
 	return {
 		"course": course,
 		"artifact": схема.slug,
 		"title": схема.title,
 		"layout": схема.layout,
-		"blocks": [_блок(блок, содержимое) for блок in схема.blocks],
+		"blocks": [_блок(блок, содержимое, вложения, файлы) for блок in схема.blocks],
 	}
 
 
@@ -1090,15 +1222,20 @@ def _блоки_урока(ученик: str, курс: str, lesson: str) -> lis
 		for схема in _схемы_курса(курс)
 	]
 	# Содержимое читается, только если уроку вообще принадлежит хоть один блок.
-	по_документам = (
-		_содержимое_курса(ученик, курс) if any(свои for _, свои in по_схемам) else {}
+	по_документам, вложения = (
+		_содержимое_курса(ученик, курс) if any(свои for _, свои in по_схемам) else ({}, {})
 	)
+	файлы = _файлы({f"{д}/{к}": в for д, блоки in вложения.items() for к, в in блоки.items()})
 	блоки = []
 	for схема, свои in по_схемам:
 		содержимое = по_документам.get(схема.slug, {})
 		for блок in свои:
 			блоки.append(
-				{"artifact": схема.slug, "artifact_title": схема.title, **_блок(блок, содержимое)}
+				{
+					"artifact": схема.slug,
+					"artifact_title": схема.title,
+					**_блок(блок, содержимое, вложения.get(схема.slug, {}), файлы),
+				}
 			)
 	return блоки
 
@@ -1113,7 +1250,7 @@ def _пустые_блоки_урока(ученик: str, курс: str, lesson
 	return [
 		{"artifact": блок["artifact"], "key": блок["key"], "title": блок["title"]}
 		for блок in _блоки_урока(ученик, курс, lesson)
-		if not блок["content"].strip()
+		if not _заполнен(блок)
 	]
 
 

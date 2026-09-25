@@ -365,7 +365,8 @@ Frappe заворачивает результат whitelisted-метода в �
     { "artifact": "project_summary", "artifact_title": "Резюме проекта",
       "key": "goal_and_benefits", "title": "Цель и ожидаемые выгоды",
       "hint": "Конкретно, без клише", "lesson": "lesson-6", "span": 1,
-      "content": "" } ] } }
+      "kind": "text", "accept": [], "content": "", "file": null, "url": null,
+      "preview": null } ] } }
 ```
 
 `course_promise` и `lesson_hook` — обещание курса и зачин урока, `null`, если
@@ -390,7 +391,8 @@ Frappe заворачивает результат whitelisted-метода в �
 `artifact_blocks` — блоки документов курса, привязанные к этому уроку, с
 содержимым ученика. Это подсказка «сегодня собираем резюме проекта», а не
 ограничение: `update_artifact` принимает любой ключ. Пусто, если к уроку не
-привязан ни один блок.
+привязан ни один блок. Поля блока — как у `artifact` с ключом, включая вид,
+файл и срез.
 
 Политика квиза в ответе — **действующая для этого ученика на этом курсе**.
 Курс может быть назначен несколькими организациями сразу: человек вправе
@@ -801,10 +803,28 @@ ISO 8601 со смещением часового пояса сайта; при 
   "blocks": [
     { "key": "goal_and_benefits", "title": "Цель и ожидаемые выгоды",
       "hint": "Конкретно, без клише", "lesson": "lesson-2", "span": 1,
-      "content": "Открыть седьмую кофейню…" },
-    { "key": "scope", "title": "Что входит и что нет",
-      "hint": "…", "lesson": "lesson-2", "span": 1, "content": "" } ] } }
+      "kind": "text", "accept": [], "content": "Открыть седьмую кофейню…",
+      "file": null, "url": null, "preview": null },
+    { "key": "money", "title": "Финансовый план",
+      "hint": "…", "lesson": "lesson-5", "span": 1,
+      "kind": "file", "accept": ["xlsx", "csv"], "content": "",
+      "file": { "name": "plan.xlsx", "type": "xlsx", "size": 18234,
+                "uploaded_at": "2026-09-25T14:02:11", "url": "/private/files/plan.xlsx" },
+      "url": null,
+      "preview": "| Месяц | Выручка | Расходы |\n| --- | --- | --- |\n| Январь | 100 | 80 |" } ] } }
 ```
+
+`kind` — вид блока: `text` — markdown в `content`; `file` — файл ученика
+(таблица, журнал) и текст рядом с ним; `link` — ссылка на внешний документ
+(`url`) и текст рядом. `accept` — расширения, которые принимает блок-файл.
+У файла — `file` со сведениями о нём и `preview`: шапка и первые строки
+таблицы (`csv`, первый лист `xlsx`) markdown-текстом, по которому агент
+сверяет готовность, не открывая файл. Строк в срезе — `artifact_preview_rows`
+из `Agent Learning Settings`; у ячейки с формулой без сохранённого значения в
+срезе стоит сама формула. Файл загружает ученик на странице «Мои документы»
+(`upload_artifact_file`); скачивается он по `file.url` и открывается только
+ученику — права `File` Frappe берёт у документа. Заполнен блок, где есть
+текст, файл или ссылка.
 
 Документы идут в порядке, в каком автор их впервые объявил; правка схемы
 порядка не меняет. Блок, убранный автором из схемы, в ответ не попадает, но
@@ -817,7 +837,8 @@ ISO 8601 со смещением часового пояса сайта; при 
 Записывает блок документа целиком.
 
 **Параметры:** `course`, `artifact`, `key`, `content` (markdown), `clear`
-(необязательный, по умолчанию `false`).
+(необязательный, по умолчанию `false`), `url` (необязательный) — адрес у
+блока-ссылки.
 
 ```json
 { "ok": true, "data": { "artifact": "project_summary", "key": "goal_and_benefits",
@@ -832,19 +853,56 @@ ISO 8601 со смещением часового пояса сайта; при 
 Отвечает ли текст подсказке автора, смотрит агент: артефакт **на зачёт не
 влияет**, зачёт ставит сервер по квизу, и подыгрывать здесь нечему.
 
-`clear: true` очищает блок: его строка удаляется из документа ученика, и в
-`artifact` он снова приходит пустым, с подсказкой автора. `content` при этом
+`url` принимает только блок-ссылка (`kind: link`), и только `http://` или
+`https://`; текст при ссылке необязателен — прежний остаётся. Файл этим
+методом не пишется: его загружает ученик (`upload_artifact_file`).
+
+`clear: true` очищает блок: его строка удаляется из документа ученика вместе
+со ссылкой и файлом, и в `artifact` он снова приходит пустым, с подсказкой
+автора. `content` при этом
 пуст или не передаётся. Ответ тот же, что у записи; очистка блока, которого
 нет, — не отказ. Пустой `content` без `clear` — по-прежнему
 `artifact_content_required`: случайная пустая запись блок не стирает.
 
 **Отказы:** `not_enrolled`, `organization_suspended`, `artifact_not_found`,
 `artifact_block_not_found`, `artifact_content_required`,
-`artifact_clear_with_content` — `clear` вместе с непустым `content`.
+`artifact_clear_with_content` — `clear` вместе с непустым `content` или `url`;
+`artifact_kind_mismatch` (с `kind`) — `url` у блока, который не ссылка;
+`artifact_invalid_url` — адрес не `http(s)`.
 
 Документ ученика видит только сам ученик: руководителю он не отдаётся ни
 методом отчётности, ни прямым чтением записи. `Why:` артефакт — рабочий
 документ, а не отчётность; менеджеру идёт покрытие целей.
+
+## `lms_frappe_app.api.student.upload_artifact_file`
+
+Кладёт файл ученика в блок-файл документа. Зовёт страница «Мои документы», а
+не агент: байты через параметры MCP пришлось бы передавать base64 — десятки
+тысяч токенов на файл.
+
+**Параметры:** `course`, `artifact`, `key` и сам файл — полем `file` формы
+`multipart/form-data`.
+
+```json
+{ "ok": true, "data": { "artifact": "plan", "key": "money",
+  "file": { "name": "plan.xlsx", "type": "xlsx", "size": 18234,
+            "uploaded_at": "2026-09-25T14:02:11", "url": "/private/files/plan.xlsx" },
+  "preview": "| Месяц | Выручка | Расходы |\n| --- | --- | --- |\n| Январь | 100 | 80 |",
+  "blocks_total": 3, "blocks_filled": 1 } }
+```
+
+Файл приватный и привязан к документу ученика: права на него Frappe берёт у
+документа, и открыть его может только ученик — ни руководитель, ни другой
+ученик. Новый файл замещает прежний, прежний удаляется. Срез (`preview`)
+считается сразу при загрузке; для файла, который не таблица, или нечитаемой
+таблицы — `null`, а файл всё равно сохраняется.
+
+**Отказы:** `not_enrolled`, `organization_suspended`, `artifact_not_found`,
+`artifact_block_not_found`; `artifact_kind_mismatch` (с `kind`) — блок не
+принимает файлы; `artifact_file_missing` — файл не передан или пуст;
+`artifact_file_type` (с `accept` и `received`) — расширение не из допустимых;
+`artifact_file_too_large` (с `max_bytes` и `size`) — больше
+`artifact_file_max_mb` из `Agent Learning Settings`.
 
 ## `lms_frappe_app.api.student.remember`
 
@@ -1474,8 +1532,14 @@ ISO 8601 со смещением часового пояса сайта; при 
 { "blocks": [
   { "key": "goal_and_benefits", "title": "Цель и ожидаемые выгоды",
     "hint": "Конкретно, без клише; готов, когда назван результат",
-    "lesson": "lesson-2", "span": 1 } ] }
+    "lesson": "lesson-2", "span": 1 },
+  { "key": "money", "title": "Финансовый план", "hint": "…",
+    "lesson": "lesson-5", "kind": "file", "accept": "xlsx,csv" } ] }
 ```
+
+`kind` — вид блока: `text` (по умолчанию), `file` — файл ученика, `link` —
+ссылка на внешний документ. `accept` — допустимые расширения блока-файла,
+строкой через запятую или списком; точки и регистр не важны.
 
 Порядок блоков задаётся здесь и нигде больше: ученик видит их в нём же.
 `hint` адресована агенту ученика; `lesson` — на каком уроке блок обычно
@@ -1488,11 +1552,14 @@ ISO 8601 со смещением часового пояса сайта; при 
 ```
 
 **Отказы:** `course_not_found`, `lesson_not_found` — блок ссылается на
-несуществующий урок.
+несуществующий урок; `invalid_block_kind` (с `key` и `kind`) — вид не из
+`text`, `file`, `link`.
 
 Схема без блоков даёт предупреждение `artifact_without_blocks` в
 `readiness` — публикацию оно не блокирует: курс без документа — нормальный
-курс.
+курс. Блок-файл без `accept` — предупреждение `artifact_file_without_accept`
+(с `key`): такой блок примет любой файл, и срез для агента может не
+построиться.
 
 ## `lms_frappe_app.api.authoring.add_quiz`
 
@@ -1648,7 +1715,8 @@ ISO 8601 со смещением часового пояса сайта; при 
   "artifacts": [ { "id": "ACA-00001", "version": 1,
     "artifact": "project_summary", "title": "Резюме проекта",
     "layout": "sections", "blocks": [ { "key": "goal_and_benefits",
-      "title": "…", "hint": "…", "lesson": "lesson-1", "span": 1 } ] } ],
+      "title": "…", "hint": "…", "lesson": "lesson-1", "span": 1,
+      "kind": "text", "accept": [] } ] } ],
   "readiness": { "blocking": [], "warnings": [
     { "code": "lesson_without_directive", "lesson": "lesson-1",
       "message": "Урок без директивы" } ] },
@@ -1892,7 +1960,7 @@ ISO 8601 со смещением часового пояса сайта; при 
 
 Отказ приходит кодом `course_not_ready`, список — в поле `problems`.
 Предупреждения (`lesson_without_directive`, `course_without_directive`,
-`course_without_quiz`, `artifact_without_blocks`) публикацию не блокируют и
+`course_without_quiz`, `artifact_without_blocks`, `artifact_file_without_accept`) публикацию не блокируют и
 возвращаются в успешном ответе.
 
 **Отказы:** `course_not_found`, `course_not_ready` (с `problems`).

@@ -127,10 +127,13 @@ def _документ_по_участникам(курс: str, участник�
 	for строка in frappe.get_all(
 		"Agent Artifact Content",
 		filters={"parent": ("in", list(экземпляры)), "parenttype": "Agent Student Artifact"},
-		fields=["parent", "block_key", "content"],
+		fields=["parent", "block_key", "content", "file", "url"],
 	):
 		экземпляр = экземпляры[строка.parent]
-		if строка.block_key in ключи.get(экземпляр.artifact, ()) and (строка.content or "").strip():
+		# Заполнен блок с текстом, файлом или ссылкой (#315); сам файл отчёт
+		# не показывает — только то, что блок не пуст.
+		непуст = (строка.content or "").strip() or строка.file or строка.url
+		if строка.block_key in ключи.get(экземпляр.artifact, ()) and непуст:
 			заполнено[экземпляр.student] = заполнено.get(экземпляр.student, 0) + 1
 	return всего, заполнено
 

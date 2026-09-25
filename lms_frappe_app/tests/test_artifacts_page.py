@@ -94,3 +94,51 @@ class IntegrationTestArtifactsPage(IntegrationTestCase):
 		self.assertTrue(текст.startswith("# Резюме проекта\n"))
 		self.assertIn("## Цель\n\nОткрыть **седьмую** кофейню", текст)
 		self.assertIn("## Спонсор\n\n_Не заполнено._", текст)
+
+
+class IntegrationTestArtifactsPageFiles(IntegrationTestCase):
+	"""Блок-файл и блок-ссылка на странице (learning-services#315)."""
+
+	def setUp(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		суффикс = frappe.generate_hash(length=6)
+		self.ученик = создать_ученика(f"page-f-{суффикс}@example.com")
+		урок = создать_урок(f"Урок {суффикс}")
+		self.курс = зачислить(self.ученик, урок)
+		frappe.get_doc(
+			{
+				"doctype": "Agent Course Artifact",
+				"course": self.курс,
+				"slug": "plan",
+				"title": "План",
+				"blocks": [
+					{"block_key": "money", "title": "Финплан", "kind": "file", "accept": "xlsx,csv"},
+					{"block_key": "crm", "title": "База клиентов", "kind": "link"},
+				],
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+		student._положить_файл(self.ученик, self.курс, "plan", "money", "plan.csv", "Месяц;Выручка\nЯнварь;100\n".encode())
+		student.update_artifact(self.курс, "plan", "crm", url="https://crm.example.com")
+
+	def test_страница_рисует_файл_срез_загрузку_и_ссылку(self):
+		from frappe.website.serve import get_response_content
+
+		frappe.local.form_dict = frappe._dict(course=self.курс, artifact="plan")
+		html = get_response_content("artifacts")
+
+		self.assertIn("plan.csv", html)
+		self.assertIn('accept=".xlsx,.csv"', html)
+		self.assertIn("Что видит агент", html)
+		self.assertIn("<td>Январь</td>", html)
+		self.assertIn('href="https://crm.example.com"', html)
+		self.assertIn("upload_artifact_file", html)
+
+	def test_markdown_называет_файл_и_ссылку(self):
+		from lms_frappe_app.www.artifacts import собрать_markdown, сведения
+
+		текст = собрать_markdown(сведения(self.ученик, course=self.курс, artifact="plan")["document"])
+
+		self.assertIn("Файл: plan.csv", текст)
+		self.assertIn("| Месяц | Выручка |", текст)
+		self.assertIn("Ссылка: https://crm.example.com", текст)
