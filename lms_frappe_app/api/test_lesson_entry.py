@@ -20,6 +20,7 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learnin
 from lms_frappe_app.agent_learning.errors import УРОК_НЕ_НАЙДЕН
 from lms_frappe_app.api import public, student
 from lms_frappe_app.tests.sample_data import (
+	привязать_урок,
 	зачислить,
 	политика_по_умолчанию,
 	создать_урок,
@@ -129,3 +130,49 @@ class IntegrationTestLessonEntry(IntegrationTestCase):
 
 		with self.assertRaises(frappe.AuthenticationError):
 			public.lesson_entry(lesson=self.уроки[0])
+
+	# --- вход по курсу: кнопка «Продолжить» (learning-services#301) ---
+
+	def курс_из_двух_уроков(self) -> tuple[str, list[str]]:
+		frappe.set_user("Administrator")
+		первый = self.уроки[0]
+		глава = frappe.db.get_value("Course Lesson", первый, "chapter")
+		второй = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": f"Второй {frappe.generate_hash(length=6)}", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		привязать_урок(глава, второй)
+		курс = frappe.db.get_value("Course Chapter", глава, "course")
+		return курс, [первый, второй]
+
+	def пройти(self, урок: str) -> None:
+		frappe.get_doc(
+			{"doctype": "LMS Course Progress", "member": self.ученик, "lesson": урок, "status": "Complete"}
+		).insert(ignore_permissions=True)
+
+	def test_по_курсу_ведёт_в_первый_незакрытый_урок(self):
+		курс, (первый, второй) = self.курс_из_двух_уроков()
+		self.пройти(первый)
+		frappe.set_user(self.ученик)
+
+		вход = public.lesson_entry(course=курс)["data"]
+
+		self.assertEqual(вход["lesson"], второй)
+		self.assertIn(quote(второй, safe=""), вход["study"]["url"])
+
+	def test_пройденный_курс_ведёт_в_первый_урок_для_повтора(self):
+		курс, (первый, второй) = self.курс_из_двух_уроков()
+		self.пройти(первый)
+		self.пройти(второй)
+		frappe.set_user(self.ученик)
+
+		вход = public.lesson_entry(course=курс)["data"]
+
+		self.assertEqual(вход["lesson"], первый)
+		self.assertTrue(вход["completed"])
+
+	def test_курс_без_уроков_и_пустой_вызов_отказываются(self):
+		for параметры in ({"course": "нет-такого-курса"}, {}):
+			with self.subTest(параметры=параметры):
+				ответ = public.lesson_entry(**параметры)
+				self.assertFalse(ответ["ok"])
+				self.assertEqual(ответ["error"]["code"], УРОК_НЕ_НАЙДЕН)

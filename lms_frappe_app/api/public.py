@@ -21,10 +21,10 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learnin
 	пробных_уроков,
 )
 from lms_frappe_app.agent_learning.errors import УРОК_НЕ_НАЙДЕН, Отказ
-from lms_frappe_app.agent_learning.structure import уроки_по_главам
+from lms_frappe_app.agent_learning.structure import уроки_курса, уроки_по_главам
 from lms_frappe_app.api import контракт, текущий_пользователь
 from lms_frappe_app.api.authoring import КУРС_НЕ_НАЙДЕН
-from lms_frappe_app.api.student import веб_уроки_ученика
+from lms_frappe_app.api.student import _следующий_урок, веб_уроки_ученика
 
 #: Куда вести ученика, когда веб-чат недоступен: там шаги подключения агента.
 СТРАНИЦА_АГЕНТА = "/agent"
@@ -83,7 +83,7 @@ def course_map(course: str) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 @контракт
-def lesson_entry(lesson: str) -> dict:
+def lesson_entry(lesson: str | None = None, course: str | None = None) -> dict:
 	"""Вход в урок: зачин, пройден ли урок и куда вести на занятие.
 
 	Зовёт страница урока в браузере. Урок проходится с наставником, а не
@@ -91,15 +91,23 @@ def lesson_entry(lesson: str) -> dict:
 	в веб-чат на этот урок, пока у ученика остались пробные уроки, иначе — на
 	страницу подключения своего агента.
 
+	Только `course` — вход в следующий незакрытый урок этого курса: так кнопка
+	«Продолжить» на странице курса ведёт прямо на занятие
+	(learning-services#301). `Why:` «текущий урок» Learning двигает таймер
+	просмотра, а его мы отключили (#305), и по нему кнопка всегда вела бы на
+	первый урок. Курс пройден целиком — первый урок, для повтора.
+
 	Материал и директива сюда не выходят: материал написан для агента, а зачин
 	(`lesson_hook`) — единственное в уроке, что обращено к ученику.
 	"""
 	ученик = текущий_пользователь()
-	урок = frappe.db.get_value(
+	if not lesson and course:
+		lesson = _урок_для_продолжения(ученик, course)
+	урок = lesson and frappe.db.get_value(
 		"Course Lesson", lesson, ["name", "title", "course", "lesson_hook"], as_dict=True
 	)
 	if not урок:
-		raise Отказ(УРОК_НЕ_НАЙДЕН, "Урок не найден", id=lesson)
+		raise Отказ(УРОК_НЕ_НАЙДЕН, "Урок не найден", id=lesson or course)
 
 	пройден = frappe.db.exists(
 		"LMS Course Progress", {"member": ученик, "lesson": lesson, "status": ПРОЙДЕН}
@@ -112,6 +120,15 @@ def lesson_entry(lesson: str) -> dict:
 		"completed": bool(пройден),
 		"study": _куда_на_занятие(ученик, lesson),
 	}
+
+
+def _урок_для_продолжения(ученик: str, course: str) -> str | None:
+	"""Первый незакрытый урок курса, а у пройденного курса — первый урок."""
+	следующий = _следующий_урок(ученик, course)
+	if следующий:
+		return следующий["id"]
+	уроки = уроки_курса(course)
+	return уроки[0] if уроки else None
 
 
 def _куда_на_занятие(ученик: str, lesson: str) -> dict:
