@@ -95,7 +95,7 @@ class IntegrationTestChatState(IntegrationTestCase):
 
 	def test_закрытое_занятие_принимает_состояние(self):
 		# Квиз закрывает занятие посреди хода, а состояние пишется после хода:
-		# отказ здесь терял бы последний ответ наставника.
+		# отказ здесь терял бы последний ответ агента.
 		frappe.db.set_value("Agent Learning Session", self.занятие, "status", "Completed")
 
 		ответ = student.save_chat_state(self.занятие, СОСТОЯНИЕ, "1")

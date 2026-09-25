@@ -1,7 +1,7 @@
 # Copyright (c) 2026, NikoMusaev and contributors
 # For license information, please see license.txt
 
-"""Урок закрывает занятие с наставником, а не просмотр страницы.
+"""Урок закрывает занятие с агентом, а не просмотр страницы.
 
 `Why:` Frappe Learning закрывает урок сам: страница урока через
 `lesson_dwell_time` секунд зовёт `save_progress`, и появляется
@@ -17,14 +17,14 @@
 
 Чего не делает: не трогает браузерный квиз урока — он закрывает урок другим
 методом, `mark_lesson_progress`, — и прогресс SCORM-главы, который идёт этим
-же методом с `scorm_details`: занятия с наставником по SCORM-пакету нет.
+же методом с `scorm_details`: занятия с агентом по SCORM-пакету нет.
 """
 
 import frappe
 from lms.lms.doctype.course_lesson.course_lesson import save_progress as save_progress_learning
 
 ПОДМЕНЯЕМЫЙ = "lms.lms.doctype.course_lesson.course_lesson.save_progress"
-ОТКАЗ = "Урок закрывается на занятии с наставником — в веб-чате или у вашего агента"
+ОТКАЗ = "Урок закрывается на занятии с агентом — в веб-чате платформы или через вашего агента"
 
 
 @frappe.whitelist()
