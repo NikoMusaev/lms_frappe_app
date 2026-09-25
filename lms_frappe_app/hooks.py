@@ -291,10 +291,14 @@ before_tests = "lms_frappe_app.testing.before_tests"
 
 # Overriding Methods
 # ------------------------------
-#
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "lms_frappe_app.event.get_events"
-# }
+
+# Урок закрывает занятие с наставником, а не время на странице урока —
+# обоснование в модуле (lms-platform#305).
+override_whitelisted_methods = {
+	"lms.lms.doctype.course_lesson.course_lesson.save_progress": (
+		"lms_frappe_app.agent_learning.browser_progress.save_progress"
+	),
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
