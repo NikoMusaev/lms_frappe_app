@@ -489,8 +489,18 @@ Frappe Learning, медиа вынесены в `media`. Длинный урок
 отчёт вырождается в пустой список.
 
 ```json
-{ "ok": true, "data": { "session": "sess-01H…", "reported": 3 } }
+{ "ok": true, "data": { "session": "sess-01H…", "reported": 3,
+  "empty_blocks": [ { "artifact": "risk_register", "key": "goals",
+                      "title": "Цели проекта" } ] } }
 ```
+
+`empty_blocks` — блоки документов курса, которые собирают на этом уроке (`lesson`
+блока в схеме), а у ученика они пусты; пустой список, если таких нет. Это
+предупреждение, а не отказ: квиз и закрытие урока от него не зависят. Агент
+предлагает заполнить блок до конца занятия или оставить в домашнем задании.
+`Why:` урок засчитывает квиз, и документ курса можно было оставить пустым
+незаметно; запрет давал бы обход — «непустой» ещё не значит «готов», а блок
+часто доводят после занятия (решение владельца, learning-services#296).
 
 Отчёт замещается целиком: повторный вызов переписывает прежний. Поэтому
 `objectives_skipped` у `request_quiz` не создаёт тупика — разобрали
@@ -564,8 +574,12 @@ Frappe Learning, медиа вынесены в `media`. Длинный урок
 ```json
 { "ok": true, "data": {
   "lesson": "lesson-6", "session_status": "Completed",
-  "next_lesson": { "id": "lesson-7", "title": "Функции" } } }
+  "next_lesson": { "id": "lesson-7", "title": "Функции" },
+  "empty_blocks": [] } }
 ```
+
+`empty_blocks` — как у `report_outcomes`: пустые блоки документа этого урока на
+момент закрытия. Урок закрывается и с ними.
 
 **Отказы:** `not_your_session`; `session_closed` (с `status`) — занятие уже
 закрыто, `Completed` или `Abandoned`; `outcomes_required` — отчёт по целям
@@ -906,12 +920,18 @@ ISO 8601 со смещением часового пояса сайта; при 
 { "ok": true, "data": {
   "courses_total": 3, "courses_overdue": 1,
   "courses": [ { "id": "course-basics", "title": "Основы", "deadline": "2026-09-15",
-                 "overdue": false, "completion": 0.42 } ],
+                 "overdue": false, "completion": 0.42,
+                 "documents": [ { "artifact": "summary", "title": "Резюме проекта",
+                                  "layout": "sections",
+                                  "blocks_total": 6, "blocks_filled": 4 } ] } ],
   "recent_sessions": [ { "lesson": "lesson-6", "status": "Completed",
                          "started_at": "2026-09-01T12:20:00" } ] } }
 ```
 
 `completion` — доля пройденных уроков курса, округлённая до сотых.
+`documents` — документы курса и сколько блоков в них заполнено, как в перечне
+`artifact`; отдельно от `completion`, потому что урок засчитывает квиз, а не
+документ. У курса без документов — пустой список.
 `recent_sessions` — последние занятия ученика по всем курсам, свежие вперёд.
 
 **Отказов нет.**
@@ -969,8 +989,14 @@ ISO 8601 со смещением часового пояса сайта; при 
     "course": "course-basics", "organization": "Компания",
     "status": "in_progress", "progress": 0.42,
     "deadline": "2026-09-15", "mandatory": true, "overdue": false,
-    "last_activity": "2026-09-01T12:20:00" } ] } }
+    "last_activity": "2026-09-01T12:20:00",
+    "document": { "blocks_total": 11, "blocks_filled": 7 } } ] } }
 ```
+
+`document` — сколько блоков во всех документах курса и сколько из них заполнил
+ученик. Считаются блоки действующих схем; у курса без документов — нули.
+Отдельно от `progress`: урок засчитывает квиз, и без этой пары пройденный курс
+с пустым документом не отличить от собранного.
 
 `status` — `not_started`, `in_progress` или `completed`; параметром `status`
 выдача сужается до одного из них. Руководителю без организаций приходит

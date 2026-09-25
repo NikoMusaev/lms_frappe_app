@@ -18,6 +18,7 @@ from lms_frappe_app.agent_learning.doctype.course_allocation.course_allocation i
 )
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.structure import уроки_курса
+from lms_frappe_app.api.student import _схемы_курса
 from lms_frappe_app.agent_learning.permissions import (
 	организации_менеджера,
 	свои_организации_пересекаются,
@@ -55,6 +56,7 @@ def org_report(course: str | None = None, status: str | None = None) -> dict:
 		пройдено = _пройдено_по_участникам(назначение.course, участники, уроки)
 		имена = _имена(участники)
 		последняя_активность = _последняя_активность(назначение.course, участники)
+		всего_блоков, заполнено_блоков = _документ_по_участникам(назначение.course, участники)
 
 		for участник in участники:
 			строка = _строка_отчёта(
@@ -64,6 +66,10 @@ def org_report(course: str | None = None, status: str | None = None) -> dict:
 				пройдено=пройдено.get(участник, 0),
 				имя=имена.get(участник),
 				активность=последняя_активность.get(участник),
+				документ={
+					"blocks_total": всего_блоков,
+					"blocks_filled": заполнено_блоков.get(участник, 0),
+				},
 			)
 			if status and строка["status"] != status:
 				continue
@@ -91,6 +97,42 @@ def _пройдено_по_участникам(
 		if запись.lesson in в_курсе:
 			пройдено.setdefault(запись.member, set()).add(запись.lesson)
 	return {участник: len(уроки) for участник, уроки in пройдено.items()}
+
+
+def _документ_по_участникам(курс: str, участники: list[str]) -> tuple[int, dict[str, int]]:
+	"""Сколько блоков в документах курса и сколько заполнил каждый.
+
+	Считаются блоки действующих схем: убранный из схемы блок не засчитывается,
+	даже если текст в базе остался. Два запроса на курс, не на участника.
+	`Why:` урок засчитывает квиз, и без этой колонки руководитель не отличит
+	пройденный курс с пустым документом от собранного (learning-services#296).
+	"""
+	ключи = {схема.slug: {б.block_key for б in схема.blocks} for схема in _схемы_курса(курс)}
+	всего = sum(len(к) for к in ключи.values())
+	if not всего:
+		return 0, {}
+
+	экземпляры = {
+		запись.name: запись
+		for запись in frappe.get_all(
+			"Agent Student Artifact",
+			filters={"course": курс, "student": ("in", участники)},
+			fields=["name", "student", "artifact"],
+		)
+	}
+	if not экземпляры:
+		return всего, {}
+
+	заполнено: dict[str, int] = {}
+	for строка in frappe.get_all(
+		"Agent Artifact Content",
+		filters={"parent": ("in", list(экземпляры)), "parenttype": "Agent Student Artifact"},
+		fields=["parent", "block_key", "content"],
+	):
+		экземпляр = экземпляры[строка.parent]
+		if строка.block_key in ключи.get(экземпляр.artifact, ()) and (строка.content or "").strip():
+			заполнено[экземпляр.student] = заполнено.get(экземпляр.student, 0) + 1
+	return всего, заполнено
 
 
 def _названия_курсов(курсы: list[str]) -> dict[str, str]:
@@ -251,6 +293,7 @@ def _строка_отчёта(
 	пройдено: int,
 	имя: str | None,
 	активность,
+	документ: dict,
 ) -> dict:
 	from frappe.utils import getdate, nowdate
 
@@ -281,6 +324,7 @@ def _строка_отчёта(
 			and getdate(назначение.deadline) < getdate(nowdate())
 		),
 		"last_activity": активность.isoformat() if активность else None,
+		"document": документ,
 	}
 
 

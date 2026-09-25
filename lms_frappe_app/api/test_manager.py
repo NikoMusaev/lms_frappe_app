@@ -68,6 +68,43 @@ class IntegrationTestManagerAPI(IntegrationTestCase):
 		self.assertTrue(строка["mandatory"])
 		self.assertFalse(строка["overdue"])
 
+	def test_отчёт_показывает_заполненность_документа(self):
+		"""Урок засчитывает квиз — документ виден отдельно (learning-services#296)."""
+		frappe.get_doc(
+			{
+				"doctype": "Agent Course Artifact",
+				"course": self.курс,
+				"slug": "summary",
+				"title": "Резюме",
+				"blocks": [
+					{"block_key": "goal", "title": "Цель"},
+					{"block_key": "sponsor", "title": "Спонсор"},
+				],
+			}
+		).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Agent Student Artifact",
+				"student": self.ученик_а,
+				"course": self.курс,
+				"artifact": "summary",
+				"blocks": [
+					{"block_key": "goal", "content": "Открыть кофейню"},
+					{"block_key": "sponsor", "content": "  "},
+					{"block_key": "removed", "content": "из старой схемы"},
+				],
+			}
+		).insert(ignore_permissions=True)
+
+		строка = next(с for с in self.отчёт() if с["user"] == self.ученик_а)
+
+		self.assertEqual(строка["document"], {"blocks_total": 2, "blocks_filled": 1})
+
+	def test_курс_без_документа_даёт_нули(self):
+		строка = next(с for с in self.отчёт() if с["user"] == self.ученик_а)
+
+		self.assertEqual(строка["document"], {"blocks_total": 0, "blocks_filled": 0})
+
 	def test_фильтр_по_статусу_отсекает_остальных(self):
 		self.assertEqual(self.отчёт(status="completed"), [])
 		self.assertTrue(self.отчёт(status="not_started"))

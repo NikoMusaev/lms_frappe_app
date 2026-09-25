@@ -1328,3 +1328,44 @@ class IntegrationTestArtifacts(IntegrationTestCase):
 
 	def test_урок_без_блоков_отдаёт_пустой_список(self):
 		self.assertEqual(student.start_lesson(lesson=self.урок)["data"]["artifact_blocks"], [])
+
+	# --- готовность документа (learning-services#296) ---
+
+	def test_отчёт_и_закрытие_предупреждают_о_пустом_блоке_урока(self):
+		"""Предупреждение, а не отказ: урок закрывается и с пустым блоком."""
+		self.схема(
+			blocks=[
+				{"block_key": "goal", "title": "Цель", "lesson": self.урок},
+				{"block_key": "sponsor", "title": "Спонсор"},
+			]
+		)
+		занятие = student.start_lesson(lesson=self.урок)["data"]["session"]
+		пустые = [{"artifact": "summary", "key": "goal", "title": "Цель"}]
+
+		отчёт = student.report_outcomes(занятие, outcomes=[])["data"]
+		закрытие = student.complete_lesson(занятие)["data"]
+
+		self.assertEqual(отчёт["empty_blocks"], пустые, "блок без урока не в счёт")
+		self.assertEqual(закрытие["empty_blocks"], пустые)
+		self.assertEqual(закрытие["session_status"], "Completed")
+
+	def test_заполненный_блок_урока_не_предупреждает(self):
+		self.схема(blocks=[{"block_key": "goal", "title": "Цель", "lesson": self.урок}])
+		student.update_artifact(self.курс, "summary", "goal", "Открыть кофейню")
+		занятие = student.start_lesson(lesson=self.урок)["data"]["session"]
+
+		отчёт = student.report_outcomes(занятие, outcomes=[])["data"]
+
+		self.assertEqual(отчёт["empty_blocks"], [])
+
+	def test_прогресс_показывает_заполненность_документа(self):
+		student.update_artifact(self.курс, "summary", "goal", "Открыть кофейню")
+
+		курс = next(
+			к for к in student.get_my_progress()["data"]["courses"] if к["id"] == self.курс
+		)
+
+		self.assertEqual(
+			[(д["artifact"], д["blocks_total"], д["blocks_filled"]) for д in курс["documents"]],
+			[("summary", 2, 1)],
+		)
