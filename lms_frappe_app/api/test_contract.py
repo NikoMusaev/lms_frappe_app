@@ -475,6 +475,7 @@ class IntegrationTestContractExamples(IntegrationTestCase):
 		self.сверить("student.list_my_courses", student.list_my_courses())
 		self.сверить("student.course_outline", student.course_outline(course=курс))
 		self.сверить("public.lesson_entry", public.lesson_entry(lesson=с_квизом))
+		self.сверить("public.course_map", public.course_map(course=курс))
 
 		занятие = self.сверить(
 			"student.start_lesson", student.start_lesson(lesson=с_квизом)

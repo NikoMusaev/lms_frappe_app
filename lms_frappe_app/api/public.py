@@ -24,7 +24,7 @@ from lms_frappe_app.agent_learning.errors import УРОК_НЕ_НАЙДЕН, О�
 from lms_frappe_app.agent_learning.structure import уроки_курса, уроки_по_главам
 from lms_frappe_app.api import контракт, текущий_пользователь
 from lms_frappe_app.api.authoring import КУРС_НЕ_НАЙДЕН
-from lms_frappe_app.api.student import _следующий_урок, веб_уроки_ученика
+from lms_frappe_app.api.student import _пройденные, _следующий_урок, веб_уроки_ученика
 
 #: Куда вести ученика, когда веб-чат недоступен: там шаги подключения агента.
 СТРАНИЦА_АГЕНТА = "/agent"
@@ -42,6 +42,12 @@ def course_map(course: str) -> dict:
 	Из директивы наружу выходят ровно две вещи: цели и иконка. Всё
 	остальное — как вести урок, проверочные вопросы, заблуждения, критерии —
 	остаётся на сервере.
+
+	Зачин урока (`hook`) обращён к ученику и виден всем. Зачисленному — ещё
+	пройденность урока (`completed`) и следующий незакрытый урок курса
+	(`next_lesson`): из них страница курса рисует программу с отметкой статуса
+	(learning-services#322). Прочим этих ключей нет — по тому же правилу, что
+	у `status` цели.
 	"""
 	зачислен = _зачислен(course)
 	if not зачислен and not frappe.db.get_value("LMS Course", course, "published"):
@@ -52,29 +58,39 @@ def course_map(course: str) -> dict:
 	структура = уроки_по_главам(course)
 	порядок = [урок for глава in структура for урок in глава["lessons"]]
 	названия = _названия(порядок)
+	зачины = _зачины(порядок)
 	из_директив = {урок: _директива_карты(урок) for урок in порядок}
 	покрытие = _покрытие(порядок) if зачислен else {}
 	номера = {урок: номер for номер, урок in enumerate(порядок, start=1)}
+	ученику = {}
+	if зачислен:
+		пройдены = _пройденные(frappe.session.user, course)
+		следующий = _следующий_урок(frappe.session.user, course)
+		ученику = {"next_lesson": следующий["id"] if следующий else None}
+
+	def _урок(урок: str) -> dict:
+		данные = {
+			"id": урок,
+			"number": номера[урок],
+			"title": названия.get(урок),
+			"hook": зачины.get(урок),
+			"icon": из_директив[урок]["icon"],
+			"objectives": [
+				_цель(цель, покрытие.get(урок, {})) for цель in из_директив[урок]["objectives"]
+			],
+		}
+		if зачислен:
+			данные["completed"] = урок in пройдены
+		return данные
 
 	return {
 		"course": course,
 		"title": frappe.db.get_value("LMS Course", course, "title"),
+		**ученику,
 		"chapters": [
 			{
 				"title": глава["title"],
-				"lessons": [
-					{
-						"id": урок,
-						"number": номера[урок],
-						"title": названия.get(урок),
-						"icon": из_директив[урок]["icon"],
-						"objectives": [
-							_цель(цель, покрытие.get(урок, {}))
-							for цель in из_директив[урок]["objectives"]
-						],
-					}
-					for урок in глава["lessons"]
-				],
+				"lessons": [_урок(урок) for урок in глава["lessons"]],
 			}
 			for глава in структура
 		],
@@ -171,6 +187,18 @@ def _названия(уроки: list[str]) -> dict[str, str]:
 		урок.name: урок.title
 		for урок in frappe.get_all(
 			"Course Lesson", filters={"name": ("in", уроки)}, fields=["name", "title"]
+		)
+	}
+
+
+def _зачины(уроки: list[str]) -> dict[str, str | None]:
+	"""Зачины уроков одним запросом; пустой — `None`, как у `lesson_entry`."""
+	if not уроки:
+		return {}
+	return {
+		урок.name: (урок.lesson_hook or "").strip() or None
+		for урок in frappe.get_all(
+			"Course Lesson", filters={"name": ("in", уроки)}, fields=["name", "lesson_hook"]
 		)
 	}
 

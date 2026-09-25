@@ -88,6 +88,52 @@ class IntegrationTestCourseMap(IntegrationTestCase):
 			{"Назвать спонсора проекта": "covered", "Отличить проект от операций": "touched"},
 		)
 
+	# --- программа курса: зачин, пройденность, следующий урок (learning-services#322) ---
+
+	def test_гость_видит_зачин_но_не_свой_путь(self):
+		frappe.db.set_value("Course Lesson", self.урок, "lesson_hook", "  Зачем это вам  ")
+		frappe.set_user("Guest")
+
+		карта = self.карта()
+		урок = карта["chapters"][0]["lessons"][0]
+
+		self.assertEqual(урок["hook"], "Зачем это вам")
+		self.assertNotIn("completed", урок, "пройденность — только своя, у гостя ключа нет")
+		self.assertNotIn("next_lesson", карта)
+
+	def test_пустой_зачин_приходит_null(self):
+		frappe.set_user("Guest")
+
+		self.assertIsNone(self.карта()["chapters"][0]["lessons"][0]["hook"])
+
+	def test_зачисленный_видит_пройденность_и_следующий_урок(self):
+		глава = frappe.db.get_value("Course Lesson", self.урок, "chapter")
+		второй = frappe.get_doc(
+			{"doctype": "Course Lesson", "title": f"Второй {frappe.generate_hash(length=6)}", "chapter": глава}
+		).insert(ignore_permissions=True).name
+		привязать_урок(глава, второй)
+		зачислить(self.ученик, self.урок)
+		frappe.get_doc(
+			{"doctype": "LMS Course Progress", "member": self.ученик, "lesson": self.урок, "status": "Complete"}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+
+		карта = self.карта()
+		уроки = {у["id"]: у for у in карта["chapters"][0]["lessons"]}
+
+		self.assertTrue(уроки[self.урок]["completed"])
+		self.assertFalse(уроки[второй]["completed"])
+		self.assertEqual(карта["next_lesson"], второй, "тот же урок, что у lesson_entry(course)")
+
+	def test_у_пройденного_курса_следующего_нет(self):
+		зачислить(self.ученик, self.урок)
+		frappe.get_doc(
+			{"doctype": "LMS Course Progress", "member": self.ученик, "lesson": self.урок, "status": "Complete"}
+		).insert(ignore_permissions=True)
+		frappe.set_user(self.ученик)
+
+		self.assertIsNone(self.карта()["next_lesson"])
+
 	def test_непубликованный_курс_гостю_отказ(self):
 		frappe.db.set_value("LMS Course", self.курс, "published", 0)
 		frappe.set_user("Guest")
