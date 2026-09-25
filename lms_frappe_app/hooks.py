@@ -293,7 +293,7 @@ before_tests = "lms_frappe_app.testing.before_tests"
 # Overriding Methods
 # ------------------------------
 
-# Урок закрывает занятие с наставником, а не время на странице урока —
+# Урок закрывает занятие с агентом, а не время на странице урока —
 # обоснование в модуле (lms-platform#305).
 override_whitelisted_methods = {
 	"lms.lms.doctype.course_lesson.course_lesson.save_progress": (
