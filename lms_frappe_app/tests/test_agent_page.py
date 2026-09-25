@@ -101,8 +101,67 @@ class IntegrationTestAgentPage(IntegrationTestCase):
 
 		self.assertEqual(
 			[п["route"] for п in ПУНКТЫ_САЙДБАРА],
-			["agent-sidebar", "study-in-browser", "artifacts-sidebar"],
+			["study-in-browser", "agent-sidebar", "artifacts-sidebar"],
 		)
+
+	# --- порядок и иконки пунктов (lms-platform#311) ---
+
+	def _строки_сайдбара(self) -> list[tuple[str, str]]:
+		маршрут = {
+			имя: route for имя, route in frappe.get_all("Web Page", fields=["name", "route"], as_list=True)
+		}
+		return [
+			(маршрут.get(строка.web_page), строка.icon)
+			for строка in frappe.get_single("LMS Settings").sidebar_items
+		]
+
+	def test_пункты_платформы_первыми_по_порядку_и_с_иконками(self):
+		from lms_frappe_app.install import ПУНКТЫ_САЙДБАРА, обеспечить_пункты_сайдбара
+
+		frappe.set_user("Administrator")
+		настройки = frappe.get_single("LMS Settings")
+		# Как на стенде до правки: обратный порядок и иконки в kebab-case,
+		# которых десктопный сайдбар не находит.
+		прежние = list(reversed(настройки.sidebar_items))
+		настройки.set("sidebar_items", [])
+		for строка in прежние:
+			настройки.append("sidebar_items", {"web_page": строка.web_page, "icon": "bot"})
+		настройки.save(ignore_permissions=True)
+
+		обеспечить_пункты_сайдбара()
+
+		self.assertEqual(
+			self._строки_сайдбара()[: len(ПУНКТЫ_САЙДБАРА)],
+			[(п["route"], п["icon"]) for п in ПУНКТЫ_САЙДБАРА],
+		)
+
+	def test_иконка_и_пункт_админа_остаются(self):
+		from lms_frappe_app.install import ПУНКТЫ_САЙДБАРА, обеспечить_пункты_сайдбара
+
+		frappe.set_user("Administrator")
+		свой = frappe.get_doc(
+			{
+				"doctype": "Web Page",
+				"published": 1,
+				"title": f"Правила {frappe.generate_hash(length=6)}",
+				"route": f"rules-{frappe.generate_hash(length=6)}",
+			}
+		).insert(ignore_permissions=True)
+		настройки = frappe.get_single("LMS Settings")
+		строки = list(настройки.sidebar_items)
+		строки[0].icon = "Sparkles"
+		настройки.set("sidebar_items", [])
+		настройки.append("sidebar_items", {"web_page": свой.name, "icon": "Scale"})
+		for строка in строки:
+			настройки.append("sidebar_items", {"web_page": строка.web_page, "icon": строка.icon})
+		настройки.save(ignore_permissions=True)
+		выбранная = (frappe.db.get_value("Web Page", строки[0].web_page, "route"), "Sparkles")
+
+		обеспечить_пункты_сайдбара()
+
+		итог = self._строки_сайдбара()
+		self.assertIn(выбранная, итог, "иконку, выбранную админом, установка не трогает")
+		self.assertEqual(итог[len(ПУНКТЫ_САЙДБАРА)], (свой.route, "Scale"), "пункт админа — следом за нашими")
 
 	def test_заглушки_не_попадают_в_пути_mcp_сервиса(self):
 		"""Traefik сопоставляет пути сервиса mcp по префиксу.

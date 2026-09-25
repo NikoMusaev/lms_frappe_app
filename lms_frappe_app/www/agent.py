@@ -12,6 +12,7 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learnin
 	настройка,
 	пробных_уроков,
 )
+from lms_frappe_app.site_navigation import шапка_платформы
 
 no_cache = 1
 
@@ -96,6 +97,7 @@ def _первый_шаг_куратора() -> str:
 
 def get_context(context):
 	context.no_breadcrumbs = True
+	шапка_платформы(context)
 	context.title = "Подключить агента"
 	context.update(сведения(frappe.session.user))
 	return context
