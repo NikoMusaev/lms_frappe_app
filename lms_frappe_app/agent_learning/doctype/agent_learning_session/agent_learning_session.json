@@ -20,7 +20,10 @@
   "via_trusted_service",
   "web_chat",
   "sb_outcomes",
-  "outcomes"
+  "outcomes",
+  "sb_archive",
+  "archived_student",
+  "archived_at"
  ],
  "fields": [
   {
@@ -119,12 +122,33 @@
    "options": "Agent Objective Outcome",
    "read_only": 1,
    "description": "Заполняется отчётом агента, а не руками"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "sb_archive",
+   "fieldtype": "Section Break",
+   "label": "Архив"
+  },
+  {
+   "description": "Запись заархивирована сбросом прогресса: ученик перенесён сюда, поле «Ученик» пусто.",
+   "fieldname": "archived_student",
+   "fieldtype": "Link",
+   "label": "Ученик до сброса",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "archived_at",
+   "fieldtype": "Datetime",
+   "label": "Сброшено",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-18 12:00:00.000000",
+ "modified": "2026-09-25 17:36:56.050456",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Learning Session",

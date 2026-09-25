@@ -1229,7 +1229,9 @@ def _репорты_ученика(
 			репорт.resolved_at,
 			репорт.duplicate_of,
 		)
-		.where(занятие.student == ученик)
+		# Архивное поле — занятия, сброшенные админкой: репорт остаётся
+		# ученика, и ответ автора он должен видеть (learning-services#313).
+		.where((занятие.student == ученик) | (занятие.archived_student == ученик))
 		.orderby(репорт.creation, order=Order.desc)
 		.limit(РЕПОРТОВ_УЧЕНИКА)
 	)
