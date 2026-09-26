@@ -49,10 +49,12 @@ class IntegrationTestSiteNavigation(IntegrationTestCase):
 		self.assertIn(КАБИНЕТ_АВТОРА[1], у_куратора)
 
 	def test_страницы_платформы_получают_шапку(self):
-		from lms_frappe_app.www import agent, artifacts, author
+		# «Мои документы» живут в SPA (learning-services#331): /artifacts только
+		# переводит туда, шапка темы ему не нужна.
+		from lms_frappe_app.www import agent, author
 
 		frappe.set_user(self.ученик)
-		for страница in (agent, artifacts, author):
+		for страница in (agent, author):
 			with self.subTest(страница=страница.__name__):
 				context = frappe._dict()
 				страница.get_context(context)
