@@ -14,6 +14,7 @@
   "schema_version",
   "sb_blocks",
   "blocks",
+  "data",
   "sb_archive",
   "archived_student",
   "archived_at"
@@ -66,6 +67,12 @@
    "options": "Agent Artifact Content"
   },
   {
+   "fieldname": "data",
+   "fieldtype": "JSON",
+   "label": "Таблицы и поля",
+   "description": "Строки таблиц и значения полей документа (learning-services#330)"
+  },
+  {
    "collapsible": 1,
    "fieldname": "sb_archive",
    "fieldtype": "Section Break",
@@ -90,7 +97,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-25 17:36:56.050456",
+ "modified": "2026-09-26 04:52:22.000000",
  "modified_by": "Administrator",
  "module": "Agent Learning",
  "name": "Agent Student Artifact",

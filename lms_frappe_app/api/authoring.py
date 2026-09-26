@@ -17,6 +17,7 @@ import frappe
 
 from lms_frappe_app.agent_learning import (
 	artifact_files,
+	artifact_tables,
 	course_builder,
 	course_map,
 	directives,
@@ -443,13 +444,18 @@ def set_course_artifact(
 ) -> dict:
 	"""Задаёт схему документа курса новой версией.
 
-	`blocks` — список `{key, title, hint, lesson, span, kind, accept}` в том
+	`blocks` — список `{key, title, hint, lesson, span, kind, accept, spec}` в том
 	порядке, в каком документ читается. Порядок задаётся здесь и нигде больше: ученик
 	видит блоки в нём же. Подсказка `hint` адресована агенту: что должно
 	оказаться в блоке и когда считать его заполненным.
 
 	Версионируется как директива: содержимое ученика хранится по ключам
 	блоков, и правка схемы его не рушит.
+
+	`spec` — поля блока и его колонки в таблице документа (#330):
+	`{fields, table, columns, prefix, title, rows, views}`. Форма проверяется
+	здесь, до записи: схема, которую не прочесть, сломала бы документ каждого
+	ученика курса, а не одного.
 	"""
 	_автор()
 	_должен_существовать("LMS Course", course, КУРС_НЕ_НАЙДЕН)
@@ -468,6 +474,7 @@ def set_course_artifact(
 				key=блок.get("key"),
 				kind=вид,
 			)
+		спек = artifact_tables.проверить_спек(блок.get("spec"), блок.get("key"))
 		строки.append(
 			{
 				"block_key": блок.get("key"),
@@ -477,8 +484,10 @@ def set_course_artifact(
 				"span": блок.get("span") or 1,
 				"kind": вид,
 				"accept": ",".join(artifact_files.допустимые(блок)) or None,
+				"spec": json.dumps(спек, ensure_ascii=False) if спек else None,
 			}
 		)
+	artifact_tables.проверить_документ(строки)
 	версия = directives.записать(
 		"Agent Course Artifact",
 		{"course": course, "slug": нормализовать_ключ(artifact)},

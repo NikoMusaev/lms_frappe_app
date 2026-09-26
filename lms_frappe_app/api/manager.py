@@ -18,7 +18,8 @@ from lms_frappe_app.agent_learning.doctype.course_allocation.course_allocation i
 )
 from lms_frappe_app.agent_learning.errors import Отказ
 from lms_frappe_app.agent_learning.structure import уроки_курса
-from lms_frappe_app.api.student import _схемы_курса
+from lms_frappe_app.agent_learning import artifact_tables
+from lms_frappe_app.api.student import _заполненность, _схемы_курса
 from lms_frappe_app.agent_learning.permissions import (
 	организации_менеджера,
 	свои_организации_пересекаются,
@@ -107,8 +108,8 @@ def _документ_по_участникам(курс: str, участник�
 	`Why:` урок засчитывает квиз, и без этой колонки руководитель не отличит
 	пройденный курс с пустым документом от собранного (learning-services#296).
 	"""
-	ключи = {схема.slug: {б.block_key for б in схема.blocks} for схема in _схемы_курса(курс)}
-	всего = sum(len(к) for к in ключи.values())
+	схемы = {схема.slug: схема for схема in _схемы_курса(курс)}
+	всего = sum(len(схема.blocks) for схема in схемы.values())
 	if not всего:
 		return 0, {}
 
@@ -117,24 +118,35 @@ def _документ_по_участникам(курс: str, участник�
 		for запись in frappe.get_all(
 			"Agent Student Artifact",
 			filters={"course": курс, "student": ("in", участники)},
-			fields=["name", "student", "artifact"],
+			fields=["name", "student", "artifact", "data"],
 		)
 	}
 	if not экземпляры:
 		return всего, {}
 
-	заполнено: dict[str, int] = {}
+	содержимое: dict[str, dict[str, str]] = {}
+	вложения: dict[str, dict[str, dict]] = {}
 	for строка in frappe.get_all(
 		"Agent Artifact Content",
 		filters={"parent": ("in", list(экземпляры)), "parenttype": "Agent Student Artifact"},
 		fields=["parent", "block_key", "content", "file", "url"],
 	):
-		экземпляр = экземпляры[строка.parent]
+		содержимое.setdefault(строка.parent, {})[строка.block_key] = строка.content or ""
 		# Заполнен блок с текстом, файлом или ссылкой (#315); сам файл отчёт
 		# не показывает — только то, что блок не пуст.
-		непуст = (строка.content or "").strip() or строка.file or строка.url
-		if строка.block_key in ключи.get(экземпляр.artifact, ()) and непуст:
-			заполнено[экземпляр.student] = заполнено.get(экземпляр.student, 0) + 1
+		if строка.file or строка.url:
+			вложения.setdefault(строка.parent, {})[строка.block_key] = {"file": строка.file, "url": строка.url}
+
+	заполнено: dict[str, int] = {}
+	for имя, экземпляр in экземпляры.items():
+		схема = схемы.get(экземпляр.artifact)
+		if not схема:
+			continue
+		# Правило то же, что у ученика: блок с таблицей — по её строкам (#330).
+		сколько = _заполненность(
+			схема, содержимое.get(имя, {}), вложения.get(имя, {}), artifact_tables.данные(экземпляр.data)
+		)["blocks_filled"]
+		заполнено[экземпляр.student] = заполнено.get(экземпляр.student, 0) + сколько
 	return всего, заполнено
 
 

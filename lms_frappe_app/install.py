@@ -25,7 +25,7 @@ from lms_frappe_app.agent_learning.doctype.agent_learning_settings.agent_learnin
 	# `/chat-…` ушёл бы в MCP-сервис с «Not Found» вместо переадресации.
 	{"title": "Заниматься в браузере", "route": "study-in-browser", "icon": "MessageCircle", "page": "/chat"},
 	{"title": "Подключить агента", "route": "agent-sidebar", "icon": "Bot", "page": "/agent"},
-	{"title": "Мои документы", "route": "artifacts-sidebar", "icon": "FileText", "page": "/artifacts"},
+	{"title": "Мои документы", "route": "artifacts-sidebar", "icon": "FileText", "page": "/lms/documents"},
 )
 
 #: Иконки, которые прежде ставила сама установка, — их правка админа не трогает.

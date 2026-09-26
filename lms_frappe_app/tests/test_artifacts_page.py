@@ -33,82 +33,30 @@ class IntegrationTestArtifactsPage(IntegrationTestCase):
 		student.update_artifact(self.курс, "summary", "goal", "Открыть **седьмую** кофейню")
 		frappe.set_user("Administrator")
 
-	def сведения_для(self, пользователь: str, **параметры) -> dict:
-		from lms_frappe_app.www.artifacts import сведения
-
+	def документ(self, пользователь: str, artifact: str = "summary") -> dict:
 		frappe.set_user(пользователь)
-		return сведения(пользователь, **параметры)
+		return student._артефакт_целиком(пользователь, self.курс, artifact)
 
-	def test_гость_получает_приглашение_войти(self):
-		с = self.сведения_для("Guest")
+	def переход(self, **параметры) -> str:
+		"""Куда `/artifacts` отправляет с этими параметрами."""
+		from lms_frappe_app.www.artifacts import get_context
 
-		self.assertTrue(с["is_guest"])
-		self.assertEqual(с["courses"], [])
-		self.assertIn("redirect-to=/artifacts", с["login_url"])
+		frappe.local.form_dict = frappe._dict(параметры)
+		frappe.local.flags.redirect_location = None
+		with self.assertRaises(frappe.Redirect):
+			get_context(frappe._dict())
+		return frappe.local.flags.redirect_location
 
-	def test_ученик_видит_курс_с_документами_и_заполненностью(self):
-		с = self.сведения_для(self.ученик)
-
-		курс = next(к for к in с["courses"] if к["id"] == self.курс)
-		self.assertEqual(
-			[(а["artifact"], а["blocks_filled"], а["blocks_total"]) for а in курс["artifacts"]],
-			[("summary", 1, 2)],
-		)
-
-	def test_документ_показывает_блоки_разметкой_и_подсказками(self):
-		с = self.сведения_для(self.ученик, course=self.курс, artifact="summary")
-
-		блоки = с["document"]["blocks"]
-		self.assertIn("<strong>седьмую</strong>", блоки[0]["html"])
-		self.assertEqual(блоки[1]["html"], "")
-		self.assertEqual(блоки[1]["hint"], "")  # у спонсора подсказки нет
-		self.assertIn("artifact=summary", с["document"]["download_url"])
-
-	def test_чужой_документ_не_показывается(self):
-		"""Коллега по курсу видит свой пустой документ, а не чужой текст."""
-		коллега = создать_ученика(f"page-b-{frappe.generate_hash(length=6)}@example.com")
-		зачислить(коллега, self.урок)
-
-		с = self.сведения_для(коллега, course=self.курс, artifact="summary")
-
-		self.assertEqual([б["content"] for б in с["document"]["blocks"]], ["", ""])
-
-	def test_чужой_курс_и_неизвестный_документ_дают_пустую_страницу(self):
-		посторонний = создать_ученика(f"page-c-{frappe.generate_hash(length=6)}@example.com")
-
-		self.assertTrue(self.сведения_для(посторонний, course=self.курс, artifact="summary")["missing"])
-		self.assertTrue(self.сведения_для(self.ученик, course=self.курс, artifact="lean_canvas")["missing"])
-
-	def test_ссылка_на_курс_показывает_только_его_документы(self):
-		"""Так ведёт «Мои документы» из веб-чата (learning-services#303)."""
-		другой = зачислить(self.ученик, создать_урок(f"Другой {frappe.generate_hash(length=6)}"))
-		frappe.get_doc(
-			{
-				"doctype": "Agent Course Artifact",
-				"course": другой,
-				"slug": "plan",
-				"title": "План",
-				"blocks": [{"block_key": "step", "title": "Шаг"}],
-			}
-		).insert(ignore_permissions=True)
-
-		с = self.сведения_для(self.ученик, course=self.курс)
-		без_документов = self.сведения_для(self.ученик, course="нет-такого-курса")
-
-		self.assertEqual([к["id"] for к in с["courses"]], [self.курс])
-		self.assertIn(другой, [к["id"] for к in без_документов["courses"]], "пустой страницы нет")
-
-	def test_курс_без_документов_в_списке_не_показывается(self):
-		одинокий = создать_ученика(f"page-d-{frappe.generate_hash(length=6)}@example.com")
-		зачислить(одинокий, создать_урок(f"Без документов {frappe.generate_hash(length=6)}"))
-
-		self.assertEqual(self.сведения_для(одинокий)["courses"], [])
+	def test_старый_адрес_ведёт_в_spa_с_курсом_и_документом(self):
+		"""Ссылки из веб-чата, писем и закладок не ломаются (learning-services#331)."""
+		self.assertEqual(self.переход(), "/lms/documents")
+		self.assertEqual(self.переход(course="c 1"), "/lms/documents?course=c%201")
+		self.assertEqual(self.переход(course="c1", artifact="summary"), "/lms/documents/c1/summary")
 
 	def test_markdown_собирается_одним_файлом(self):
 		from lms_frappe_app.www.artifacts import собрать_markdown
 
-		с = self.сведения_для(self.ученик, course=self.курс, artifact="summary")
-		текст = собрать_markdown(с["document"])
+		текст = собрать_markdown(self.документ(self.ученик))
 
 		self.assertTrue(текст.startswith("# Резюме проекта\n"))
 		self.assertIn("## Цель\n\nОткрыть **седьмую** кофейню", текст)
@@ -140,23 +88,10 @@ class IntegrationTestArtifactsPageFiles(IntegrationTestCase):
 		student._положить_файл(self.ученик, self.курс, "plan", "money", "plan.csv", "Месяц;Выручка\nЯнварь;100\n".encode())
 		student.update_artifact(self.курс, "plan", "crm", url="https://crm.example.com")
 
-	def test_страница_рисует_файл_срез_загрузку_и_ссылку(self):
-		from frappe.website.serve import get_response_content
-
-		frappe.local.form_dict = frappe._dict(course=self.курс, artifact="plan")
-		html = get_response_content("artifacts")
-
-		self.assertIn("plan.csv", html)
-		self.assertIn('accept=".xlsx,.csv"', html)
-		self.assertIn("Что видит агент", html)
-		self.assertIn("<td>Январь</td>", html)
-		self.assertIn('href="https://crm.example.com"', html)
-		self.assertIn("upload_artifact_file", html)
-
 	def test_markdown_называет_файл_и_ссылку(self):
-		from lms_frappe_app.www.artifacts import собрать_markdown, сведения
+		from lms_frappe_app.www.artifacts import собрать_markdown
 
-		текст = собрать_markdown(сведения(self.ученик, course=self.курс, artifact="plan")["document"])
+		текст = собрать_markdown(student._артефакт_целиком(self.ученик, self.курс, "plan"))
 
 		self.assertIn("Файл: plan.csv", текст)
 		self.assertIn("| Месяц | Выручка |", текст)
