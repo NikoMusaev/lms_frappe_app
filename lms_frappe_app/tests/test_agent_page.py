@@ -10,7 +10,7 @@ from lms_frappe_app.tests.sample_data import создать_куратора, с
 	("agent-sidebar", "Подключить агента", "/agent"),
 	# Чат живёт в MCP-сервисе на том же домене, что и сайт, — как `/mcp`.
 	("study-in-browser", "Заниматься в браузере", "/chat"),
-	("artifacts-sidebar", "Мои документы", "/artifacts"),
+	("artifacts-sidebar", "Мои документы", "/lms/documents"),
 )
 
 

@@ -1242,7 +1242,15 @@ class IntegrationTestArtifacts(IntegrationTestCase):
 		ответ = student.update_artifact(self.курс, "summary", "Goal", clear=True)["data"]
 
 		self.assertEqual(
-			ответ, {"artifact": "summary", "key": "goal", "blocks_total": 2, "blocks_filled": 1}
+			ответ,
+			{
+				"artifact": "summary",
+				"key": "goal",
+				"blocks_total": 2,
+				"blocks_filled": 1,
+				"empty_cells": [],
+				"created": [],
+			},
 		)
 		документ = frappe.get_doc(
 			"Agent Student Artifact",
